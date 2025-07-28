@@ -1,650 +1,343 @@
-import { z } from "zod";
-import { zid } from "convex-helpers/server/zod";
-import { ConvexError } from "convex/values";
-
-import type { Doc, Id } from "./_generated/dataModel";
+import { z } from 'zod';
+import { zid } from 'convex-helpers/server/zod';
+import { ConvexError } from 'convex/values';
 import {
-  createAuthQuery,
   createAuthMutation,
-  createPublicQuery,
-  createPublicPaginatedQuery,
-} from "./functions";
-import { aggregateTagUsage } from "./aggregates";
+  createAuthQuery,
+} from './functions';
 
-// ============================================
-// TAG QUERIES
-// ============================================
-
-// List all tags created by the user
-export const listMyTags = createAuthQuery()({
+// List user's tags with usage count
+export const list = createAuthQuery()({
   args: {},
-  returns: z.array(
-    z.object({
-      _id: zid("tags"),
-      _creationTime: z.number(),
-      name: z.string(),
-      color: z.string(),
-      usageCount: z.number(),
-    })
-  ),
+  returns: z.array(z.object({
+    _id: zid('tags'),
+    _creationTime: z.number(),
+    name: z.string(),
+    color: z.string(),
+    usageCount: z.number(),
+  })),
   handler: async (ctx) => {
-    // Get tags created by user
     const tags = await ctx
-      .table("tags")
-      .filter((q) => q.eq(q.field("createdBy"), ctx.userId))
-      .order("asc");
-
-    // Get usage counts in parallel
-    return await Promise.all(
-      tags.map(async (tag) => {
-        const usageCount = await aggregateTagUsage.count(ctx, {
-          namespace: tag._id,
-          bounds: {} as any,
-        });
-        return {
-          ...tag.doc(),
-          usageCount,
-        };
-      })
-    );
+      .table('tags', 'createdBy', (q) => q.eq('createdBy', ctx.user._id))
+      .order('asc');
+    
+    return await Promise.all(tags.map(async (tag) => ({
+      ...tag.doc(),
+      usageCount: (await tag.edge('todos')).length,
+    })));
   },
 });
-
-// Get popular tags (most used)
-export const getPopularTags = createPublicQuery()({
-  args: {
-    limit: z.number().min(1).max(50).default(20),
-  },
-  returns: z.array(
-    z.object({
-      _id: zid("tags"),
-      name: z.string(),
-      color: z.string(),
-      usageCount: z.number(),
-      creator: z
-        .object({
-          name: z.string().optional(),
-          image: z.string().optional(),
-        })
-        .nullable(),
-    })
-  ),
-  handler: async (ctx, args) => {
-    // Get top tags by usage
-    // Get top tags by counting todoTags join table
-    const todoTags = await ctx.table("todoTags").take(1000);
-    const tagCounts = new Map<Id<"tags">, number>();
-
-    for (const todoTag of todoTags) {
-      const count = tagCounts.get(todoTag.tagId) || 0;
-      tagCounts.set(todoTag.tagId, count + 1);
-    }
-
-    const topTags = Array.from(tagCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, args.limit);
-
-    // Enrich with tag details
-    const enrichedTags = await Promise.all(
-      topTags.map(async ([tagId, count]) => {
-        const tag = await ctx.table("tags").get(tagId);
-        if (!tag) return null;
-
-        const creator = await ctx.table("users").get(tag.createdBy);
-
-        return {
-          _id: tag._id,
-          name: tag.name,
-          color: tag.color,
-          usageCount: count,
-          creator: creator
-            ? {
-                name: creator.name,
-                image: creator.image,
-              }
-            : null,
-        };
-      })
-    );
-
-    return enrichedTags.filter((t): t is NonNullable<typeof t> => t !== null);
-  },
-});
-
-// Search tags by name
-export const searchTags = createPublicQuery()({
-  args: {
-    query: z.string().min(1),
-    limit: z.number().min(1).max(20).default(10),
-  },
-  returns: z.array(
-    z.object({
-      _id: zid("tags"),
-      name: z.string(),
-      color: z.string(),
-      usageCount: z.number(),
-    })
-  ),
-  handler: async (ctx, args) => {
-    // Search tags by name (case-insensitive partial match)
-    const tags = await ctx
-      .table("tags", "name")
-      .filter(
-        (q) =>
-          q.gte(q.field("name"), args.query.toLowerCase()) &&
-          q.lt(q.field("name"), args.query.toLowerCase() + "\uffff")
-      )
-      .take(args.limit);
-
-    // Get usage counts
-    return await Promise.all(
-      tags.map(async (tag) => {
-        const usageCount = await aggregateTagUsage.count(ctx, {
-          namespace: tag._id,
-          bounds: {} as any,
-        });
-        return {
-          ...tag.doc(),
-          usageCount,
-        };
-      })
-    );
-  },
-});
-
-// Get tags for a specific todo
-export const getTodoTags = createPublicQuery()({
-  args: {
-    todoId: zid("todos"),
-  },
-  returns: z.array(
-    z.object({
-      _id: zid("tags"),
-      name: z.string(),
-      color: z.string(),
-    })
-  ),
-  handler: async (ctx, args) => {
-    const todo = await ctx.table("todos").get(args.todoId);
-    if (!todo) return [];
-
-    // Get tags via edge
-    const tags = await todo.edge("tags").order("asc");
-
-    return tags.map((tag) => ({
-      _id: tag._id,
-      name: tag.name,
-      color: tag.color,
-    }));
-  },
-});
-
-// Get todos by tag
-export const getTodosByTag = createPublicPaginatedQuery()({
-  args: {
-    tagId: zid("tags"),
-    completed: z.boolean().optional(),
-  },
-  handler: async (ctx, args) => {
-    const tag = await ctx.table("tags").get(args.tagId);
-    if (!tag) {
-      throw new ConvexError({
-        code: "NOT_FOUND",
-        message: "Tag not found",
-      });
-    }
-
-    // Get todos via edge with pagination
-    const result = await tag
-      .edge("todos")
-      .order("desc")
-      .paginate(args.paginationOpts)
-      .map(async (todo) => {
-        // Apply filter after pagination for many-to-many edges
-        if (args.completed !== undefined && todo.completed !== args.completed) {
-          return null;
-        }
-
-        const user = await todo.edge("user");
-        return {
-          ...todo.doc(),
-          user: user
-            ? {
-                name: user.name,
-                image: user.image,
-              }
-            : null,
-        };
-      });
-
-    // Filter out nulls from filtering
-    return {
-      ...result,
-      page: result.page.filter(
-        (item): item is NonNullable<typeof item> => item !== null
-      ),
-    };
-  },
-});
-
-// ============================================
-// TAG MUTATIONS
-// ============================================
 
 // Create a new tag
-export const createTag = createAuthMutation()({
+export const create = createAuthMutation({
+  rateLimit: 'tag/create',
+})({
   args: {
-    name: z
-      .string()
-      .min(1)
-      .max(50)
-      .transform((s) => s.toLowerCase()),
-    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+    name: z.string().min(1).max(50),
+    color: z.string().regex(/^#[0-9A-F]{6}$/i).optional(),
   },
-  returns: zid("tags"),
+  returns: zid('tags'),
   handler: async (ctx, args) => {
-    // Check for duplicate tag name by this user
-    const existing = await ctx
-      .table("tags")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("name"), args.name),
-          q.eq(q.field("createdBy"), ctx.userId)
-        )
-      )
+    // Check if tag with same name already exists for this user
+    const existingTag = await ctx
+      .table('tags', 'createdBy', (q) => q.eq('createdBy', ctx.user._id))
+      .filter((q) => q.eq(q.field('name'), args.name))
       .first();
-
-    if (existing) {
+    
+    if (existingTag) {
       throw new ConvexError({
-        code: "BAD_REQUEST",
-        message: "You already have a tag with this name",
+        code: 'DUPLICATE_TAG',
+        message: 'A tag with this name already exists',
       });
     }
-
-    return await ctx.table("tags").insert({
+    
+    const tagId = await ctx.table('tags').insert({
       name: args.name,
-      color: args.color,
-      createdBy: ctx.userId,
+      color: args.color || generateRandomColor(),
+      createdBy: ctx.user._id,
     });
+    
+    return tagId;
   },
 });
 
-// Update tag (name or color)
-export const updateTag = createAuthMutation()({
+// Update tag name or color
+export const update = createAuthMutation({
+  rateLimit: 'tag/update',
+})({
   args: {
-    tagId: zid("tags"),
-    name: z
-      .string()
-      .min(1)
-      .max(50)
-      .transform((s) => s.toLowerCase())
-      .optional(),
-    color: z
-      .string()
-      .regex(/^#[0-9A-Fa-f]{6}$/)
-      .optional(),
+    tagId: zid('tags'),
+    name: z.string().min(1).max(50).optional(),
+    color: z.string().regex(/^#[0-9A-F]{6}$/i).optional(),
   },
   returns: z.null(),
   handler: async (ctx, args) => {
-    const tag = await ctx.table("tags").getX(args.tagId);
-
-    // Only creator can update
-    if (tag.createdBy !== ctx.userId) {
+    const tag = await ctx.table('tags').get(args.tagId);
+    
+    if (!tag || tag.createdBy !== ctx.user._id) {
       throw new ConvexError({
-        code: "FORBIDDEN",
-        message: "Only tag creator can update",
+        code: 'NOT_FOUND',
+        message: 'Tag not found',
       });
     }
-
-    const updates: Partial<Doc<"tags">> = {};
-
-    if (args.name !== undefined) {
-      // Check for duplicate
-      const existing = await ctx
-        .table("tags")
-        .filter((q) =>
-          q.and(
-            q.eq(q.field("name"), args.name),
-            q.eq(q.field("createdBy"), ctx.userId),
-            q.neq(q.field("_id"), args.tagId)
-          )
-        )
+    
+    // Check for duplicate name if updating name
+    if (args.name && args.name !== tag.name) {
+      const existingTag = await ctx
+        .table('tags', 'createdBy', (q) => q.eq('createdBy', ctx.user._id))
+        .filter((q) => q.eq(q.field('name'), args.name))
         .first();
-
-      if (existing) {
+      
+      if (existingTag) {
         throw new ConvexError({
-          code: "BAD_REQUEST",
-          message: "You already have another tag with this name",
+          code: 'DUPLICATE_TAG',
+          message: 'A tag with this name already exists',
         });
       }
-
-      updates.name = args.name;
     }
-
-    if (args.color !== undefined) {
-      updates.color = args.color;
-    }
-
+    
+    const updates: any = {};
+    if (args.name !== undefined) updates.name = args.name;
+    if (args.color !== undefined) updates.color = args.color;
+    
     if (Object.keys(updates).length > 0) {
-      await tag.patch(updates);
+      await ctx.table('tags').getX(args.tagId).patch(updates);
     }
-
+    
     return null;
   },
 });
 
-// Delete tag (only if unused or by creator)
-export const deleteTag = createAuthMutation()({
+// Delete a tag (removes from all todos)
+export const deleteTag = createAuthMutation({
+  rateLimit: 'tag/delete',
+})({
   args: {
-    tagId: zid("tags"),
+    tagId: zid('tags'),
   },
   returns: z.null(),
   handler: async (ctx, args) => {
-    const tag = await ctx.table("tags").getX(args.tagId);
-
-    // Check permissions
-    if (tag.createdBy !== ctx.userId) {
+    const tag = await ctx.table('tags').get(args.tagId);
+    
+    if (!tag || tag.createdBy !== ctx.user._id) {
       throw new ConvexError({
-        code: "FORBIDDEN",
-        message: "Only tag creator can delete",
+        code: 'NOT_FOUND',
+        message: 'Tag not found',
       });
     }
-
-    // Check usage
-    const usageCount = await aggregateTagUsage.count(ctx, {
-      namespace: tag._id,
-      bounds: {} as any,
-    });
-    if (usageCount > 0) {
-      throw new ConvexError({
-        code: "BAD_REQUEST",
-        message: `Cannot delete tag that is used by ${usageCount} todos`,
-      });
-    }
-
-    await ctx.table("tags").getX(tag._id).delete();
+    
+    // Delete the tag - Convex Ents will handle removing from todos automatically
+    await ctx.table('tags').getX(args.tagId).delete();
+    
     return null;
   },
 });
 
-// ============================================
-// TAG ASSIGNMENT
-// ============================================
-
-// Add tags to todo
-export const addTagsToTodo = createAuthMutation()({
+// Merge two tags
+export const merge = createAuthMutation({
+  rateLimit: 'tag/update', // Using update rate limit for merge
+})({
   args: {
-    todoId: zid("todos"),
-    tagIds: z.array(zid("tags")).min(1).max(10),
-  },
-  returns: z.object({
-    added: z.number(),
-    skipped: z.number(),
-  }),
-  handler: async (ctx, args) => {
-    const todo = await ctx.table("todos").getX(args.todoId);
-
-    // Check ownership
-    if (todo.userId !== ctx.userId) {
-      throw new ConvexError({
-        code: "FORBIDDEN",
-        message: "Can only tag your own todos",
-      });
-    }
-
-    let added = 0;
-    let skipped = 0;
-
-    for (const tagId of args.tagIds) {
-      const tag = await ctx.table("tags").get(tagId);
-      if (!tag) {
-        skipped++;
-        continue;
-      }
-
-      // Check if already tagged
-      const hasTag = await todo.edge("tags").has(tagId);
-      if (hasTag) {
-        skipped++;
-        continue;
-      }
-
-      // Add tag
-      await ctx.table("todoTags").insert({
-        todoId: todo._id,
-        tagId: tagId,
-      });
-      added++;
-    }
-
-    return { added, skipped };
-  },
-});
-
-// Remove tags from todo
-export const removeTagsFromTodo = createAuthMutation()({
-  args: {
-    todoId: zid("todos"),
-    tagIds: z.array(zid("tags")).min(1),
-  },
-  returns: z.object({
-    removed: z.number(),
-  }),
-  handler: async (ctx, args) => {
-    const todo = await ctx.table("todos").getX(args.todoId);
-
-    // Check ownership
-    if (todo.userId !== ctx.userId) {
-      throw new ConvexError({
-        code: "FORBIDDEN",
-        message: "Can only untag your own todos",
-      });
-    }
-
-    let removed = 0;
-
-    for (const tagId of args.tagIds) {
-      // Find and remove join record
-      const joinRecord = await ctx
-        .table("todoTags")
-        .filter((q) =>
-          q.and(
-            q.eq(q.field("todoId"), todo._id),
-            q.eq(q.field("tagId"), tagId)
-          )
-        )
-        .first();
-
-      if (joinRecord) {
-        await ctx.table("todoTags").getX(joinRecord._id).delete();
-        removed++;
-      }
-    }
-
-    return { removed };
-  },
-});
-
-// Replace all tags on a todo
-export const setTodoTags = createAuthMutation()({
-  args: {
-    todoId: zid("todos"),
-    tagIds: z.array(zid("tags")).max(10),
+    sourceTagId: zid('tags'),
+    targetTagId: zid('tags'),
   },
   returns: z.null(),
   handler: async (ctx, args) => {
-    const todo = await ctx.table("todos").getX(args.todoId);
-
-    // Check ownership
-    if (todo.userId !== ctx.userId) {
+    if (args.sourceTagId === args.targetTagId) {
       throw new ConvexError({
-        code: "FORBIDDEN",
-        message: "Can only tag your own todos",
+        code: 'INVALID_OPERATION',
+        message: 'Cannot merge a tag with itself',
       });
     }
-
-    // Get current tags
-    const currentTags = await todo.edge("tags");
-    const currentTagIds = new Set(currentTags.map((t) => t._id));
-    const newTagIds = new Set(args.tagIds);
-
-    // Remove tags not in new set
-    for (const tag of currentTags) {
-      if (!newTagIds.has(tag._id)) {
-        const joinRecord = await ctx
-          .table("todoTags")
-          .filter((q) =>
-            q.and(
-              q.eq(q.field("todoId"), todo._id),
-              q.eq(q.field("tagId"), tag._id)
-            )
-          )
-          .first();
-
-        if (joinRecord) {
-          await ctx.table("todoTags").getX(joinRecord._id).delete();
-        }
+    
+    const sourceTag = await ctx.table('tags').get(args.sourceTagId);
+    const targetTag = await ctx.table('tags').get(args.targetTagId);
+    
+    if (!sourceTag || sourceTag.createdBy !== ctx.user._id) {
+      throw new ConvexError({
+        code: 'NOT_FOUND',
+        message: 'Source tag not found',
+      });
+    }
+    
+    if (!targetTag || targetTag.createdBy !== ctx.user._id) {
+      throw new ConvexError({
+        code: 'NOT_FOUND',
+        message: 'Target tag not found',
+      });
+    }
+    
+    // Get all todos with source tag
+    const todosWithSourceTag = await sourceTag.edge('todos');
+    
+    // Add target tag to todos that have source tag (avoiding duplicates)
+    for (const todo of todosWithSourceTag) {
+      const currentTags = await todo.edge('tags').map(t => t._id);
+      if (!currentTags.includes(args.targetTagId)) {
+        await ctx.table('todos').getX(todo._id).patch({
+          tags: { add: [args.targetTagId] },
+        });
       }
     }
-
-    // Add new tags
-    for (const tagId of args.tagIds) {
-      if (!currentTagIds.has(tagId)) {
-        const tag = await ctx.table("tags").get(tagId);
-        if (tag) {
-          await ctx.table("todoTags").insert({
-            todoId: todo._id,
-            tagId: tagId,
-          });
-        }
-      }
-    }
-
+    
+    // Delete source tag
+    await ctx.table('tags').getX(args.sourceTagId).delete();
+    
     return null;
   },
 });
 
-// ============================================
-// TAG SUGGESTIONS
-// ============================================
-
-// Get tag suggestions based on todo content
-export const getSuggestedTags = createAuthQuery()({
+// Get most popular tags across all users
+export const popular = createAuthQuery()({
   args: {
-    todoId: zid("todos"),
-    limit: z.number().min(1).max(5).default(5),
+    limit: z.number().min(1).max(50).optional(),
   },
-  returns: z.array(
-    z.object({
-      _id: zid("tags"),
-      name: z.string(),
-      color: z.string(),
-      reason: z.enum(["used_together", "similar_todos", "popular"]),
-    })
-  ),
+  returns: z.array(z.object({
+    _id: zid('tags'),
+    name: z.string(),
+    color: z.string(),
+    usageCount: z.number(),
+    isOwn: z.boolean(),
+  })),
   handler: async (ctx, args) => {
-    const todo = await ctx.table("todos").getX(args.todoId);
-
-    // Get current tags
-    const currentTags = await todo.edge("tags");
-    const currentTagIds = new Set(currentTags.map((t) => t._id));
-
-    const suggestions: Array<{
-      tag: { _id: Id<"tags">; name: string; color: string };
-      reason: "used_together" | "similar_todos" | "popular";
-      score: number;
-    }> = [];
-
-    // Strategy 1: Tags often used together
-    if (currentTags.length > 0) {
-      for (const tag of currentTags) {
-        // Find todos with this tag
-        const relatedTodos = await tag.edge("todos").take(20);
-
-        // Count co-occurring tags
-        const coOccurrence = new Map<Id<"tags">, number>();
-        for (const relatedTodo of relatedTodos) {
-          const relatedTags = await relatedTodo.edge("tags");
-          for (const relatedTag of relatedTags) {
-            if (
-              !currentTagIds.has(relatedTag._id) &&
-              relatedTag._id !== tag._id
-            ) {
-              coOccurrence.set(
-                relatedTag._id,
-                (coOccurrence.get(relatedTag._id) || 0) + 1
-              );
-            }
-          }
-        }
-
-        // Add top co-occurring tags
-        const sorted = Array.from(coOccurrence.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 3);
-
-        for (const [tagId, count] of sorted) {
-          const suggestedTag = await ctx.table("tags").get(tagId);
-          if (suggestedTag) {
-            suggestions.push({
-              tag: {
-                _id: suggestedTag._id,
-                name: suggestedTag.name,
-                color: suggestedTag.color,
-              },
-              reason: "used_together",
-              score: count,
-            });
-          }
-        }
-      }
-    }
-
-    // Strategy 2: Popular tags not yet used
-    // Get most used tags by counting todoTags
-    const todoTags = await ctx.table("todoTags").take(100);
-    const tagCounts = new Map<Id<"tags">, number>();
-
-    for (const todoTag of todoTags) {
-      const count = tagCounts.get(todoTag.tagId) || 0;
-      tagCounts.set(todoTag.tagId, count + 1);
-    }
-
-    const popularTags = Array.from(tagCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10);
-
-    for (const [tagId, count] of popularTags) {
-      if (!currentTagIds.has(tagId)) {
-        const tag = await ctx.table("tags").get(tagId);
-        if (tag) {
-          suggestions.push({
-            tag: {
-              _id: tag._id,
-              name: tag.name,
-              color: tag.color,
-            },
-            reason: "popular",
-            score: count,
-          });
-        }
-      }
-    }
-
-    // Sort by score and deduplicate
-    const seen = new Set<Id<"tags">>();
-    const deduped = suggestions
-      .sort((a, b) => b.score - a.score)
-      .filter((s) => {
-        if (seen.has(s.tag._id)) return false;
-        seen.add(s.tag._id);
-        return true;
-      })
-      .slice(0, args.limit);
-
-    return deduped.map((s) => ({
-      ...s.tag,
-      reason: s.reason,
-    }));
+    const limit = args.limit || 10;
+    
+    // Get all tags with usage counts
+    const allTags = await ctx.table('tags').take(100);
+    
+    const tagsWithCounts = await Promise.all(allTags.map(async (tag) => ({
+      ...tag.doc(),
+      usageCount: (await tag.edge('todos')).length,
+      isOwn: tag.createdBy === ctx.user._id,
+    })));
+    
+    // Sort by usage count and return top N
+    return tagsWithCounts
+      .sort((a, b) => b.usageCount - a.usageCount)
+      .slice(0, limit);
   },
 });
+
+// Generate sample tags for testing
+export const generateSamples = createAuthMutation({
+  rateLimit: 'tag/create',
+})({
+  args: {
+    count: z.number().min(1).max(100).default(100),
+  },
+  returns: z.object({
+    created: z.number(),
+  }),
+  handler: async (ctx, args) => {
+    // Sample tag names with colors
+    const tagTemplates = [
+      { name: "Urgent", color: "#EF4444" }, // red
+      { name: "Important", color: "#F59E0B" }, // amber
+      { name: "Personal", color: "#10B981" }, // emerald
+      { name: "Work", color: "#3B82F6" }, // blue
+      { name: "Home", color: "#8B5CF6" }, // violet
+      { name: "Shopping", color: "#EC4899" }, // pink
+      { name: "Health", color: "#14B8A6" }, // teal
+      { name: "Finance", color: "#F97316" }, // orange
+      { name: "Learning", color: "#6366F1" }, // indigo
+      { name: "Travel", color: "#84CC16" }, // lime
+      { name: "Project", color: "#06B6D4" }, // cyan
+      { name: "Meeting", color: "#7C3AED" }, // purple
+      { name: "Deadline", color: "#DC2626" }, // red-600
+      { name: "Review", color: "#059669" }, // emerald-600
+      { name: "Research", color: "#2563EB" }, // blue-600
+      { name: "Development", color: "#7C2D12" }, // orange-900
+      { name: "Design", color: "#BE185D" }, // pink-700
+      { name: "Testing", color: "#0891B2" }, // cyan-600
+      { name: "Documentation", color: "#6D28D9" }, // purple-700
+      { name: "Maintenance", color: "#CA8A04" }, // yellow-600
+    ];
+
+    const prefixes = ["Priority", "Category", "Type", "Status", "Label"];
+    const suffixes = ["Task", "Item", "Note", "Reminder", "Todo"];
+    
+    // Keep track of used names to avoid duplicates
+    const usedNames = new Set<string>();
+    
+    // First, check existing tags to avoid duplicates
+    const existingTags = await ctx
+      .table('tags', 'createdBy', (q) => q.eq('createdBy', ctx.user._id));
+    
+    existingTags.forEach(tag => usedNames.add(tag.name.toLowerCase()));
+    
+    let created = 0;
+    
+    for (let i = 0; i < args.count && created < args.count; i++) {
+      let name: string;
+      let color: string;
+      
+      if (i < tagTemplates.length && !usedNames.has(tagTemplates[i].name.toLowerCase())) {
+        // Use template directly
+        name = tagTemplates[i].name;
+        color = tagTemplates[i].color;
+      } else {
+        // Generate a unique name
+        let attempts = 0;
+        do {
+          if (Math.random() > 0.5 && i < tagTemplates.length * 2) {
+            // Use template with variation
+            const template = tagTemplates[i % tagTemplates.length];
+            const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+            name = `${prefix} ${template.name}`;
+            color = template.color;
+          } else {
+            // Generate completely random name
+            const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+            const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
+            const number = Math.floor(Math.random() * 100);
+            name = `${prefix} ${suffix} ${number}`;
+            color = generateRandomColor();
+          }
+          attempts++;
+          if (attempts > 50) {
+            // Give up after too many attempts
+            break;
+          }
+        } while (usedNames.has(name.toLowerCase()));
+        
+        if (attempts > 50) {
+          continue;
+        }
+      }
+      
+      // Add to used names
+      usedNames.add(name.toLowerCase());
+      
+      try {
+        await ctx.table('tags').insert({
+          name,
+          color,
+          createdBy: ctx.user._id,
+        });
+        created++;
+      } catch (error) {
+        // Skip if insertion fails (e.g., due to race condition)
+        console.error(`Failed to create tag: ${name}`, error);
+      }
+    }
+    
+    return { created };
+  },
+});
+
+// Helper function to generate random hex color
+function generateRandomColor(): string {
+  const colors = [
+    '#EF4444', // red
+    '#F59E0B', // amber
+    '#10B981', // emerald
+    '#3B82F6', // blue
+    '#8B5CF6', // violet
+    '#EC4899', // pink
+    '#14B8A6', // teal
+    '#F97316', // orange
+    '#6366F1', // indigo
+    '#84CC16', // lime
+  ];
+  return colors[Math.floor(Math.random() * colors.length)];
+}

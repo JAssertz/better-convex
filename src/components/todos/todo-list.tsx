@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useAuthPaginatedQuery, useCurrentUser } from "@/lib/convex/hooks";
+import { useAuthPaginatedQuery, useAuthMutation } from "@/lib/convex/hooks";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { TodoItem } from "./todo-item";
 import { TodoForm } from "./todo-form";
+import { TodoSearch } from "./todo-search";
 import { Button } from "@/components/ui/button";
 import { WithSkeleton } from "@/components/ui/skeleton";
 import {
@@ -16,9 +17,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Archive, LogOut, LogIn } from "lucide-react";
-import { signOut } from "@/lib/convex/auth-client";
-import Link from "next/link";
+import { Loader2, Archive, TestTube2 } from "lucide-react";
+import { toast } from "sonner";
 
 interface TodoListProps {
   projectId?: Id<"projects">;
@@ -26,24 +26,32 @@ interface TodoListProps {
 }
 
 export function TodoList({ projectId, showFilters = true }: TodoListProps) {
-  const user = useCurrentUser();
   const [completedFilter, setCompletedFilter] = useState<boolean | undefined>();
   const [priorityFilter, setPriorityFilter] = useState<
     "low" | "medium" | "high" | undefined
   >();
   const [showDeleted, setShowDeleted] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  const generateSamples = useAuthMutation(api.todos.generateSamples);
 
-  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
-    useAuthPaginatedQuery(
-      api.todos.list,
-      {
-        completed: completedFilter,
-        projectId,
-        priority: priorityFilter,
-      },
-      {
-        initialNumItems: 10,
-        placeholderData: [
+  // Use search API when there's a query, otherwise use the regular list
+  const listResult = useAuthPaginatedQuery(
+    searchQuery ? api.todos.search : api.todos.list,
+    searchQuery 
+      ? {
+          query: searchQuery,
+          completed: completedFilter,
+          projectId,
+        }
+      : {
+          completed: completedFilter,
+          projectId,
+          priority: priorityFilter,
+        },
+    {
+      initialNumItems: 10,
+      placeholderData: [
           {
             _id: "1" as any,
             _creationTime: Date.now(),
@@ -71,10 +79,12 @@ export function TodoList({ projectId, showFilters = true }: TodoListProps) {
       }
     );
 
+  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = listResult;
+
   const allTodos = data || [];
   const todos = showDeleted
-    ? allTodos.filter((todo) => todo.deletionTime)
-    : allTodos.filter((todo) => !todo.deletionTime);
+    ? allTodos.filter((todo: any) => todo.deletionTime)
+    : allTodos.filter((todo: any) => !todo.deletionTime);
   const isEmpty = !isLoading && todos.length === 0;
 
   return (
@@ -85,39 +95,40 @@ export function TodoList({ projectId, showFilters = true }: TodoListProps) {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => {
+              toast.promise(
+                generateSamples.mutateAsync({ count: 100, projectId }),
+                {
+                  loading: "Generating sample todos...",
+                  success: (result) => `Created ${result.created} sample todos!`,
+                  error: (e) => e.data?.message ?? "Failed to generate samples",
+                }
+              );
+            }}
+            disabled={generateSamples.isPending}
+          >
+            <TestTube2 className="h-4 w-4" />
+            Add Samples
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowDeleted(!showDeleted)}
             className={showDeleted ? "bg-muted" : ""}
           >
             <Archive className="h-4 w-4" />
             {showDeleted ? "Hide" : "Show"} Deleted
           </Button>
-          <TodoForm />
-          {user && user.id ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => signOut()}
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </Button>
-          ) : (
-            <Link href="/login">
-              <Button
-                variant="outline"
-                size="sm"
-              >
-                <LogIn className="h-4 w-4" />
-                Sign in
-              </Button>
-            </Link>
-          )}
+          <TodoForm defaultProjectId={projectId} />
         </div>
       </div>
 
       {showFilters && (
-        <div className="flex flex-wrap gap-2">
-          <Tabs
+        <div className="space-y-4">
+          <TodoSearch onSearchChange={setSearchQuery} />
+          
+          <div className="flex flex-wrap gap-2">
+            <Tabs
             value={
               completedFilter === undefined
                 ? "all"
@@ -154,23 +165,26 @@ export function TodoList({ projectId, showFilters = true }: TodoListProps) {
               <SelectItem value="high">High</SelectItem>
             </SelectContent>
           </Select>
+          </div>
         </div>
       )}
 
       <div className="space-y-2">
         {isEmpty ? (
           <div className="text-center py-12 text-muted-foreground">
-            {showDeleted
-              ? "No deleted todos."
-              : completedFilter === false
-                ? "No active todos. Great job!"
-                : completedFilter === true
-                  ? "No completed todos yet."
-                  : "No todos yet. Create your first one!"}
+            {searchQuery
+              ? `No todos found for "${searchQuery}"`
+              : showDeleted
+                ? "No deleted todos."
+                : completedFilter === false
+                  ? "No active todos. Great job!"
+                  : completedFilter === true
+                    ? "No completed todos yet."
+                    : "No todos yet. Create your first one!"}
           </div>
         ) : (
           <>
-            {todos.map((todo, index) => (
+            {todos.map((todo: any, index: number) => (
               <WithSkeleton
                 key={todo._id || index}
                 isLoading={isLoading}

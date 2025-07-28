@@ -255,7 +255,9 @@ export const getUserComments = createPublicPaginatedQuery()({
 // ============================================
 
 // Add comment to todo
-export const addComment = createAuthMutation()({
+export const addComment = createAuthMutation({
+  rateLimit: 'todoComment/create',
+})({
   args: {
     todoId: zid('todos'),
     content: z.string().min(1).max(1000),
@@ -304,7 +306,9 @@ export const addComment = createAuthMutation()({
 });
 
 // Update comment
-export const updateComment = createAuthMutation()({
+export const updateComment = createAuthMutation({
+  rateLimit: 'todoComment/update',
+})({
   args: {
     commentId: zid('todoComments'),
     content: z.string().min(1).max(1000),
@@ -336,7 +340,9 @@ export const updateComment = createAuthMutation()({
 });
 
 // Delete comment
-export const deleteComment = createAuthMutation()({
+export const deleteComment = createAuthMutation({
+  rateLimit: 'todoComment/update', // Using update rate limit for delete
+})({
   args: {
     commentId: zid('todoComments'),
   },
@@ -373,7 +379,9 @@ export const deleteComment = createAuthMutation()({
 // ============================================
 
 // React to comment
-export const toggleReaction = createAuthMutation()({
+export const toggleReaction = createAuthMutation({
+  rateLimit: 'todoComment/reaction',
+})({
   args: {
     commentId: zid('todoComments'),
     emoji: z.enum(['👍', '❤️', '😂', '🎉', '😕', '👎']),

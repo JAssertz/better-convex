@@ -74,6 +74,16 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   'comment/upvote:free': { kind: 'fixed window', period: MINUTE, rate: 30 },
   'comment/upvote:premium': { kind: 'fixed window', period: MINUTE, rate: 100 },
 
+  // Project limits
+  'project/create:free': { kind: 'fixed window', period: MINUTE, rate: 5 },
+  'project/create:premium': { kind: 'fixed window', period: MINUTE, rate: 20 },
+
+  'project/update:free': { kind: 'fixed window', period: MINUTE, rate: 20 },
+  'project/update:premium': { kind: 'fixed window', period: MINUTE, rate: 60 },
+
+  'project/member:free': { kind: 'fixed window', period: MINUTE, rate: 10 },
+  'project/member:premium': { kind: 'fixed window', period: MINUTE, rate: 30 },
+
   // Tag limits
   'tag/create:free': { kind: 'fixed window', period: MINUTE, rate: 10 },
   'tag/create:premium': { kind: 'fixed window', period: MINUTE, rate: 30 },
@@ -93,6 +103,16 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
 
   'todo/delete:free': { kind: 'fixed window', period: MINUTE, rate: 20 },
   'todo/delete:premium': { kind: 'fixed window', period: MINUTE, rate: 60 },
+
+  // Todo comment limits
+  'todoComment/create:free': { kind: 'fixed window', period: MINUTE, rate: 20 },
+  'todoComment/create:premium': { kind: 'fixed window', period: MINUTE, rate: 60 },
+
+  'todoComment/update:free': { kind: 'fixed window', period: MINUTE, rate: 30 },
+  'todoComment/update:premium': { kind: 'fixed window', period: MINUTE, rate: 100 },
+
+  'todoComment/reaction:free': { kind: 'fixed window', period: MINUTE, rate: 50 },
+  'todoComment/reaction:premium': { kind: 'fixed window', period: MINUTE, rate: 200 },
 
   // Export limits
   'export/character:free': {

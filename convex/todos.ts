@@ -6,6 +6,7 @@ import {
   createAuthPaginatedQuery,
 } from "./functions";
 import { ConvexError } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 
 // List todos with pagination and filters
 export const list = createAuthPaginatedQuery()({
@@ -225,7 +226,9 @@ export const create = createAuthMutation({
 });
 
 // Update a todo
-export const update = createAuthMutation()({
+export const update = createAuthMutation({
+  rateLimit: "todo/update",
+})({
   args: {
     id: zid("todos"),
     title: z.string().min(1).max(200).optional(),
@@ -306,7 +309,9 @@ export const update = createAuthMutation()({
 });
 
 // Toggle todo completion status
-export const toggleComplete = createAuthMutation()({
+export const toggleComplete = createAuthMutation({
+  rateLimit: "todo/update",
+})({
   args: {
     id: zid("todos"),
   },
@@ -329,7 +334,9 @@ export const toggleComplete = createAuthMutation()({
 });
 
 // Soft delete a todo
-export const deleteTodo = createAuthMutation()({
+export const deleteTodo = createAuthMutation({
+  rateLimit: "todo/delete",
+})({
   args: {
     id: zid("todos"),
   },
@@ -352,7 +359,9 @@ export const deleteTodo = createAuthMutation()({
 });
 
 // Restore a soft-deleted todo
-export const restore = createAuthMutation()({
+export const restore = createAuthMutation({
+  rateLimit: "todo/update",
+})({
   args: {
     id: zid("todos"),
   },
@@ -382,7 +391,9 @@ export const restore = createAuthMutation()({
 });
 
 // Bulk delete todos
-export const bulkDelete = createAuthMutation()({
+export const bulkDelete = createAuthMutation({
+  rateLimit: "todo/delete",
+})({
   args: {
     ids: z.array(zid("todos")).min(1).max(100),
   },
@@ -414,7 +425,9 @@ export const bulkDelete = createAuthMutation()({
 });
 
 // Reorder todos (for drag-and-drop support)
-export const reorder = createAuthMutation()({
+export const reorder = createAuthMutation({
+  rateLimit: "todo/update",
+})({
   args: {
     todoId: zid("todos"),
     targetIndex: z.number().min(0),
@@ -441,5 +454,185 @@ export const reorder = createAuthMutation()({
     // Real implementation would update order fields
     
     return null;
+  },
+});
+
+// Generate sample todos for testing
+export const generateSamples = createAuthMutation({
+  rateLimit: "todo/create",
+})({
+  args: {
+    count: z.number().min(1).max(100).default(100),
+    projectId: zid("projects").optional(),
+  },
+  returns: z.object({
+    created: z.number(),
+  }),
+  handler: async (ctx, args) => {
+    // First, ensure we have tags (create some if none exist)
+    const existingTags = await ctx
+      .table('tags', 'createdBy', (q) => q.eq('createdBy', ctx.userId))
+      .take(1);
+    
+    if (existingTags.length === 0) {
+      // Create some basic tags
+      const basicTags = [
+        { name: "Urgent", color: "#EF4444" },
+        { name: "Important", color: "#F59E0B" },
+        { name: "Personal", color: "#10B981" },
+        { name: "Work", color: "#3B82F6" },
+        { name: "Later", color: "#8B5CF6" },
+      ];
+      
+      for (const tag of basicTags) {
+        await ctx.table('tags').insert({
+          name: tag.name,
+          color: tag.color,
+          createdBy: ctx.userId,
+        });
+      }
+    }
+    
+    // Sample data templates
+    const titles = [
+      "Review quarterly reports",
+      "Update project documentation",
+      "Schedule team meeting",
+      "Prepare presentation slides",
+      "Code review for feature branch",
+      "Fix bug in authentication flow",
+      "Implement new dashboard widget",
+      "Write unit tests for API endpoints",
+      "Optimize database queries",
+      "Update dependencies to latest versions",
+      "Design new landing page",
+      "Research competitor features",
+      "Plan sprint retrospective",
+      "Document API endpoints",
+      "Set up CI/CD pipeline",
+      "Migrate to new hosting provider",
+      "Implement user feedback system",
+      "Create onboarding tutorial",
+      "Analyze user metrics",
+      "Refactor legacy code",
+    ];
+
+    const descriptions = [
+      "Need to complete this task before the end of the week",
+      "High priority item that requires immediate attention",
+      "Collaborate with the team to ensure quality delivery",
+      "Follow up with stakeholders for additional requirements",
+      "Research best practices and implement accordingly",
+      "This is a critical task for the current sprint",
+      "Coordinate with other departments for smooth execution",
+      "Make sure to test thoroughly before deployment",
+      "Document all changes for future reference",
+      "Consider performance implications of this change",
+      null, // Some todos without descriptions
+      null,
+      null,
+    ];
+
+    const priorities = ["low", "medium", "high"] as const;
+    
+    // Get user's projects if no specific project is provided
+    let projectIds: Array<{ _id: string }> = [];
+    if (args.projectId) {
+      // Verify access to the specified project
+      const project = await ctx.table("projects").get(args.projectId);
+      if (!project) {
+        throw new ConvexError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+      
+      const isOwner = project.ownerId === ctx.userId;
+      const memberRecord = await ctx
+        .table('projectMembers', 'projectId_userId', (q) => 
+          q.eq('projectId', args.projectId!).eq('userId', ctx.userId)
+        )
+        .first();
+      const isMember = !!memberRecord;
+      
+      if (!isOwner && !isMember) {
+        throw new ConvexError({
+          code: "FORBIDDEN",
+          message: "You don't have access to this project",
+        });
+      }
+      
+      projectIds = [{ _id: args.projectId }];
+    } else {
+      // Get all user's projects
+      const ownedProjects = await ctx
+        .table("projects", "ownerId", (q) => q.eq("ownerId", ctx.userId));
+      
+      const memberProjects = await ctx
+        .table("projectMembers", "userId", (q) => q.eq("userId", ctx.userId))
+        .map(async (member) => {
+          const project = await ctx.table("projects").get(member.projectId);
+          return project;
+        });
+      
+      projectIds = [...ownedProjects, ...memberProjects].filter((p): p is NonNullable<typeof p> => p !== null);
+    }
+    
+    // Get user's tags for random assignment
+    const tags = await ctx
+      .table("tags")
+      .filter((q) => q.eq(q.field("createdBy"), ctx.userId));
+    
+    let created = 0;
+    const now = Date.now();
+    const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+    
+    for (let i = 0; i < args.count; i++) {
+      // Random data selection
+      const title = titles[Math.floor(Math.random() * titles.length)];
+      const description = descriptions[Math.floor(Math.random() * descriptions.length)];
+      const priority = priorities[Math.floor(Math.random() * priorities.length)];
+      const isCompleted = Math.random() > 0.7; // 30% completed
+      const hasDueDate = Math.random() > 0.6; // 40% have due dates
+      
+      // Random project assignment (if projects exist)
+      const projectId = projectIds.length > 0 && Math.random() > 0.3
+        ? projectIds[Math.floor(Math.random() * projectIds.length)]?._id
+        : undefined;
+      
+      // Random tag assignment (0-3 tags)
+      const tagCount = tags.length > 0 ? Math.floor(Math.random() * Math.min(4, tags.length)) : 0;
+      const selectedTags = tagCount > 0
+        ? [...tags]
+            .sort(() => Math.random() - 0.5)
+            .slice(0, tagCount)
+            .map((t) => t._id)
+        : [];
+      
+      // Due date (future dates for incomplete, past dates for completed)
+      const dueDate = hasDueDate
+        ? isCompleted
+          ? thirtyDaysAgo + Math.random() * (now - thirtyDaysAgo)
+          : now + Math.random() * 30 * 24 * 60 * 60 * 1000
+        : undefined;
+      
+      // Add some variation to the title
+      const titleVariation = i % 5 === 0 ? ` #${i + 1}` : "";
+      
+      await ctx.table("todos").insert({
+        title: title + titleVariation,
+        description: description || undefined,
+        completed: isCompleted,
+        priority,
+        dueDate,
+        projectId: projectId as Id<"projects"> | undefined,
+        userId: ctx.userId,
+        tags: selectedTags,
+      });
+      
+      created++;
+    }
+    
+    return { created };
   },
 });

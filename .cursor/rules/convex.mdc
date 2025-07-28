@@ -76,19 +76,56 @@ export const createItem = createAuthMutation({
 **❌ AVOID:** `ctx.table('users').get(ctx.userId)` - ctx.user is already loaded!  
 **Always throw ConvexError:** `throw new ConvexError({ code: 'UNAUTHENTICATED', message: 'Not authenticated' });`
 
+### 🚨 CRITICAL: Rate Limiting Requirements
+
+**EVERY user-facing mutation MUST have rate limiting** to prevent abuse and ensure system stability.
+
+```typescript
+// ❌ DANGEROUS: Mutation without rate limiting
+export const updateProfile = createAuthMutation()({
+  args: { bio: z.string() },
+  handler: async (ctx, args) => {
+    // User can spam this endpoint!
+  },
+});
+
+// ✅ SECURE: Mutation with rate limiting
+export const updateProfile = createAuthMutation({
+  rateLimit: "user/update", // REQUIRED!
+})({
+  args: { bio: z.string() },
+  handler: async (ctx, args) => {
+    // Protected from spam
+  },
+});
+```
+
 ### Rate Limiting
 
 **Edit:** `convex/helpers/rateLimiter.ts`
 
+**🚨 CRITICAL: Two-Step Process for Rate Limiting**
+
+When adding rate limiting to ANY mutation, you MUST:
+
+1. **Add the `rateLimit` parameter to your mutation**
+2. **Add the rate limit definition to `convex/helpers/rateLimiter.ts`**
+
 ```typescript
-// Define rate limits in rateLimiter.ts
+// STEP 1: Define rate limits in rateLimiter.ts
 export const rateLimiter = new RateLimiter(components.rateLimiter, {
+  // ⚠️ CRITICAL: Add your new rate limit key here!
   'comment/create:free': { kind: 'fixed window', period: MINUTE, rate: 10 },
   'comment/create:premium': { kind: 'fixed window', period: MINUTE, rate: 30 },
+
+  // Example of adding a new rate limit:
+  'profile/update:free': { kind: 'fixed window', period: MINUTE, rate: 20 },
+  'profile/update:premium': { kind: 'fixed window', period: MINUTE, rate: 60 },
 });
 
-// Use in mutations
-createAuthMutation({ rateLimit: 'comment/create' })({ ... }); // Auto :free/:premium suffix
+// STEP 2: Use in mutations (auto :free/:premium suffix)
+createAuthMutation({ rateLimit: 'comment/create' })({ ... });
+createAuthMutation({ rateLimit: 'profile/update' })({ ... }); // Must exist in rateLimiter.ts!
 ```
 
 ### Internal functions
@@ -180,20 +217,21 @@ export const createUser = createAuthMutation()({
 
 - `createPublicQuery()` - auth optional
 - `createAuthQuery()` - requires auth
-- `createPublicMutation()` - auth optional
-- `createAuthMutation()` - requires auth
+- `createPublicMutation()` - auth optional + NEEDS rate limiting
+- `createAuthMutation()` - requires auth + NEEDS rate limiting
 - `createPublicPaginatedQuery()` - with pagination
 - `createAuthPaginatedQuery()` - auth + pagination
-- `createAction()` - public actions
+- `createAction()` - public actions + NEEDS rate limiting for mutations
 
 **Internal functions** (only callable by Convex, NOT even by NextJS server):
 
-- `createInternalQuery/Mutation/Action()`
+- `createInternalQuery/Mutation/Action()` - NO rate limiting needed
 
 **Rules:**
 
 - CRITICAL: NEVER use raw `query`, `mutation`, `action` from `./_generated/server`
 - ALWAYS include `args` and `returns` validators
+- ALWAYS add `rateLimit` for user-facing mutations
 - Use `returns: z.null()` when no return value
 
 ### Function calling
@@ -917,6 +955,51 @@ const myStream = stream(ctx.db, schema).query('posts');
 - Queries using indexes avoid slow table scans
 
 ## Mutation guidelines
+
+### 🚨 Mutation Checklist
+
+Before implementing any mutation, ensure:
+
+1. **Rate Limiting**: Add `rateLimit` parameter (REQUIRED for user-facing mutations)
+   - **⚠️ CRITICAL**: Also add the rate limit definition to `convex/helpers/rateLimiter.ts`!
+2. **Validation**: Use Zod schemas for `args` and `returns`
+3. **Error Handling**: Throw `ConvexError` with proper codes
+4. **Authorization**: Check user permissions if needed
+5. **Audit Trail**: Consider logging important actions
+
+```typescript
+// ✅ Complete mutation example
+export const updateCharacter = createAuthMutation({
+  rateLimit: "character/update", // 1. Rate limiting (MUST exist in rateLimiter.ts!)
+})({
+  args: updateCharacterSchema, // 2. Validation
+  returns: z.boolean(),
+  handler: async (ctx, args) => {
+    const character = await ctx.table("characters").get(args.id);
+
+    if (!character) {
+      throw new ConvexError({
+        // 3. Error handling
+        code: "NOT_FOUND",
+        message: "Character not found",
+      });
+    }
+
+    if (character.userId !== ctx.userId) {
+      // 4. Authorization
+      throw new ConvexError({
+        code: "FORBIDDEN",
+        message: "Not authorized",
+      });
+    }
+
+    await character.patch(args.updates);
+    return true;
+  },
+});
+```
+
+### Mutation Operations
 
 - Use `.replace()` to fully replace an existing document: `await ctx.table('users').getX(id).replace(data)`
 - Use `.patch()` to shallow merge updates: `await ctx.table('users').getX(id).patch({ name: 'New' })`
