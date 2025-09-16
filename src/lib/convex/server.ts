@@ -1,4 +1,3 @@
-import type { SessionUser } from '@convex/user/mapSessionToUser';
 import type { NextjsOptions } from 'convex/nextjs';
 import type {
   ArgsAndOptions,
@@ -11,50 +10,32 @@ import { api } from '@convex/_generated/api';
 import { createAuth } from '@convex/auth';
 import { fetchMutation, fetchQuery } from 'convex/nextjs';
 
-export const getSessionToken = async (): Promise<string | null> => {
+export const getSessionToken = async (): Promise<string | undefined> => {
   const token = await getToken(createAuth);
 
-  return token ?? null;
+  return token;
 };
 
 export const isAuth = async () => {
-  const session = await getSessionToken();
+  const token = await getSessionToken();
 
-  return !!session;
+  try {
+    return await fetchQuery(api.user.getIsAuthenticated, {}, { token });
+  } catch {
+    return false;
+  }
 };
 
 export const isUnauth = async () => {
-  const session = await getSessionToken();
-
-  return !session;
+  return !(await isAuth());
 };
 
 // Session helper functions using Convex
 
-export const getSessionUser = async (): Promise<
-  (SessionUser & { token: string }) | null
-> => {
-  // Get token from Better Auth
+export const fetchSessionUser = async () => {
   const token = await getSessionToken();
 
-  if (!token) {
-    return null;
-  }
-
-  // Fetch minimal user data with token
-  const user = await (async () => {
-    try {
-      return await fetchAuthQuery(api.users.getCurrentUser, {});
-    } catch (error) {
-      return null;
-    }
-  })();
-
-  if (!user) {
-    return null;
-  }
-
-  return { ...user, token };
+  return await fetchQuery(api.user.getSessionUser, {}, { token });
 };
 
 export async function fetchAuthQuery<Query extends FunctionReference<'query'>>(

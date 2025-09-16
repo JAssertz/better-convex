@@ -2,6 +2,7 @@ import { HOUR, MINUTE, RateLimiter, SECOND } from '@convex-dev/rate-limiter';
 import { ConvexError } from 'convex/values';
 
 import type { ActionCtx, MutationCtx } from '../_generated/server';
+import type { SessionUser } from '../authShared';
 
 import { components } from '../_generated/api';
 
@@ -44,7 +45,6 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   free: { kind: 'token bucket', period: 10 * SECOND, rate: 40 },
   premium: { kind: 'token bucket', period: 10 * SECOND, rate: 100 },
   public: { kind: 'token bucket', period: 10 * SECOND, rate: 20 },
-  stripe: { kind: 'token bucket', period: 10 * SECOND, rate: 100 },
   vercel: { kind: 'token bucket', period: 10 * SECOND, rate: 3 },
 });
 
@@ -54,11 +54,7 @@ export function getRateLimitKey(
   tier: 'free' | 'premium' | 'public'
 ): string {
   // For general limits without tiers and admin-only limits
-  if (
-    ['free', 'premium', 'public', 'scraper', 'stripe', 'vercel'].includes(
-      baseKey
-    )
-  ) {
+  if (['free', 'premium', 'public', 'scraper', 'vercel'].includes(baseKey)) {
     return baseKey;
   }
 
@@ -68,11 +64,11 @@ export function getRateLimitKey(
 
 // Helper to get user tier based on session user
 export function getUserTier(
-  user: { isAdmin?: boolean; isPremium?: boolean } | null
+  user: { isAdmin?: boolean; plan?: SessionUser['plan'] } | null
 ): 'free' | 'premium' | 'public' {
   if (!user) return 'public';
   if (user.isAdmin) return 'premium'; // Admins bypass rate limits by getting premium tier
-  if (user.isPremium) return 'premium';
+  if (user.plan) return 'premium';
 
   return 'free';
 }
@@ -81,7 +77,7 @@ export function getUserTier(
 export async function rateLimitGuard(
   ctx: (ActionCtx | MutationCtx) & {
     rateLimitKey: string;
-    user: { id?: string; isAdmin?: boolean; isPremium?: boolean } | null;
+    user: Pick<SessionUser, 'id' | 'plan'> | null;
   }
 ) {
   const tier = getUserTier(ctx.user);

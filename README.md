@@ -4,26 +4,31 @@ A modern Next.js starter template featuring **Convex** backend with **Better Aut
 
 ## Key Features
 
-- **Convex + Better Auth**: Seamless authentication with GitHub and Google OAuth providers
-- **Type-Safe Backend**: Custom function wrappers replacing raw Convex queries/mutations
-- **Advanced Patterns**: Rate limiting, role-based access, and optimistic updates
-- **Developer Experience**: Pre-configured helpers, hooks, and type safety throughout
+- **🔐 Better Auth Integration**: Complete authentication with GitHub and Google OAuth, session management, and organization support
+- **👥 Multi-Organization Support**: Personal and team organizations with role-based access (owner/member)
+- **💳 Subscription Ready**: Polar payment integration with Premium subscriptions and monthly credits (coming soon)
+- **📊 Full-Stack Type Safety**: End-to-end TypeScript with Convex Ents for relationships and custom function wrappers
+- **⚡ Rate Limiting**: Built-in protection with tier-based limits (free/premium)
+- **🎯 Starter Features**: Todo management, projects, tags, and comments with soft delete
+- **🔍 Search & Pagination**: Full-text search indexes and efficient paginated queries
+- **🚀 Developer Experience**: Pre-configured hooks, RSC helpers, auth guards, and skeleton loading
 
 ## Tech Stack
 
-- **Framework**: Next.js 15.4 with App Router
-- **Backend**: Convex with Ents
-- **Authentication**: Better Auth with Convex adapter
-- **Styling**: Tailwind CSS v4
-- **State**: React Query, Jotai
+- **Framework**: Next.js 15.5 with App Router & React 19
+- **Backend**: Convex with Ents (entity relationships)
+- **Authentication**: Better Auth with Convex adapter & organization plugin
+- **Payments**: Polar integration (subscriptions & credits)
+- **Styling**: Tailwind CSS v4 with CSS-first configuration
+- **State**: Jotai-x for client state, React Query for server state
 - **Forms**: React Hook Form + Zod validation
-- **UI**: shadcn/ui components
+- **UI**: shadcn/ui components with Radix primitives
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18.20.8 or later
+- Node.js 18 or later
 - pnpm package manager
 - GitHub and/or Google OAuth app credentials
 
@@ -51,14 +56,11 @@ Create `convex/.env` for Convex:
 cp convex/.env.example convex/.env
 ```
 
-3. **Configure OAuth providers:**
+- Create [GitHub OAuth App](https://github.com/settings/developers)
+- Create [Google OAuth App](https://console.cloud.google.com/apis/credentials)
+- Create [Resend API key](https://resend.com/)
 
-Create OAuth applications on:
-
-- [GitHub OAuth Apps](https://github.com/settings/developers)
-- [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
-
-Add credentials to `.env.local`:
+Add credentials to `convex/.env`:
 
 ```env
 # Required environment variables
@@ -66,6 +68,7 @@ GITHUB_CLIENT_ID=your_github_client_id
 GITHUB_CLIENT_SECRET=your_github_client_secret
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
+RESEND_API_KEY=your_resend_api_key
 ```
 
 4. **Start development servers:**
@@ -80,7 +83,7 @@ pnpm dev
 In a new terminal:
 
 ```sh
-pnpm dev:init
+pnpm sync
 ```
 
 6. **Open the app:**
@@ -90,7 +93,7 @@ Navigate to [http://localhost:3005](http://localhost:3005)
 ### Database Management
 
 ```sh
-pnpm seed         # Populate with sample data
+pnpm init         # Populate with sample data
 pnpm reset        # Reset all tables
 pnpm studio       # Open Convex dashboard
 ```
@@ -114,15 +117,15 @@ export const example = createPublicQuery()({
 // Protected mutation with rate limiting
 export const createItem = createAuthMutation({
   rateLimit: 'item/create', // Auto tier limits
-  role: 'ADMIN', // Optional role check
+  role: 'admin', // Optional role check (lowercase)
 })({
   args: { name: z.string().min(1).max(100) },
   returns: zid('items'),
-  handler: async ({ user, table }, args) => {
-    // ctx.user is pre-loaded EntWriter<'users'>
-    return await table('items').insert({
+  handler: async (ctx, args) => {
+    // ctx.user is pre-loaded SessionUser with ent methods
+    return await ctx.table('items').insert({
       name: args.name,
-      userId: user._id,
+      userId: ctx.user._id,
     });
   },
 });
@@ -144,11 +147,11 @@ Available function types:
 
 ```typescript
 // Never use useQuery directly - use these wrappers
-const { data, isPending } = usePublicQuery(api.items.list, {});
-const { data } = useAuthQuery(api.users.getProfile, {}); // Skips if not auth
+const { data, isPending } = usePublicQuery(api.items.list, {}); // ALWAYS pass {} for no args
+const { data } = useAuthQuery(api.user.getProfile, {}); // Skips if not auth
 
 // Mutations with toast integration
-const updateSettings = useAuthMutation(api.users.updateSettings);
+const updateSettings = useAuthMutation(api.user.updateSettings);
 toast.promise(updateSettings.mutateAsync({ name: 'New' }), {
   loading: 'Updating...',
   success: 'Updated!',
@@ -167,49 +170,67 @@ const { data, hasNextPage, fetchNextPage } = usePublicPaginatedQuery(
 
 ```typescript
 // Auth helpers for RSC
-const token = await getSessionToken();
-const user = await getSessionUser();
+const token = await getSessionToken(); // Returns string | null
+const user = await getSessionUser(); // Returns SessionUser & { token } | null
 const isAuthenticated = await isAuth();
 
 // Fetch with auth
-const data = await fetchAuthQuery(api.users.getData, { id });
-const data = await fetchAuthQueryOrThrow(api.users.getData, { id });
+const data = await fetchAuthQuery(api.user.getData, { id: userId });
+const data = await fetchAuthQueryOrThrow(api.user.getData, { id: userId });
 ```
 
 ## Schema & Database
 
-Using Convex Ents for type-safe entity relationships:
+The template includes two schemas working together:
+
+### Core Schema (Convex Ents)
 
 ```typescript
-// convex/schema.ts
+// convex/schema.ts - Application data with relationships
 const schema = defineEntSchema({
   users: defineEnt({
     name: v.optional(v.string()),
     bio: v.optional(v.string()),
+    personalOrganizationId: v.string(), // Every user has a personal org
   })
     .field('email', v.string(), { unique: true })
-    .field('emailVerified', v.boolean(), { default: false }),
+    .edges('subscriptions', { ref: 'userId' }) // Polar subscriptions
+    .edges('todos', { ref: true })
+    .edges('ownedProjects', { to: 'projects', ref: 'ownerId' }),
 
   todos: defineEnt({
     title: v.string(),
-    completed: v.boolean(),
-    userId: v.id('users'),
+    description: v.optional(v.string()),
   })
-    .index('by_user', ['userId'])
-    .index('by_user_completed', ['userId', 'completed']),
+    .field('completed', v.boolean(), { index: true })
+    .deletion('soft') // Soft delete support
+    .edge('user')
+    .edge('project', { optional: true })
+    .edges('tags') // Many-to-many
+    .searchIndex('search_title_description', {
+      searchField: 'title',
+      filterFields: ['userId', 'completed'],
+    }),
 });
+```
+
+### Better Auth Schema
+
+```typescript
+// convex/betterAuth/generatedSchema.ts - Auto-generated auth tables
+// Includes: user, session, account, organization, member, invitation
 ```
 
 ## Key Patterns from `.cursor/rules/convex.mdc`
 
 ### Authentication Context
 
-In authenticated functions, `ctx.user` is a pre-loaded `EntWriter<'users'>` with full entity methods:
+In authenticated functions, `ctx.user` is a pre-loaded `SessionUser` with full entity methods:
 
 ```typescript
 handler: async (ctx, args) => {
   // ❌ Don't refetch the user
-  const user = await ctx.table('users').get(ctx.userId);
+  const user = await ctx.table('users').get(ctx.user._id);
 
   // ✅ Use pre-loaded user
   await ctx.user.patch({ credits: ctx.user.credits - 1 });
@@ -226,7 +247,7 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   'comment/create:premium': { kind: 'fixed window', period: MINUTE, rate: 30 },
 });
 
-// Auto-selects tier based on user role
+// Auto-selects tier based on user plan (free/premium)
 createAuthMutation({ rateLimit: 'comment/create' })({...});
 ```
 
@@ -249,10 +270,10 @@ Two different validator systems are used:
 - **Function files (`convex/*.ts`)**: Use `z.` validators ONLY
 
 ```typescript
-// Schema (v.)
+// Schema (v.) - in convex/schema.ts
 .field('email', v.string(), { unique: true })
 
-// Functions (z.)
+// Functions (z.) - in convex/*.ts
 args: {
   email: z.string().email(),
   id: zid('users') // Always use zid() for IDs
@@ -275,7 +296,7 @@ pnpm studio       # Open Convex dashboard
 1. **Never use raw `query`/`mutation`** - Always use custom wrappers
 2. **Use `zid()` for IDs** in functions, `v.id()` in schemas
 3. **Pass `{}` for no args** in queries, not `undefined`
-4. **Use `ctx.table()`** instead of `ctx.db` (banned)
+4. **Use `ctx.table()`** instead of `ctx.db` (banned, except for streams first param)
 5. **Leverage pre-loaded `ctx.user`** in auth contexts
 6. **Use `.optional()`** not `.nullable()` for optional args
 7. **Never create indexes for edge-generated fields**

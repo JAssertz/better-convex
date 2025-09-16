@@ -12,13 +12,16 @@ const schema = defineEntSchema(
       bio: v.optional(v.string()),
       image: v.optional(v.string()),
 
-      role: v.optional(v.string()),
+      // Organization tracking
+      lastActiveOrganizationId: v.optional(v.string()),
+      personalOrganizationId: v.string(),
 
       // Timestamps
       deletedAt: v.optional(v.number()),
     })
-      .field('emailVerified', v.boolean(), { default: false })
       .field('email', v.string(), { unique: true })
+      .field('customerId', v.optional(v.string()), { index: true })
+      .edges('subscriptions', { to: 'subscriptions', ref: 'userId' })
       .edges('todos', { ref: true })
       .edges('ownedProjects', { to: 'projects', ref: 'ownerId' })
       .edges('memberProjects', {
@@ -28,6 +31,39 @@ const schema = defineEntSchema(
         inverseField: 'projectId',
       })
       .edges('todoComments', { ref: true }),
+
+    // --------------------
+    // Polar Payment Tables
+    // --------------------
+    subscriptions: defineEnt({
+      createdAt: v.string(),
+      modifiedAt: v.optional(v.union(v.string(), v.null())),
+      amount: v.optional(v.union(v.number(), v.null())),
+      currency: v.optional(v.union(v.string(), v.null())),
+      recurringInterval: v.optional(v.union(v.string(), v.null())),
+      status: v.string(),
+      currentPeriodStart: v.string(),
+      currentPeriodEnd: v.optional(v.union(v.string(), v.null())),
+      cancelAtPeriodEnd: v.boolean(),
+      startedAt: v.optional(v.union(v.string(), v.null())),
+      endedAt: v.optional(v.union(v.string(), v.null())),
+      priceId: v.optional(v.string()),
+      productId: v.string(),
+      checkoutId: v.optional(v.union(v.string(), v.null())),
+      metadata: v.record(v.string(), v.any()),
+      customerCancellationReason: v.optional(v.union(v.string(), v.null())),
+      customerCancellationComment: v.optional(v.union(v.string(), v.null())),
+    })
+      .field('subscriptionId', v.string(), { unique: true })
+      .field('organizationId', v.string(), { index: true })
+      .edge('user', { to: 'users', field: 'userId' })
+      .index('organizationId_status', ['organizationId', 'status'])
+      .index('userId_organizationId_status', [
+        'userId',
+        'organizationId',
+        'status',
+      ])
+      .index('userId_endedAt', ['userId', 'endedAt']),
 
     // --------------------
     // Todo Model

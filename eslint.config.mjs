@@ -15,6 +15,7 @@ const eslintConfig = [
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       'react/no-unescaped-entities': 'off',
+      'import/no-anonymous-default-export': 'off',
       '@typescript-eslint/no-empty-object-type': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
     },

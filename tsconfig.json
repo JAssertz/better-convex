@@ -43,6 +43,7 @@
         "name": "next"
       }
     ],
+    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
       "@convex/*": ["./convex/*"]

@@ -80,7 +80,7 @@ export const getUsersWithOverdueTodos = createInternalQuery()({
       if (results.length >= args.limit) break;
 
       const user = await ctx.table('users').get(userId);
-      if (user && user.emailVerified) {
+      if (user) {
         results.push({
           userId,
           email: user.email,

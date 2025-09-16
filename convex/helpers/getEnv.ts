@@ -3,8 +3,8 @@ import { z } from 'zod';
 // Define the environment schema
 const envSchema = z.object({
   // Public environment variables
-  NEXT_PUBLIC_ENVIRONMENT: z.string().default('production'),
-  NEXT_PUBLIC_SITE_URL: z.string().default('http://localhost:3000'),
+  DEPLOY_ENV: z.string().default('production'),
+  NEXT_PUBLIC_SITE_URL: z.string().default('http://localhost:3005'),
 
   // Auth
   BETTER_AUTH_SECRET: z.string(),
@@ -12,9 +12,16 @@ const envSchema = z.object({
   GITHUB_CLIENT_SECRET: z.string(),
   GOOGLE_CLIENT_ID: z.string(),
   GOOGLE_CLIENT_SECRET: z.string(),
+  RESEND_API_KEY: z.string().optional(),
+
+  // Polar (new payment provider)
+  POLAR_ACCESS_TOKEN: z.string(),
+  POLAR_PRODUCT_CREDITS: z.string(),
+  POLAR_PRODUCT_PREMIUM: z.string(),
+  POLAR_WEBHOOK_SECRET: z.string(),
 
   // Superadmin emails
-  SUPERADMIN: z
+  ADMIN: z
     .string()
     .transform((s) => (s ? s.split(',') : []))
     .pipe(z.array(z.string())),

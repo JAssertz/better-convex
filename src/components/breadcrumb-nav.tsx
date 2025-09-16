@@ -11,6 +11,7 @@ import {
   CheckSquare,
   RotateCcw,
   TestTube2,
+  Building2,
 } from 'lucide-react';
 import {
   Breadcrumb,
@@ -154,6 +155,18 @@ export function BreadcrumbNav() {
               <Tags className="h-4 w-4" />
               Tags
             </Link>
+            {user?.activeOrganization?.slug && (
+              <>
+                <div className="h-4 w-px bg-border" />
+                <Link
+                  href={`/org/${user.activeOrganization.slug}`}
+                  className="flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Building2 className="h-4 w-4" />
+                  Organization
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Right side - Auth */}

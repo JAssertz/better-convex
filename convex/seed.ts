@@ -1,3 +1,4 @@
+import { createUser } from '@convex/authInternal';
 import { zid } from 'convex-helpers/server/zod';
 import { z } from 'zod';
 
@@ -13,52 +14,45 @@ import { getEnv } from './helpers/getEnv';
 
 // Admin configuration - moved inside functions to avoid module-level execution
 const getAdminConfig = () => {
-  const adminEmail = getEnv().SUPERADMIN[0] || 'admin@gmail.com';
+  const adminEmail = getEnv().ADMIN[0] || 'admin@example.com';
 
   return { adminEmail };
 };
 
-// Seed data - this function will be called with admin config
-const getUsersData = (adminConfig: { adminEmail: string }) => [
-  {
-    id: adminConfig.adminEmail,
-    bio: undefined,
-    email: adminConfig.adminEmail,
-    name: 'Admin',
-    image: 'https://avatars.githubusercontent.com/u/1',
-  },
+// Seed data
+const getUsersData = () => [
   {
     id: 'alice',
     bio: 'Frontend Developer',
-    email: 'alice@gmail.com',
-    name: 'Alice Johnson',
+    email: 'alice@example.com',
     image: 'https://avatars.githubusercontent.com/u/2',
+    name: 'Alice Johnson',
   },
   {
     id: 'bob',
     bio: 'Backend Developer',
-    email: 'bob@gmail.com',
-    name: 'Bob Smith',
+    email: 'bob@example.com',
     image: 'https://avatars.githubusercontent.com/u/3',
+    name: 'Bob Smith',
   },
   {
     id: 'carol',
     bio: 'UI/UX Designer',
-    email: 'carol@gmail.com',
-    name: 'Carol Williams',
+    email: 'carol@example.com',
     image: 'https://avatars.githubusercontent.com/u/4',
+    name: 'Carol Williams',
   },
   {
     id: 'dave',
     bio: 'DevOps Engineer',
-    email: 'dave@gmail.com',
-    name: 'Dave Brown',
+    email: 'dave@example.com',
     image: undefined,
+    name: 'Dave Brown',
   },
 ];
 
 // Main seed function that orchestrates everything
-export const seed = createInternalAction()({
+export const seed = createInternalMutation()({
   args: {},
   returns: z.null(),
   handler: async (ctx) => {
@@ -74,7 +68,6 @@ export const seed = createInternalAction()({
       console.info('✅ Seeding finished');
     } catch (error) {
       console.error('❌ Error while seeding:', error);
-
       throw error;
     }
 
@@ -105,8 +98,17 @@ export const seedUsers = createInternalMutation()({
     console.info('👤 Creating users...');
 
     const userIds: Id<'users'>[] = [];
-    const adminConfig = getAdminConfig();
-    const usersData = getUsersData(adminConfig);
+
+    // First, get the admin user if it exists
+    const adminEmail = getAdminConfig().adminEmail;
+    const adminUser = await ctx.table('users').get('email', adminEmail);
+
+    if (adminUser) {
+      userIds.push(adminUser._id);
+      console.info(`  ✅ Found admin user: ${adminEmail}`);
+    }
+
+    const usersData = getUsersData();
 
     for (const userData of usersData) {
       // Check if user exists by email
@@ -132,26 +134,19 @@ export const seedUsers = createInternalMutation()({
         userIds.push(existing._id);
         console.info(`  ✅ Updated user: ${userData.name}`);
       } else {
-        // Create new user
-        const insertData: any = {
+        const userId = await createUser(ctx, {
+          bio: userData.bio,
           email: userData.email,
+          image: userData.image,
           name: userData.name,
-        };
+        });
 
-        if (userData.bio !== undefined) {
-          insertData.bio = userData.bio;
-        }
-        if (userData.image !== undefined) {
-          insertData.image = userData.image;
-        }
-
-        const userId = await ctx.table('users').insert(insertData);
         userIds.push(userId);
         console.info(`  ✅ Created user: ${userData.name}`);
       }
     }
 
-    console.info('👤 Created users');
+    console.info('👤 Created/updated users');
 
     return userIds;
   },
@@ -238,6 +233,7 @@ export const generateSamplesBatch = createInternalMutation()({
     const tags = await ctx
       .table('tags', 'createdBy', (q) => q.eq('createdBy', args.userId))
       .take(10); // Reduced from 50 to minimize memory usage
+
     // Sample project names and descriptions
     const projectTemplates = [
       {
@@ -454,21 +450,3 @@ export const generateSamplesBatch = createInternalMutation()({
 
 // Run the seed - this can be called from the Convex dashboard
 // npx convex run seed:seed
-
-/** Make a user admin by email */
-export const makeAdmin = createInternalMutation()({
-  args: { email: z.string().email() },
-  returns: z.null(),
-  handler: async (ctx, { email }) => {
-    const user = await ctx.table('users').get('email', email);
-
-    if (!user) {
-      console.error(`❌ User with email ${email} not found`);
-      return null;
-    }
-
-    await user.patch({ role: 'ADMIN' });
-    console.info(`✅ Made user ${email} an ADMIN`);
-    return null;
-  },
-});

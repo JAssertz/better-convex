@@ -25,13 +25,30 @@ import {
   useQueries,
   useQuery,
 } from 'convex/react';
+import { toast } from 'sonner';
 
 import { useAuthValue } from '@/lib/convex/components/convex-provider';
-import { useRouter } from 'next/navigation';
-import { routes } from '@/lib/navigation/routes';
 
-export const useIsAuth = () => {
-  return useAuthValue('isAuthenticated');
+export const useAuthStatus = () => {
+  // Token is ready to be used only after convex client auth is loaded
+  const { isAuthenticated, isLoading } = useConvexAuth();
+  const token = useAuthValue('token');
+
+  return {
+    hasSession: !!token,
+    isAuthenticated,
+    isLoading,
+  };
+};
+
+export const useIsAuth = (verified?: boolean) => {
+  const { hasSession, isAuthenticated } = useAuthStatus();
+
+  if (verified) {
+    return isAuthenticated;
+  }
+
+  return hasSession;
 };
 
 export function useStableQuery<Query extends FunctionReference<'query'>>(
@@ -50,19 +67,16 @@ export function useStableQuery<Query extends FunctionReference<'query'>>(
 
 export const useAuthGuard = () => {
   const isAuth = useIsAuth();
-  const router = useRouter();
 
   return useCallback(
     (callback?: () => Promise<void> | void) => {
       if (!isAuth) {
-        router.push(routes.login());
-
         return true;
       }
 
       return callback ? void callback() : false;
     },
-    [isAuth, router]
+    [isAuth]
   );
 };
 
@@ -73,6 +87,7 @@ export const usePublicQuery = <Query extends FunctionReference<'query'>>(
   query: Query,
   args: OptionalRestArgsOrSkip<Query>[0],
   options?: {
+    debug?: boolean;
     placeholderData?: DeepPartial<FunctionReturnType<Query>>;
   }
 ):
@@ -103,16 +118,16 @@ export const usePublicQuery = <Query extends FunctionReference<'query'>>(
       isSuccess: false;
       status: 'pending';
     } => {
-  // Some public queries have auth logic, so we need to skip when auth is loading
-  const auth = useConvexAuth();
+  const { isLoading: isAuthLoading } = useAuthStatus();
+
   const mounted = useMounted();
-  const adjustedArgs = auth.isLoading ? 'skip' : args;
+  const adjustedArgs = isAuthLoading ? 'skip' : args;
 
   const result = useQueryWithStatus(query, adjustedArgs as any);
 
   const isPending =
     (options?.placeholderData && !mounted) ||
-    auth.isLoading ||
+    isAuthLoading ||
     (adjustedArgs !== 'skip' && (result.isPending as any));
 
   // Apply placeholder data logic if option is provided
@@ -137,12 +152,11 @@ export const usePublicQuery = <Query extends FunctionReference<'query'>>(
 
 // Query skipped for unauthenticated users
 export const useAuthQuery: typeof usePublicQuery = (query, args, options) => {
-  const { isLoading } = useConvexAuth();
-  const isAuth = useIsAuth() && !isLoading;
+  const { isAuthenticated, isLoading } = useAuthStatus();
 
   const result = usePublicQuery(
     query,
-    isAuth ? (args as any) : 'skip',
+    isAuthenticated ? (args as any) : 'skip',
     options
   );
 
@@ -159,6 +173,7 @@ export const usePublicPaginatedQuery = <Query extends PaginatedQueryReference>(
   args: PaginatedQueryArgs<Query> | 'skip',
   options: {
     initialNumItems: number;
+    debug?: boolean;
     placeholderData?: DeepPartial<PaginatedQueryItem<Query>>[];
   }
 ): {
@@ -176,9 +191,9 @@ export const usePublicPaginatedQuery = <Query extends PaginatedQueryReference>(
   fetchNextPage: () => void;
 } => {
   // Some public queries have auth logic, so we need to skip when auth is loading
-  const auth = useConvexAuth();
+  const { isLoading: isAuthLoading } = useAuthStatus();
   const mounted = useMounted();
-  args = auth.isLoading ? 'skip' : args;
+  args = isAuthLoading ? 'skip' : args;
 
   // If not authenticated, always skip
   const {
@@ -192,7 +207,7 @@ export const usePublicPaginatedQuery = <Query extends PaginatedQueryReference>(
     loadMore(options.initialNumItems);
   }, [loadMore, options.initialNumItems]);
 
-  const isLoading = auth.isLoading || (args !== 'skip' && _isLoading);
+  const isLoading = isAuthLoading || (args !== 'skip' && _isLoading);
   const showPlaceholder =
     options?.placeholderData &&
     (!mounted || (isLoading && status === 'LoadingFirstPage'));
@@ -237,12 +252,11 @@ export const useAuthPaginatedQuery: typeof usePublicPaginatedQuery = (
   args,
   options
 ) => {
-  const { isLoading } = useConvexAuth();
-  const isAuth = useIsAuth() && !isLoading;
+  const { isAuthenticated, isLoading } = useAuthStatus();
 
   const result = usePublicPaginatedQuery(
     query,
-    isAuth ? (args as any) : 'skip',
+    isAuthenticated ? (args as any) : 'skip',
     options
   );
 
@@ -363,4 +377,56 @@ const useMounted = () => {
   }, []);
 
   return mounted;
+};
+
+// Upload file hook for R2
+export const useUploadFile = <
+  TGenerateUrlMutation extends FunctionReference<
+    'mutation',
+    'public',
+    any,
+    { key: string; url: string }
+  >,
+>(
+  generateUrlMutation: TGenerateUrlMutation,
+  options?: UseMutationOptions<
+    FunctionReturnType<TGenerateUrlMutation>,
+    DefaultError,
+    { file: File } & FunctionArgs<TGenerateUrlMutation>
+  >
+) => {
+  const generateUrl = useAuthMutation(generateUrlMutation);
+
+  return useMutation<
+    FunctionReturnType<TGenerateUrlMutation>,
+    DefaultError,
+    { file: File } & FunctionArgs<TGenerateUrlMutation>
+  >({
+    mutationFn: async ({ file, ...args }) => {
+      // Generate the upload URL
+      const result = await generateUrl.mutateAsync(
+        args as FunctionArgs<TGenerateUrlMutation>
+      );
+      const { url } = result;
+
+      // Upload the file
+      const response = await fetch(url, {
+        body: file,
+        headers: { 'Content-Type': file.type },
+        method: 'PUT',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.statusText}`);
+      }
+
+      return result;
+    },
+    onError: (error) => {
+      toast.error(
+        `Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    },
+    ...options,
+  });
 };

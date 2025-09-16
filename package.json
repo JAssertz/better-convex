@@ -8,16 +8,18 @@
     "dev": "concurrently 'pnpm dev:app' 'pnpm dev:backend'",
     "dev:app": "next dev --turbopack --port 3005",
     "dev:backend": "convex dev",
-    "dev:init": "tsx tooling/scripts/sync-convex-env.ts",
-    "dev:sync": "tsx tooling/scripts/sync-convex-env.ts --force",
-    "lint": "next lint",
-    "lint:fix": "next lint --fix && prettier --write . --log-level warn",
+    "gen": "cd convex/betterAuth && npx @better-auth/cli generate -y --output generatedSchema.ts",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix && prettier --write . --log-level warn",
     "nuke": "rimraf '**/node_modules'",
-    "reset": "pnpm reset:auth && for tableName in `npx convex data`; do npx convex import --table $tableName --replace -y --format jsonLines /dev/null; done",
+    "reset": "convex run reset:reset && sleep 3 && convex run init",
     "reset:auth": "convex run reset:resetAuth",
     "seed": "convex run seed:seed",
     "start": "next start",
     "studio": "pnpm convex dashboard",
+    "sync": "tsx tooling/scripts/sync-convex-env.ts",
+    "sync:force": "tsx tooling/scripts/sync-convex-env.ts --force",
+    "sync:plate": "node tooling/scripts/sync-plate.cjs",
     "typecheck": "tsc --noEmit",
     "typecheck:watch": "pnpm typecheck --watch"
   },
@@ -26,6 +28,7 @@
     "@convex-dev/better-auth": "0.8.2",
     "@convex-dev/rate-limiter": "^0.2.10",
     "@convex-dev/react-query": "0.0.0-alpha.11",
+    "@convex-dev/resend": "^0.1.12",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -53,9 +56,11 @@
     "@radix-ui/react-toggle": "^1.1.10",
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@react-email/components": "^0.5.3",
+    "@react-email/render": "^1.2.3",
     "@t3-oss/env-nextjs": "^0.13.8",
-    "@tanstack/react-query": "^5.89.0",
-    "better-auth": "^1.3.11",
+    "@tanstack/react-query": "5.86.0",
+    "better-auth": "^1.3.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -77,7 +82,7 @@
     "react-dom": "19.1.1",
     "react-hook-form": "^7.62.0",
     "react-resizable-panels": "^3.0.6",
-    "recharts": "3.2.1",
+    "recharts": "2.15.4",
     "sonner": "^2.0.7",
     "superjson": "^2.2.2",
     "tailwind-merge": "^3.3.1",
@@ -85,7 +90,7 @@
     "tsx": "^4.20.5",
     "use-debounce": "^10.0.6",
     "vaul": "^1.1.2",
-    "zod": "^4.1.8"
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -104,6 +109,9 @@
   },
   "packageManager": "pnpm@10.14.0",
   "pnpm": {
-    "dangerouslyAllowAllBuilds": true
+    "dangerouslyAllowAllBuilds": true,
+    "ignoredBuiltDependencies": [
+      "@tailwindcss/oxide"
+    ]
   }
 }

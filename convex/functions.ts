@@ -1,5 +1,3 @@
-import type { SessionUser } from './user/mapSessionToUser';
-
 import { entsTableFactory } from 'convex-ents';
 import {
   customCtx,
@@ -16,8 +14,9 @@ import { ConvexError } from 'convex/values';
 
 import type { Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
+import type { SessionUser } from './authShared';
 
-import { internal } from './_generated/api';
+import { api } from './_generated/api';
 import {
   action,
   internalMutation as baseInternalMutation,
@@ -26,16 +25,16 @@ import {
   internalQuery,
   query,
 } from './_generated/server';
+import { authComponent } from './auth';
 import {
-  betterAuthComponent,
   getSessionUser,
   getSessionUserWriter,
-} from './auth';
+} from './betterAuth/getSessionUser';
+import { getEnv } from './helpers/getEnv';
 import { rateLimitGuard } from './helpers/rateLimiter';
 import { roleGuard } from './helpers/roleGuard';
 import { entDefinitions } from './schema';
 import { triggers } from './triggers';
-import { getEnv } from './helpers/getEnv';
 
 type Overwrite<T, U> = Omit<T, keyof U> & U;
 type CustomCtx<Builder> =
@@ -45,6 +44,7 @@ type CustomCtx<Builder> =
     infer ModCtx,
     any,
     infer InputCtx,
+    any,
     any
   >
     ? Overwrite<InputCtx, ModCtx>
@@ -55,6 +55,10 @@ export type PublicMutationCtx = CustomCtx<
 >;
 
 export type AuthMutationCtx = CustomCtx<ReturnType<typeof createAuthMutation>>;
+
+export type InternalMutationCtx = CustomCtx<
+  ReturnType<typeof createInternalMutation>
+>;
 
 export type PublicQueryCtx = CustomCtx<ReturnType<typeof createPublicQuery>>;
 
@@ -76,7 +80,7 @@ const internalMutation = customMutation(
 
 // Helper function to check if function is dev-only
 function checkDevOnly(devOnly?: boolean) {
-  if (devOnly && getEnv().NEXT_PUBLIC_ENVIRONMENT !== 'development') {
+  if (devOnly && getEnv().DEPLOY_ENV === 'production') {
     throw new ConvexError({
       code: 'FORBIDDEN',
       message: 'This function is only available in development',
@@ -87,7 +91,7 @@ function checkDevOnly(devOnly?: boolean) {
 export async function getAuthUserId(
   ctx: MutationCtx | QueryCtx
 ): Promise<{ userId: Id<'users'> }> {
-  const userId = await betterAuthComponent.getAuthUserId(ctx);
+  const userId = (await authComponent.getAuthUser(ctx))?.userId;
 
   if (!userId) {
     throw new ConvexError({
@@ -103,13 +107,18 @@ export async function getAuthUserId(
 export const createAuthQuery = ({
   devOnly,
   role,
-}: { devOnly?: boolean; role?: 'ADMIN' | 'SUPERADMIN' } = {}) =>
+}: { devOnly?: boolean; role?: 'admin' } = {}) =>
   zCustomQuery(
     query,
     customCtx(async (ctx) => {
       checkDevOnly(devOnly);
 
-      const user = await getSessionUser(ctx);
+      const ctxWithTable = {
+        ...ctx,
+        table: entsTableFactory(ctx, entDefinitions),
+      };
+
+      const user = await getSessionUser(ctxWithTable);
 
       if (!user) {
         throw new ConvexError({
@@ -122,7 +131,7 @@ export const createAuthQuery = ({
       }
 
       return {
-        table: entsTableFactory(ctx, entDefinitions),
+        ...ctxWithTable,
         user,
         userId: user?.id ?? null,
       };
@@ -132,13 +141,18 @@ export const createAuthQuery = ({
 export const createAuthPaginatedQuery = ({
   devOnly,
   role,
-}: { devOnly?: boolean; role?: 'ADMIN' | 'SUPERADMIN' } = {}) =>
+}: { devOnly?: boolean; role?: 'admin' } = {}) =>
   zCustomQuery(query, {
     args: { paginationOpts: paginationOptsValidator },
     input: async (ctx, args) => {
       checkDevOnly(devOnly);
 
-      const user = await getSessionUser(ctx);
+      const ctxWithTable = {
+        ...ctx,
+        table: entsTableFactory(ctx, entDefinitions),
+      };
+
+      const user = await getSessionUser(ctxWithTable);
 
       if (!user) {
         throw new ConvexError({
@@ -153,8 +167,7 @@ export const createAuthPaginatedQuery = ({
       return {
         args,
         ctx: {
-          ...ctx,
-          table: entsTableFactory(ctx, entDefinitions),
+          ...ctxWithTable,
           user,
           userId: user?.id ?? null,
         },
@@ -163,16 +176,28 @@ export const createAuthPaginatedQuery = ({
   });
 
 // Public query that adds user and userId to context if authenticated
-export const createPublicQuery = ({ devOnly }: { devOnly?: boolean } = {}) =>
+export const createPublicQuery = ({
+  devOnly,
+  publicOnly,
+}: {
+  devOnly?: boolean;
+  /** Set to true when not depending on the session */
+  publicOnly?: boolean;
+} = {}) =>
   zCustomQuery(
     query,
     customCtx(async (ctx) => {
       checkDevOnly(devOnly);
 
-      const user = await getSessionUser(ctx);
+      const ctxWithTable = {
+        ...ctx,
+        table: entsTableFactory(ctx, entDefinitions),
+      };
+
+      const user = publicOnly ? null : await getSessionUser(ctxWithTable);
 
       return {
-        table: entsTableFactory(ctx, entDefinitions),
+        ...ctxWithTable,
         user,
         userId: user?.id ?? null,
       };
@@ -181,19 +206,28 @@ export const createPublicQuery = ({ devOnly }: { devOnly?: boolean } = {}) =>
 
 export const createPublicPaginatedQuery = ({
   devOnly,
-}: { devOnly?: boolean } = {}) =>
+  publicOnly,
+}: {
+  devOnly?: boolean;
+  /** Set to true when not depending on the session */
+  publicOnly?: boolean;
+} = {}) =>
   zCustomQuery(query, {
     args: { paginationOpts: paginationOptsValidator },
     input: async (ctx, args) => {
       checkDevOnly(devOnly);
 
-      const user = await getSessionUser(ctx);
+      const ctxWithTable = {
+        ...ctx,
+        table: entsTableFactory(ctx, entDefinitions),
+      };
+
+      const user = publicOnly ? null : await getSessionUser(ctxWithTable);
 
       return {
         args,
         ctx: {
-          ...ctx,
-          table: entsTableFactory(ctx, entDefinitions),
+          ...ctxWithTable,
           user,
           userId: user?.id ?? null,
         },
@@ -213,6 +247,41 @@ export const createInternalQuery = ({ devOnly }: { devOnly?: boolean } = {}) =>
     })
   );
 
+// Internal query that adds user and userId to context
+export const createAuthInternalQuery = ({
+  devOnly,
+  role,
+}: { devOnly?: boolean; role?: 'admin' } = {}) =>
+  zCustomQuery(
+    internalQuery,
+    customCtx(async (ctx) => {
+      checkDevOnly(devOnly);
+
+      const ctxWithTable = {
+        ...ctx,
+        table: entsTableFactory(ctx, entDefinitions),
+      };
+
+      const user = await getSessionUser(ctxWithTable);
+
+      if (!user) {
+        throw new ConvexError({
+          code: 'UNAUTHENTICATED',
+          message: 'Not authenticated',
+        });
+      }
+      if (role) {
+        roleGuard(role, user);
+      }
+
+      return {
+        ...ctxWithTable,
+        user,
+        userId: user?.id ?? null,
+      };
+    })
+  );
+
 export const createAuthAction = ({
   devOnly,
   rateLimit,
@@ -220,17 +289,17 @@ export const createAuthAction = ({
 }: {
   devOnly?: boolean;
   rateLimit?: string | null;
-  role?: 'ADMIN' | 'SUPERADMIN';
+  role?: 'admin';
 } = {}) =>
   zCustomAction(
     action,
     customCtx(async (ctx) => {
       checkDevOnly(devOnly);
 
-      const user = (await ctx.runQuery(
-        internal.authInternal.sessionUser,
+      const user: SessionUser | null = await ctx.runQuery(
+        api.user.getSessionUser,
         {}
-      )) as SessionUser | null;
+      );
 
       if (!user) {
         throw new ConvexError({
@@ -250,8 +319,8 @@ export const createAuthAction = ({
       }
 
       return {
-        user,
-        userId: user?.id ?? null,
+        user: user,
+        userId: user.id,
       };
     })
   );
@@ -259,7 +328,7 @@ export const createAuthAction = ({
 export const createPublicAction = ({ devOnly }: { devOnly?: boolean } = {}) =>
   zCustomAction(
     action,
-    customCtx(async (ctx) => {
+    customCtx(async () => {
       checkDevOnly(devOnly);
 
       return {};
@@ -298,14 +367,19 @@ export const createAuthMutation = ({
 }: {
   devOnly?: boolean;
   rateLimit?: string | null;
-  role?: 'ADMIN' | 'SUPERADMIN';
+  role?: 'admin';
 } = {}) =>
   zCustomMutation(
     mutation,
     customCtx(async (ctx) => {
       checkDevOnly(devOnly);
 
-      const user = await getSessionUserWriter(ctx);
+      const ctxWithTable = {
+        ...ctx,
+        table: entsTableFactory(ctx, entDefinitions),
+      };
+
+      const user = await getSessionUserWriter(ctxWithTable);
 
       if (!user) {
         throw new ConvexError({
@@ -318,14 +392,14 @@ export const createAuthMutation = ({
       }
       if (rateLimit) {
         await rateLimitGuard({
-          ...ctx,
+          ...ctxWithTable,
           rateLimitKey: rateLimit,
           user,
         });
       }
 
       return {
-        table: entsTableFactory(ctx, entDefinitions),
+        ...ctxWithTable,
         user,
         userId: user.id,
       };
@@ -342,18 +416,23 @@ export const createPublicMutation = ({
     customCtx(async (ctx) => {
       checkDevOnly(devOnly);
 
-      const user = await getSessionUserWriter(ctx);
+      const ctxWithTable = {
+        ...ctx,
+        table: entsTableFactory(ctx, entDefinitions),
+      };
+
+      const user = await getSessionUserWriter(ctxWithTable);
 
       if (rateLimit) {
         await rateLimitGuard({
-          ...ctx,
+          ...ctxWithTable,
           rateLimitKey: rateLimit,
           user,
         });
       }
 
       return {
-        table: entsTableFactory(ctx, entDefinitions),
+        ...ctxWithTable,
         user,
         userId: user?.id ?? null,
       };

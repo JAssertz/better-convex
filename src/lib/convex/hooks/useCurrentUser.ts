@@ -1,21 +1,36 @@
 import { api } from '@convex/_generated/api';
 
-import { useAuthQuery } from '@/lib/convex/hooks';
+import { useAuthValue } from '@/lib/convex/components/convex-provider';
+import { usePublicQuery } from '@/lib/convex/hooks/convex-hooks';
 
 export const useCurrentUser = () => {
-  const { data, isLoading } = useAuthQuery(
-    api.users.getCurrentUser,
-    {},
+  const token = useAuthValue('token');
+
+  const { data, ...rest } = usePublicQuery(
+    api.user.getCurrentUser,
+    token ? {} : 'skip',
     {
       placeholderData: {
-        id: '1' as any,
-        email: 'better-convex@gmail.com',
-        name: undefined,
+        id: '0' as any,
+        activeOrganization: {
+          id: '',
+          logo: '',
+          name: '',
+          role: '',
+          slug: '',
+        },
+        image: undefined,
         isAdmin: false,
-        isSuperAdmin: false,
+        name: '',
+        session: {
+          token: token ?? undefined,
+        },
       },
     }
   );
 
-  return { ...data, isLoading };
+  return {
+    ...rest,
+    ...data,
+  };
 };

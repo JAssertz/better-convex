@@ -1,57 +1,78 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import React, { type ReactNode } from 'react';
+
+import type { api } from '@convex/_generated/api';
 
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
-import { ConvexReactClient, useConvexAuth } from 'convex/react';
+import { type Preloaded, ConvexReactClient } from 'convex/react';
 import { createAtomStore } from 'jotai-x';
 
-import { authClient } from '@/lib/convex/auth-client';
+import { env } from '@/env';
+import { authClient, useSession } from '@/lib/convex/auth-client';
 import { AuthErrorBoundary } from '@/lib/convex/components/auth-error-boundary';
+import { QueryClientProvider } from '@/lib/react-query/query-client-provider';
 
-const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+const convex = new ConvexReactClient(env.NEXT_PUBLIC_CONVEX_URL, {
+  verbose: false,
+});
 
-export const { AuthProvider, useAuthValue } = createAtomStore(
+export const { AuthProvider, useAuthStore, useAuthValue } = createAtomStore(
   {
-    isAuthenticated: false,
+    preloadedUser: null as unknown as Preloaded<typeof api.user.getCurrentUser>,
+    token: null as string | null,
   },
   {
+    effect: AuthEffect,
     name: 'auth',
   }
 );
 
 export function ConvexProvider({
   children,
-  isAuthenticated,
+  preloadedUser,
+  token,
 }: {
   children: ReactNode;
-  isAuthenticated: boolean;
+  preloadedUser?: Preloaded<typeof api.user.getCurrentUser>;
+  token?: string;
 }) {
   return (
     <ConvexBetterAuthProvider authClient={authClient} client={convex}>
-      <ConvexProviderInner isAuthenticated={isAuthenticated}>
-        {children}
-      </ConvexProviderInner>
+      <QueryClientProvider convex={convex}>
+        <ConvexProviderInner preloadedUser={preloadedUser} token={token}>
+          {children}
+        </ConvexProviderInner>
+      </QueryClientProvider>
     </ConvexBetterAuthProvider>
   );
 }
 
 function ConvexProviderInner({
   children,
-  isAuthenticated,
+  preloadedUser,
+  token,
 }: {
   children: ReactNode;
-  isAuthenticated: boolean;
+  preloadedUser?: Preloaded<typeof api.user.getCurrentUser>;
+  token?: string;
 }) {
-  const auth = useConvexAuth();
-
   return (
-    <AuthProvider
-      isAuthenticated={auth.isLoading ? isAuthenticated : auth.isAuthenticated}
-    >
-      <AuthErrorBoundary isAuthenticated={isAuthenticated}>
-        {children}
-      </AuthErrorBoundary>
+    <AuthProvider preloadedUser={preloadedUser} token={token ?? null}>
+      <AuthErrorBoundary>{children}</AuthErrorBoundary>
     </AuthProvider>
   );
+}
+
+function AuthEffect() {
+  const { data, isPending } = useSession();
+  const authStore = useAuthStore();
+
+  React.useEffect(() => {
+    if (!isPending) {
+      authStore.set('token', data?.session.token ?? null);
+    }
+  }, [data, authStore, isPending]);
+
+  return null;
 }

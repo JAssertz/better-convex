@@ -1,10 +1,9 @@
 #!/usr/bin/env tsx
 
-import { execSync } from "child_process";
-import * as fs from "fs";
-import * as path from "path";
-import { parse } from "dotenv";
-
+import { execSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import { parse } from 'dotenv';
 
 /**
  * Sync ALL environment variables from convex/.env to Convex This script reads
@@ -17,31 +16,31 @@ const EXCLUDE_VARS: string[] = [];
 async function syncConvexEnv() {
   // Parse command line arguments
   const args = process.argv.slice(2);
-  const forceMode = args.includes("--force");
+  const forceMode = args.includes('--force');
 
   console.info(
-    `🔄 Syncing ALL environment variables from convex/.env to Convex...${forceMode ? " (FORCE MODE)" : ""}\n`
+    `🔄 Syncing ALL environment variables from convex/.env to Convex...${forceMode ? ' (FORCE MODE)' : ''}\n`
   );
 
   // Read convex/.env
-  const envPath = path.join(process.cwd(), "convex", ".env");
+  const envPath = path.join(process.cwd(), 'convex', '.env');
 
   if (!fs.existsSync(envPath)) {
-    console.error("❌ convex/.env file not found");
+    console.error('❌ convex/.env file not found');
     process.exit(1);
   }
 
-  const envContent = fs.readFileSync(envPath, "utf-8");
+  const envContent = fs.readFileSync(envPath, 'utf-8');
   const envVars = parse(envContent);
 
   // Generate BETTER_AUTH_SECRET if not present
   if (!envVars.BETTER_AUTH_SECRET) {
     try {
-      const secret = execSync("openssl rand -base64 32", {
-        encoding: "utf-8",
+      const secret = execSync('openssl rand -base64 32', {
+        encoding: 'utf-8',
       }).trim();
       envVars.BETTER_AUTH_SECRET = secret;
-      console.info("🔐 Generated BETTER_AUTH_SECRET");
+      console.info('🔐 Generated BETTER_AUTH_SECRET');
 
       // Append to convex/.env
       fs.appendFileSync(
@@ -50,22 +49,22 @@ async function syncConvexEnv() {
       );
     } catch (error) {
       console.warn(
-        "⚠️  Could not generate BETTER_AUTH_SECRET (openssl not available)"
+        '⚠️  Could not generate BETTER_AUTH_SECRET (openssl not available)'
       );
     }
   }
 
   // Check current Convex deployment
   try {
-    const deployment = execSync("npx convex env get CONVEX_DEPLOYMENT", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "ignore"], // Suppress stderr
+    const deployment = execSync('npx convex env get CONVEX_DEPLOYMENT', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'], // Suppress stderr
     }).trim();
     console.info(
-      `📍 Current Convex deployment: ${deployment || "anonymous"}\n`
+      `📍 Current Convex deployment: ${deployment || 'anonymous'}\n`
     );
   } catch {
-    console.info("📍 Using anonymous Convex deployment\n");
+    console.info('📍 Using anonymous Convex deployment\n');
   }
 
   // Get all variables to sync (exclude certain ones)
@@ -89,8 +88,8 @@ async function syncConvexEnv() {
       if (!forceMode) {
         // Check if already set
         const currentValue = execSync(`npx convex env get ${varName}`, {
-          encoding: "utf-8",
-          stdio: ["pipe", "pipe", "ignore"], // Suppress stderr
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'], // Suppress stderr
         }).trim();
 
         if (currentValue === value) {
@@ -102,15 +101,15 @@ async function syncConvexEnv() {
 
       // Set the variable
       execSync(`npx convex env set ${varName}="${value}"`, {
-        stdio: ["pipe", "pipe", "pipe"], // Don't show output
+        stdio: ['pipe', 'pipe', 'pipe'], // Don't show output
       });
-      console.info(`✅ ${varName}: ${forceMode ? "Updated" : "Updated"}`);
+      console.info(`✅ ${varName}: ${forceMode ? 'Updated' : 'Updated'}`);
       successCount++;
     } catch (error) {
       // Variable might not exist, try to set it
       try {
         execSync(`npx convex env set ${varName}="${value}"`, {
-          stdio: ["pipe", "pipe", "pipe"], // Don't show output
+          stdio: ['pipe', 'pipe', 'pipe'], // Don't show output
         });
         console.info(`✅ ${varName}: Set successfully`);
         successCount++;
@@ -123,7 +122,7 @@ async function syncConvexEnv() {
 
   if (errorCount > 0) {
     console.info(
-      "\n⚠️  Some variables failed to sync. Please check your Convex deployment."
+      '\n⚠️  Some variables failed to sync. Please check your Convex deployment.'
     );
     process.exit(1);
   }
@@ -131,6 +130,6 @@ async function syncConvexEnv() {
 
 // Run the sync
 syncConvexEnv().catch((error) => {
-  console.error("❌ Sync failed:", error);
+  console.error('❌ Sync failed:', error);
   process.exit(1);
 });
