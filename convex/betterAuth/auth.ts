@@ -1,5 +1,4 @@
-import { getStaticAuth } from '@convex-dev/better-auth';
-
+import { getStaticAuth } from './client';
 import { createAuth } from '../auth';
 
 // Export a static instance for Better Auth schema generation

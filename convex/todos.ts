@@ -215,7 +215,7 @@ export const get = createAuthQuery()({
     .object({
       _id: zid('todos'),
       _creationTime: z.number(),
-      userId: zid('users'),
+      userId: zid('user'),
       title: z.string(),
       description: z.string().optional(),
       completed: z.boolean(),
@@ -229,7 +229,7 @@ export const get = createAuthQuery()({
           _creationTime: z.number(),
           name: z.string(),
           color: z.string(),
-          createdBy: zid('users'),
+          createdBy: zid('user'),
         })
       ),
       project: z
@@ -240,15 +240,15 @@ export const get = createAuthQuery()({
           description: z.string().optional(),
           isPublic: z.boolean(),
           archived: z.boolean(),
-          ownerId: zid('users'),
+          ownerId: zid('user'),
         })
         .nullable(),
       user: z.object({
-        _id: zid('users'),
+        _id: zid('user'),
         _creationTime: z.number(),
         name: z.string().optional(),
         email: z.string(),
-        image: z.string().optional(),
+        image: z.string().nullish(),
       }),
     })
     .nullable(),

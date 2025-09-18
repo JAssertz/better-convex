@@ -42,12 +42,12 @@ import { toast } from 'sonner';
 interface ProjectMembersProps {
   projectId: Id<'projects'>;
   owner: {
-    _id: Id<'users'>;
+    _id: Id<'user'>;
     name: string | null;
     email: string;
   };
   members: Array<{
-    _id: Id<'users'>;
+    _id: Id<'user'>;
     name: string | null;
     email: string;
     joinedAt: number;
@@ -105,14 +105,14 @@ export function ProjectMembers({
     });
   };
 
-  const handleRemoveMember = (userId: Id<'users'>) => {
+  const handleRemoveMember = (userId: Id<'user'>) => {
     removeMember.mutate({
       projectId,
       userId,
     });
   };
 
-  const handleTransferOwnership = (userId: Id<'users'>) => {
+  const handleTransferOwnership = (userId: Id<'user'>) => {
     if (
       confirm(
         'Are you sure you want to transfer ownership? This action cannot be undone.'

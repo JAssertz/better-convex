@@ -43,41 +43,41 @@ import {
   createAuthQuery,
   createPublicQuery,
   createAuthMutation,
-} from "./functions";
-import { z } from "zod";
-import { zid } from "convex-helpers/server/zod";
+} from './functions';
+import { z } from 'zod';
+import { zid } from 'convex-helpers/server/zod';
 
 // All function types - use appropriate wrapper
 export const example = createAuthQuery()({
   // or createPublicQuery, createAuthMutation, etc.
-  args: { id: zid("items") }, // ALWAYS use zid() for IDs
+  args: { id: zid('items') }, // ALWAYS use zid() for IDs
   returns: z.object({ name: z.string() }).nullable(),
   handler: async (ctx, args) => {
-    return await ctx.table("items").get(args.id);
+    return await ctx.table('items').get(args.id);
   },
 });
 
 // Rate limiting & admin
 export const createItem = createAuthMutation({
-  rateLimit: "character/create", // Auto tier limits
-  role: "admin", // Optional role requirement
+  rateLimit: 'character/create', // Auto tier limits
+  role: 'admin', // Optional role requirement
 })({
   args: { name: z.string().min(1).max(100) },
-  returns: zid("items"),
+  returns: zid('items'),
   handler: async ({ user, table }, args) => {
     // Destructure context
     await user.patch({ credits: user.credits - 1 });
-    return await table("items").insert({ name: args.name, userId: user._id });
+    return await table('items').insert({ name: args.name, userId: user._id });
   },
 });
 ```
 
 **ctx.user in auth functions:** Type `SessionUser` from `convex/authShared.ts` - includes:
 
-- Full `EntWriter<'users'>` with ent methods
+- Full `EntWriter<'user'>` with ent methods
 - Computed properties: `isAdmin`, `plan`
 - `session: AuthSession` with token, expiresAt, activeOrganizationId, etc.
-  **❌ AVOID:** `ctx.table('users').get(ctx.userId)` - ctx.user is already loaded!  
+  **❌ AVOID:** `ctx.table('user').get(ctx.userId)` - ctx.user is already loaded!  
   **Always throw ConvexError:** `throw new ConvexError({ code: 'UNAUTHENTICATED', message: 'Not authenticated' });`
 
 ### 🚨 CRITICAL: Rate Limiting Requirements
@@ -95,7 +95,7 @@ export const updateProfile = createAuthMutation()({
 
 // ✅ SECURE: Mutation with rate limiting
 export const updateProfile = createAuthMutation({
-  rateLimit: "user/update", // REQUIRED!
+  rateLimit: 'user/update', // REQUIRED!
 })({
   args: { bio: z.string() },
   handler: async (ctx, args) => {
@@ -156,31 +156,31 @@ For HTTP endpoints and webhooks, see [convex-http.mdc](mdc:.cursor/rules/convex-
 **Edit:** `convex/*.ts` files (function files, use `z.` validators)
 
 ```typescript
-import { defineEnt, defineEntSchema, getEntDefinitions } from "convex-ents";
-import { v } from "convex/values";
+import { defineEnt, defineEntSchema, getEntDefinitions } from 'convex-ents';
+import { v } from 'convex/values';
 
 // Schema example (v.)
 const schema = defineEntSchema({
   users: defineEnt({
     name: v.string(),
-    role: v.union(v.literal("user"), v.literal("admin")),
+    role: v.union(v.literal('user'), v.literal('admin')),
   })
-    .field("email", v.string(), { unique: true })
-    .edge("profile", { ref: true })
-    .edges("messages", { ref: true })
-    .index("username_name", ["username", "name"]), // ALWAYS put indexes LAST (compound index example)
+    .field('email', v.string(), { unique: true })
+    .edge('profile', { ref: true })
+    .edges('messages', { ref: true })
+    .index('username_name', ['username', 'name']), // ALWAYS put indexes LAST (compound index example)
 });
 
 // Function example (z.)
 export const createUser = createAuthMutation()({
   args: {
-    userId: zid("users"), // CRITICAL: Always zid() for IDs
+    userId: zid('user'), // CRITICAL: Always zid() for IDs
     name: z.string().min(1).max(100),
     email: z.string().email(),
     tags: z.array(z.string()).max(10),
     bio: z.string().optional(), // Use .optional(), NOT .nullable()
   },
-  returns: zid("users"),
+  returns: zid('user'),
   handler: async (ctx, args) => {
     /* ... */
   },
@@ -296,13 +296,13 @@ export const listByAuthor = createPublicPaginatedQuery()({
   args: { author: z.string() },
   handler: async (ctx, args) => {
     return await ctx
-      .table("messages", "author", (q) => q.eq("author", args.author))
-      .order("desc")
+      .table('messages', 'author', (q) => q.eq('author', args.author))
+      .order('desc')
       .paginate(args.paginationOpts)
       .map(async (msg) => ({
         // Ent .map() works after .paginate()
         ...msg.doc(),
-        user: await ctx.table("users").get(msg.userId),
+        user: await ctx.table('user').get(msg.userId),
       }));
   },
 });
@@ -311,7 +311,7 @@ export const listByAuthor = createPublicPaginatedQuery()({
 const { data, hasNextPage, isLoading, isFetchingNextPage, fetchNextPage } =
   usePublicPaginatedQuery(
     api.messages.list,
-    { author: "alice" }, // args (excluding paginationOpts)
+    { author: 'alice' }, // args (excluding paginationOpts)
     { initialNumItems: 10 }
   );
 ```
@@ -327,22 +327,22 @@ const { data, hasNextPage, isLoading, isFetchingNextPage, fetchNextPage } =
 ```typescript
 const schema = defineEntSchema({
   users: defineEnt({ name: v.string() })
-    .field("email", v.string(), { unique: true }) // Unique constraint
-    .field("role", v.string(), { default: "user" }) // Default value
-    .edge("profile", { ref: true }) // 1:1 edge (optional side)
-    .edges("messages", { ref: true }) // 1:many edge ("one" side)
-    .edges("followers", { to: "users", inverse: "following" }) // Self-referencing
-    .index("username_name", ["username", "name"]) // Compound index naming pattern
-    .searchIndex("search_username_name", {
+    .field('email', v.string(), { unique: true }) // Unique constraint
+    .field('role', v.string(), { default: 'user' }) // Default value
+    .edge('profile', { ref: true }) // 1:1 edge (optional side)
+    .edges('messages', { ref: true }) // 1:many edge ("one" side)
+    .edges('followers', { to: 'user', inverse: 'following' }) // Self-referencing
+    .index('username_name', ['username', 'name']) // Compound index naming pattern
+    .searchIndex('search_username_name', {
       // Search index naming pattern
-      searchField: "name",
-      filterFields: ["username"],
+      searchField: 'name',
+      filterFields: ['username'],
     }),
 
   messages: defineEnt({ text: v.string() })
-    .edge("user") // 1:many edge ("many" side)
-    .edge("author", { field: "authorId", optional: true }) // Optional edge
-    .edges("tags"), // many:many edge
+    .edge('user') // 1:many edge ("many" side)
+    .edge('author', { field: 'authorId', optional: true }) // Optional edge
+    .edges('tags'), // many:many edge
 });
 
 export default schema;
@@ -382,7 +382,7 @@ export const entDefinitions = getEntDefinitions(schema);
 When you define edges, Convex Ents automatically creates indexes:
 
 - `.edge('user')` → Creates index on `userId` field
-- `.edges('followers', { to: 'users', inverse: 'following' })` → Creates indexes on join table
+- `.edges('followers', { to: 'user', inverse: 'following' })` → Creates indexes on join table
 
 **🚨 CRITICAL: NEVER create indexes for edge-generated fields!**
 
@@ -413,18 +413,18 @@ Dynamic imports (`await import()`) do NOT work in Convex's serverless environmen
 **From Next.js (`src/`):**
 
 ```typescript
-import { api, internal } from "@convex/_generated/api";
-import { Id, Doc } from "@convex/_generated/dataModel";
-import type { Ent, EntWriter } from "@convex/shared/types"; // Ent types
+import { api, internal } from '@convex/_generated/api';
+import { Id, Doc } from '@convex/_generated/dataModel';
+import type { Ent, EntWriter } from '@convex/shared/types'; // Ent types
 ```
 
 **From Convex (`convex/`):**
 
 ```typescript
-import { api, internal } from "./_generated/api";
-import { Id, Doc } from "./_generated/dataModel";
-import { entDefinitions } from "./schema"; // Import ent definitions
-import { entsTableFactory } from "convex-ents"; // For function context
+import { api, internal } from './_generated/api';
+import { Id, Doc } from './_generated/dataModel';
+import { entDefinitions } from './schema'; // Import ent definitions
+import { entsTableFactory } from 'convex-ents'; // For function context
 ```
 
 ## React Integration guidelines
@@ -516,17 +516,17 @@ const updateSettings = useAuthMutation(api.user.updateSettings, {
 
 ```typescript
 // Actions
-import { usePublicAction, useAuthAction } from "@/lib/convex/hooks";
+import { usePublicAction, useAuthAction } from '@/lib/convex/hooks';
 const generateReport = usePublicAction(api.reports.generate);
 const processData = useAuthAction(api.data.process);
 
 // One-off queries
-import { useConvex } from "convex/react";
+import { useConvex } from 'convex/react';
 const convex = useConvex();
 await convex.query(api.items.validate, { id });
 
 // Auth hooks
-import { useIsAuth, useCurrentUser } from "@/lib/convex/hooks";
+import { useIsAuth, useCurrentUser } from '@/lib/convex/hooks';
 const isAuth = useIsAuth();
 const { isLoading, ...user } = useCurrentUser();
 ```
@@ -541,7 +541,7 @@ import {
   isUnauth,
   fetchAuthQuery,
   fetchAuthQueryOrThrow,
-} from "@/lib/convex/server";
+} from '@/lib/convex/server';
 
 // Get session token/user in server components
 const token = await getSessionToken(); // Returns string | null
@@ -568,7 +568,7 @@ const data = await fetchAuthQueryOrThrow(api.user.getData, { id: userId });
 **Server-side guards (RSC)**:
 
 ```typescript
-import { authGuard, adminGuard } from "@/lib/convex/rsc";
+import { authGuard, adminGuard } from '@/lib/convex/rsc';
 
 // In server components/pages
 await authGuard(); // Redirects to login if not authenticated
@@ -578,11 +578,11 @@ await adminGuard(); // Returns 404 if not admin
 **Client-side guards (hooks)**:
 
 ```typescript
-import { useAuthGuard, usePremiumGuard } from "@/lib/convex/hooks";
+import { useAuthGuard, usePremiumGuard } from '@/lib/convex/hooks';
 
 // Auth guard - shows login modal if not authenticated
 const authGuard = useAuthGuard();
-if (authGuard(() => console.info("authenticated"))) return; // Blocked
+if (authGuard(() => console.info('authenticated'))) return; // Blocked
 
 // Premium guards - shows subscription modal if not premium
 const premiumGuard = usePremiumGuard();
@@ -595,25 +595,25 @@ if (premiumGuard()) return; // Blocked
 
 ```typescript
 // Get entities
-const user = await ctx.table("users").get(userId); // Returns null if not found
-const userX = await ctx.table("users").getX(userId); // Throws if not found
-const userByEmail = await ctx.table("users").get("email", "user@example.com"); // By unique field
-const users = await ctx.table("users").getMany([id1, id2, id3]); // Batch - returns (Doc | null)[]
-const usersX = await ctx.table("users").getManyX([id1, id2, id3]); // Batch - throws if any missing
+const user = await ctx.table('user').get(userId); // Returns null if not found
+const userX = await ctx.table('user').getX(userId); // Throws if not found
+const userByEmail = await ctx.table('user').get('email', 'user@example.com'); // By unique field
+const users = await ctx.table('user').getMany([id1, id2, id3]); // Batch - returns (Doc | null)[]
+const usersX = await ctx.table('user').getManyX([id1, id2, id3]); // Batch - throws if any missing
 
 // ❌ CRITICAL: Never refetch ctx.user in authenticated contexts!
-const currentUser = await ctx.table("users").getX(ctx.userId); // WRONG - redundant query!
+const currentUser = await ctx.table('user').getX(ctx.userId); // WRONG - redundant query!
 // ✅ CORRECT: Use pre-loaded user from context
 const currentUser = ctx.user; // Already available in authenticated contexts
 
 // Edge traversal - PREFERRED over manual queries
-const profile = await user.edge("profile"); // Optional edge (may return null)
-const profileX = await user.edgeX("profile"); // Required edge (throws if missing)
-const messages = await user.edge("messages").order("desc").take(10); // 1:many edge
+const profile = await user.edge('profile'); // Optional edge (may return null)
+const profileX = await user.edgeX('profile'); // Required edge (throws if missing)
+const messages = await user.edge('messages').order('desc').take(10); // 1:many edge
 
 // IMPORTANT: Use edgeX when you know the relationship MUST exist
-const user = await character.edgeX("user"); // Characters always have a user
-const character = await message.edgeX("author"); // If message has required author
+const user = await character.edgeX('user'); // Characters always have a user
+const character = await message.edgeX('author'); // If message has required author
 
 // When to use getX/edgeX vs get/edge:
 // - Use getX/edgeX: After insert, required relationships, validated entities
@@ -633,61 +633,61 @@ const character = await message.edgeX("author"); // If message has required auth
 // ⚠️ IMPORTANT: .filter() NOT available on many:many edges, .search() NOT available on any edges!
 // ✅ CORRECT for many:many edges or when using search: Use ctx.table() for filtering/searching
 const activeMessages = await ctx
-  .table("messages", "userId", (q) => q.eq("userId", user._id))
-  .filter((q) => q.eq(q.field("status"), "active"))
+  .table('messages', 'userId', (q) => q.eq('userId', user._id))
+  .filter((q) => q.eq(q.field('status'), 'active'))
   .take(5);
 
 // ✅ OK for 1:1 and 1:many edges: Can use .filter() and .order()
 const activeOrders = await user
-  .edge("orders")
-  .filter((q) => q.eq(q.field("status"), "active"))
-  .order("desc")
+  .edge('orders')
+  .filter((q) => q.eq(q.field('status'), 'active'))
+  .order('desc')
   .take(10);
 
 // Many:many edge operations
-const isFollowing = await user.edge("following").has(targetUserId); // O(1) check
-const tags = await message.edge("tags"); // Get all related tags
+const isFollowing = await user.edge('following').has(targetUserId); // O(1) check
+const tags = await message.edge('tags'); // Get all related tags
 
 // ⚠️ IMPORTANT: Use .has() for O(1) edge existence checks!
 // ❌ INEFFICIENT: Fetching all to check existence
-const following = await user.edge("following");
+const following = await user.edge('following');
 const isFollowing = following.some((u) => u._id === targetUserId); // O(n)
 // ✅ EFFICIENT: Direct existence check
-const isFollowing = await user.edge("following").has(targetUserId); // O(1)
+const isFollowing = await user.edge('following').has(targetUserId); // O(1)
 
 // Write operations require re-fetch
-const resource = await comment.edge("resources").first();
-await ctx.table("resources").getX(resource._id).delete(); // Re-fetch to write
+const resource = await comment.edge('resources').first();
+await ctx.table('resources').getX(resource._id).delete(); // Re-fetch to write
 
 // Ents .map() handles async internally
 const enriched = await ctx
-  .table("messages")
+  .table('messages')
   .take(10)
   .map(async (msg) => ({
     ...msg.doc(),
-    user: await ctx.table("users").get(msg.userId),
+    user: await ctx.table('user').get(msg.userId),
   }));
 
 // ⚠️ IMPORTANT: Use Ents .map() for query results, not asyncMap!
 // ❌ WRONG: Using asyncMap for Ents query results
-import { asyncMap } from "convex-helpers";
-const users = await ctx.table("users").take(10);
+import { asyncMap } from 'convex-helpers';
+const users = await ctx.table('user').take(10);
 const enriched = await asyncMap(users, async (user) => ({
   ...user,
-  profile: await user.edge("profile"),
+  profile: await user.edge('profile'),
 }));
 
 // ✅ CORRECT: Use built-in .map() for Ents queries
 const enriched = await ctx
-  .table("users")
+  .table('user')
   .take(10)
   .map(async (user) => ({
     ...user.doc(),
-    profile: await user.edge("profile"),
+    profile: await user.edge('profile'),
   }));
 
 // ✅ Use asyncMap ONLY for plain arrays or stream results
-const ids = ["id1", "id2", "id3"];
+const ids = ['id1', 'id2', 'id3'];
 const results = await asyncMap(ids, (id) => someAsyncOperation(id));
 ```
 
@@ -702,7 +702,7 @@ const results = await asyncMap(ids, (id) => someAsyncOperation(id));
 - Have ID fields: `userId`, `characterId`, etc.
 - **NO edge support** - access IDs directly:
   ```typescript
-  const star = await ctx.table("characterStars").get(starId);
+  const star = await ctx.table('characterStars').get(starId);
   // ❌ WRONG: await star.edge('character')
   // ✅ RIGHT: await ctx.table('characters').get(star.characterId)
   ```
@@ -719,7 +719,7 @@ Define manual join tables ONLY when you need:
 ```typescript
 // ✅ CORRECT: Auto-generated join table - manually define ID fields (no edges)
 characterStars: defineEnt({})
-  .field('userId', v.id('users'), { index: true })
+  .field('userId', v.id('user'), { index: true })
   .field('characterId', v.id('characters'), { index: true })
   .index('userId_characterId', ['userId', 'characterId'])
   .index('characterId_userId', ['characterId', 'userId']),
@@ -736,16 +736,16 @@ messageVotes: defineEnt({})
 
 ```typescript
 // ❌ WRONG: Regular table manually defining ID fields
-messages: defineEnt({ text: v.string() }).field("userId", v.id("users"), {
+messages: defineEnt({ text: v.string() }).field('userId', v.id('user'), {
   index: true,
 }); // WRONG!
 
 // ✅ CORRECT: Regular table using edges
-messages: defineEnt({ text: v.string() }).edge("user"); // Creates userId field and index automatically
+messages: defineEnt({ text: v.string() }).edge('user'); // Creates userId field and index automatically
 
 // ✅ CORRECT: Table with optional relationship
-comments: defineEnt({ content: v.string() }).edge("user", {
-  field: "authorId",
+comments: defineEnt({ content: v.string() }).edge('user', {
+  field: 'authorId',
   optional: true,
 });
 ```
@@ -757,7 +757,7 @@ comments: defineEnt({ content: v.string() }).edge("user", {
 
 ```typescript
 // Document IDs
-type UserId = Id<'users'>; // Use Id<T> for document IDs
+type UserId = Id<'user'>; // Use Id<T> for document IDs
 
 // Infer complex types (NEVER manually type)
 const mainCharacter = await (async () => {
@@ -766,7 +766,7 @@ const mainCharacter = await (async () => {
 })();
 
 // Record with IDs
-const idToUsername: Record<Id<'users'>, string> = {};
+const idToUsername: Record<Id<'user'>, string> = {};
 
 // Auth-aware context (from convex/functions.ts), NEVER use ctx: any
 AuthQueryCtx, PublicQueryCtx, AuthMutationCtx, PublicMutationCtx;
@@ -774,7 +774,7 @@ AuthQueryCtx, PublicQueryCtx, AuthMutationCtx, PublicMutationCtx;
 // ctx.user in auth contexts is type SessionUser (from convex/authShared.ts):
 type SessionUser = {
   // From AuthUser (better-auth fields)
-  id: Id<'users'>;
+  id: Id<'user'>;
   email: string;
   emailVerified: boolean;
   role?: string | null;
@@ -784,8 +784,8 @@ type SessionUser = {
   banned?: boolean | null;
   banReason?: string | null;
 
-  // From Doc<'users'> (all user table fields)
-  _id: Id<'users'>;
+  // From Doc<'user'> (all user table fields)
+  _id: Id<'user'>;
   _creationTime: number;
   name?: string;
   image?: string;
@@ -823,7 +823,7 @@ type SessionUser = {
   };
 
   // Ent methods (for mutations)
-  doc: () => Doc<'users'>;
+  doc: () => Doc<'user'>;
   edge: <Edge extends keyof Edges>(edge: Edge) => Promise<...>;
   edgeX: <Edge extends keyof Edges>(edge: Edge) => Promise<...>;
   patch: (fields: Partial<...>) => Promise<void>;
@@ -832,7 +832,7 @@ type SessionUser = {
 };
 ```
 
-// In auth contexts: ctx.userId is Id<'users'>
+// In auth contexts: ctx.userId is Id<'user'>
 
 // For client-side type patterns, see convex-client.mdc
 
@@ -860,7 +860,7 @@ export default defineSchema({
   messages: defineTable({
     body: v.string(),
     channel: v.string(),
-    userId: v.id('users'),
+    userId: v.id('user'),
   }).searchIndex('search_body', {
     searchField: 'body',
     filterFields: ['channel', 'userId'], // Fast equality filters
@@ -873,22 +873,22 @@ export default defineSchema({
 ```typescript
 // Basic search with filters
 const messages = await ctx
-  .table("messages")
+  .table('messages')
   .search(
-    "search_body",
+    'search_body',
     (q) =>
       q
-        .search("body", "hello world") // Full-text search
-        .eq("channel", "#general") // Filter field
-        .eq("userId", userId) // Multiple filters
+        .search('body', 'hello world') // Full-text search
+        .eq('channel', '#general') // Filter field
+        .eq('userId', userId) // Multiple filters
   )
   .take(10); // Always limit results
 
 // Search with post-filtering (less efficient)
 const recent = await ctx
-  .table("messages")
-  .search("search_body", (q) => q.search("body", "hello"))
-  .filter((q) => q.gt(q.field("_creationTime"), Date.now() - 3600000))
+  .table('messages')
+  .search('search_body', (q) => q.search('body', 'hello'))
+  .filter((q) => q.gt(q.field('_creationTime'), Date.now() - 3600000))
   .take(10);
 ```
 
@@ -940,23 +940,23 @@ For advanced patterns, see [convex-search.mdc](mdc:.cursor/rules/convex-search.m
 ```typescript
 // Simple filtering (built-in)
 const activeUsers = await ctx
-  .table("users", "status", (q) => q.eq("status", "active"))
-  .filter((q) => q.gt(q.field("lastSeen"), Date.now() - 3600000))
+  .table('user', 'status', (q) => q.eq('status', 'active'))
+  .filter((q) => q.gt(q.field('lastSeen'), Date.now() - 3600000))
   .take(10);
 
 // Complex without pagination (filter helper)
-import { filter } from "convex-helpers/server/filter";
+import { filter } from 'convex-helpers/server/filter';
 const featuredPosts = await filter(
-  ctx.table("posts", "author", (q) => q.eq("author", authorId)),
-  (post) => post.tags.includes("featured") && post.views > 100
+  ctx.table('posts', 'author', (q) => q.eq('author', authorId)),
+  (post) => post.tags.includes('featured') && post.views > 100
 ).take(10);
 // Works with: .first(), .unique(), .take(), .collect()
 // DON'T use with: .paginate() (causes variable page sizes)
 
 // Complex with pagination (streams)
-import { asyncMap } from "convex-helpers";
-import { stream } from "convex-helpers/server/stream";
-import schema from "./schema";
+import { asyncMap } from 'convex-helpers';
+import { stream } from 'convex-helpers/server/stream';
+import schema from './schema';
 
 export const searchCharacters = createPublicPaginatedQuery()({
   args: {
@@ -965,8 +965,8 @@ export const searchCharacters = createPublicPaginatedQuery()({
   },
   handler: async (ctx, args) => {
     const results = await stream(ctx.db, schema) // ⚠️ Stream requires ctx.db here ONLY
-      .query("characters")
-      .withIndex("private", (q) => q.eq("private", false))
+      .query('characters')
+      .withIndex('private', (q) => q.eq('private', false))
       .filterWith(async (char) => {
         // Full TypeScript power: arrays, strings, async lookups
         if (args.category && !char.categories?.includes(args.category)) {
@@ -976,7 +976,7 @@ export const searchCharacters = createPublicPaginatedQuery()({
           return false;
         }
         // Inside stream operations, use ctx.table()!
-        const author = await ctx.table("users").get(char.userId);
+        const author = await ctx.table('user').get(char.userId);
         return author && !author.isBanned;
       })
       .paginate(args.paginationOpts); // Always returns requested items!
@@ -986,7 +986,7 @@ export const searchCharacters = createPublicPaginatedQuery()({
       ...results,
       page: await asyncMap(results.page, async (char) => ({
         ...char,
-        user: await ctx.table("users").get(char.userId),
+        user: await ctx.table('user').get(char.userId),
       })),
     };
   },
@@ -1002,8 +1002,8 @@ For more stream patterns, see [convex-streams.mdc](mdc:.cursor/rules/convex-stre
 **ONLY EXCEPTION:** Streams from `convex-helpers/server/stream` still require `ctx.db` in the first parameter only:
 
 ```typescript
-// ❌ NEVER: ctx.db.query('users')
-// ✅ ALWAYS: ctx.table('users')
+// ❌ NEVER: ctx.db.query('user')
+// ✅ ALWAYS: ctx.table('user')
 
 // ⚠️ Exception: Stream initialization ONLY
 import { stream } from 'convex-helpers/server/stream';
@@ -1013,7 +1013,7 @@ const myStream = stream(ctx.db, schema).query('posts');
 // BUT: Inside stream operations, you CAN and SHOULD use ctx.table()!
 .filterWith(async (post) => {
   // ✅ Use ctx.table() inside stream operations
-  const author = await ctx.table('users').get(post.authorId);
+  const author = await ctx.table('user').get(post.authorId);
   return author && !author.isBanned;
 })
 ```
@@ -1041,26 +1041,26 @@ Before implementing any mutation, ensure:
 ```typescript
 // ✅ Complete mutation example
 export const updateCharacter = createAuthMutation({
-  rateLimit: "character/update", // 1. Rate limiting (MUST exist in rateLimiter.ts!)
+  rateLimit: 'character/update', // 1. Rate limiting (MUST exist in rateLimiter.ts!)
 })({
   args: updateCharacterSchema, // 2. Validation
   returns: z.boolean(),
   handler: async (ctx, args) => {
-    const character = await ctx.table("characters").get(args.id);
+    const character = await ctx.table('characters').get(args.id);
 
     if (!character) {
       throw new ConvexError({
         // 3. Error handling
-        code: "NOT_FOUND",
-        message: "Character not found",
+        code: 'NOT_FOUND',
+        message: 'Character not found',
       });
     }
 
     if (character.userId !== ctx.userId) {
       // 4. Authorization
       throw new ConvexError({
-        code: "FORBIDDEN",
-        message: "Not authorized",
+        code: 'FORBIDDEN',
+        message: 'Not authorized',
       });
     }
 
@@ -1072,11 +1072,11 @@ export const updateCharacter = createAuthMutation({
 
 ### Mutation Operations
 
-- Use `.replace()` to fully replace an existing document: `await ctx.table('users').getX(id).replace(data)`
-- Use `.patch()` to shallow merge updates: `await ctx.table('users').getX(id).patch({ name: 'New' })`
-- Use `.delete()` to remove a document: `await ctx.table('users').getX(id).delete()`
-- Use `.insert()` to create new documents: `await ctx.table('users').insert(data)`
-- Use `.insertMany()` to create multiple documents: `await ctx.table('users').insertMany([data1, data2])`. Prefer `insertMany` over for loop `insert`.
+- Use `.replace()` to fully replace an existing document: `await ctx.table('user').getX(id).replace(data)`
+- Use `.patch()` to shallow merge updates: `await ctx.table('user').getX(id).patch({ name: 'New' })`
+- Use `.delete()` to remove a document: `await ctx.table('user').getX(id).delete()`
+- Use `.insert()` to create new documents: `await ctx.table('user').insert(data)`
+- Use `.insertMany()` to create multiple documents: `await ctx.table('user').insertMany([data1, data2])`. Prefer `insertMany` over for loop `insert`.
 - `.getX()` throws if document not found, `.get()` returns null
 - Isolate frequently-changing data (timestamps, counters) in separate tables - see [convex-optimize.mdc](mdc:.cursor/rules/convex-optimize.mdc)
 
@@ -1084,32 +1084,32 @@ export const updateCharacter = createAuthMutation({
 
 ```typescript
 // Insert and get entity
-const task = await ctx.table("tasks").insert({ text: "Build feature" }).get();
+const task = await ctx.table('tasks').insert({ text: 'Build feature' }).get();
 
 // Insert multiple entities
 const taskIds = await ctx
-  .table("tasks")
+  .table('tasks')
   .insertMany([
-    { text: "Build feature" },
-    { text: "Write tests" },
-    { text: "Deploy to production" },
+    { text: 'Build feature' },
+    { text: 'Write tests' },
+    { text: 'Deploy to production' },
   ]);
 
 // Insert with 1:1 or 1:many edges
-await ctx.table("messages").insert({
-  text: "Hello world",
+await ctx.table('messages').insert({
+  text: 'Hello world',
   userId, // Creates edge to user
 });
 
 // Insert with many:many edges
-await ctx.table("messages").insert({
-  text: "Tagged message",
+await ctx.table('messages').insert({
+  text: 'Tagged message',
   tags: [tagId1, tagId2], // Creates edges to tags
 });
 
 // Update many:many edges
 await ctx
-  .table("messages")
+  .table('messages')
   .getX(messageId)
   .patch({
     tags: { add: [tagId3, tagId4], remove: [tagId1] }, // Add and remove in one operation
@@ -1117,50 +1117,46 @@ await ctx
 
 // Replace all many:many edges
 await ctx
-  .table("messages")
+  .table('messages')
   .getX(messageId)
   .replace({
-    text: "Updated text",
+    text: 'Updated text',
     tags: [tagId2, tagId3], // Replaces ALL edges (use [] to remove all)
   });
 
 // Replace with edge unchanged - omit edge field
 await ctx
-  .table("messages")
+  .table('messages')
   .getX(messageId)
-  .replace({ text: "Changed text" /* tags unchanged */ });
+  .replace({ text: 'Changed text' /* tags unchanged */ });
 
 // Update 1:1 or 1:many edge
-await ctx.table("messages").getX(messageId).patch({ userId: newUserId }); // Change parent (use undefined to remove if optional)
+await ctx.table('messages').getX(messageId).patch({ userId: newUserId }); // Change parent (use undefined to remove if optional)
 
 // Writing edges during insert
-const userId = await ctx.table("users").insert({ name: "Alice" });
+const userId = await ctx.table('user').insert({ name: 'Alice' });
 const profileId = await ctx
-  .table("profiles")
-  .insert({ bio: "In Wonderland", userId }); // Creates 1:1 edge
+  .table('profiles')
+  .insert({ bio: 'In Wonderland', userId }); // Creates 1:1 edge
 
 // Writing edges during update
-await ctx.table("profiles").getX(profileId).patch({ userId }); // Update edge
+await ctx.table('profiles').getX(profileId).patch({ userId }); // Update edge
 
 // Edge mutations
-await ctx
-  .table("users")
-  .getX(userId)
-  .edgeX("profile")
-  .patch({ bio: "New bio" });
+await ctx.table('user').getX(userId).edgeX('profile').patch({ bio: 'New bio' });
 
 // ⚠️ LIMITATION: Can't chain edge() on loaded ent for mutations
-const user = await ctx.table("users").getX(userId);
+const user = await ctx.table('user').getX(userId);
 // ❌ await user.edgeX('profile').patch(...); // TypeScript error
 // ✅ WORKAROUND: Start from ctx.table
-await ctx.table("users").getX(user._id).edgeX("profile").patch({ bio: "New" });
+await ctx.table('user').getX(user._id).edgeX('profile').patch({ bio: 'New' });
 
 // Conditional updates with undefined
 const updateData: Record<string, any> = {};
 if (bio !== undefined) updateData.bio = bio;
 if (name !== undefined) updateData.name = name;
 if (Object.keys(updateData).length > 0) {
-  await ctx.table("users").getX(userId).patch(updateData);
+  await ctx.table('user').getX(userId).patch(updateData);
 }
 ```
 
@@ -1168,21 +1164,21 @@ if (Object.keys(updateData).length > 0) {
 
 ```typescript
 // ✅ BEST: Use insertMany for bulk inserts
-await ctx.table("items").insertMany(items); // Single operation
+await ctx.table('items').insertMany(items); // Single operation
 
 // ✅ GOOD: Loop inserts are still efficient - Convex batches in single transaction
 for (const item of items) {
-  await ctx.table("items").insert(item);
+  await ctx.table('items').insert(item);
 }
 
 // ❌ AVOID: Unnecessary Promise.all - adds complexity without benefit
-await Promise.all(items.map((item) => ctx.table("items").insert(item)));
+await Promise.all(items.map((item) => ctx.table('items').insert(item)));
 
 // Process large datasets in batches of 100-1000
 const batchSize = 500;
 for (let i = 0; i < items.length; i += batchSize) {
   const batch = items.slice(i, i + batchSize);
-  await ctx.table("items").insertMany(batch);
+  await ctx.table('items').insertMany(batch);
 }
 ```
 
@@ -1195,17 +1191,17 @@ for (let i = 0; i < items.length; i += batchSize) {
 - Use `createAction()` for public actions and `createInternalAction()` for internal actions:
 
 ```ts
-"use node";
+'use node';
 
-import { createAction } from "./functions";
-import { z } from "zod";
+import { createAction } from './functions';
+import { z } from 'zod';
 
 // Public action
 export const exampleAction = createAction()({
   args: {},
   returns: z.null(),
   handler: async (ctx, args) => {
-    console.info("This action does not return anything");
+    console.info('This action does not return anything');
     return null;
   },
 });
@@ -1236,8 +1232,8 @@ defineEnt({
   .edge('files', { to: '_storage' }); // Files are automatically deleted (default: hard)
 
 // Soft delete operations
-await ctx.table('users').getX(userId).delete(); // Sets deletionTime
-await ctx.table('users').getX(userId).patch({ deletionTime: undefined }); // Undelete
+await ctx.table('user').getX(userId).delete(); // Sets deletionTime
+await ctx.table('user').getX(userId).patch({ deletionTime: undefined }); // Undelete
 
 // Soft edge deletion for 1:1/1:many
 .edges('profiles', { ref: true, deletion: 'soft' }) // Cascade soft delete
@@ -1251,18 +1247,18 @@ For detailed deletion patterns and rules, see [convex-ents.mdc](mdc:.cursor/rule
 
 ```typescript
 // Setup in functions.ts
-import { Triggers } from "convex-helpers/server/triggers";
+import { Triggers } from 'convex-helpers/server/triggers';
 export const triggers = new Triggers<DataModel>();
-import "./triggers"; // Import trigger registrations
+import './triggers'; // Import trigger registrations
 
 // Register triggers for aggregates and validation
 // Aggregate maintenance - ALWAYS use .trigger()
-triggers.register("characterWorks", aggregateCharacterWorks.trigger());
+triggers.register('characterWorks', aggregateCharacterWorks.trigger());
 
 // Data validation
-triggers.register("users", async (ctx, change) => {
-  if (change.newDoc && !change.newDoc.email.includes("@")) {
-    throw new Error("Invalid email");
+triggers.register('user', async (ctx, change) => {
+  if (change.newDoc && !change.newDoc.email.includes('@')) {
+    throw new Error('Invalid email');
   }
 });
 ```
@@ -1314,7 +1310,7 @@ await leaderboard.delete(ctx, doc); // WRONG!
 const countAggregate = new TableAggregate<{
   Key: null;
   DataModel: DataModel;
-  TableName: "items";
+  TableName: 'items';
 }>(components.countAggregate, {
   sortKey: () => null,
 });

@@ -7,8 +7,9 @@ alwaysApply: false
 # Convex Full-Text Search
 
 **IMPORTANT**: This document follows the optimization guidelines from [convex-optimize.mdc](mdc:.cursor/rules/convex-optimize.mdc). Key principles:
+
 - Never use post-filtering with pagination (use streams instead)
-- Always limit results with `.take()` 
+- Always limit results with `.take()`
 - Use indexes for filtering when possible
 - For complex filtering with search, use streams from `convex-helpers`
 
@@ -140,24 +141,28 @@ export const advancedSearch = createPublicQuery()({
   ),
   handler: async (ctx, args) => {
     // For date filtering with search, you have options:
-    
+
     // Option 1: If search is optional, use index for date filtering
-    if (!args.query && args.filters.dateRange && args.filters.dateRange !== 'all') {
+    if (
+      !args.query &&
+      args.filters.dateRange &&
+      args.filters.dateRange !== 'all'
+    ) {
       const now = Date.now();
       const ranges = {
         today: now - 24 * 60 * 60 * 1000,
         week: now - 7 * 24 * 60 * 60 * 1000,
         month: now - 30 * 24 * 60 * 60 * 1000,
       };
-      
+
       return await ctx
-        .table('articles', 'publishedAt', (q) => 
+        .table('articles', 'publishedAt', (q) =>
           q.gte('publishedAt', ranges[args.filters.dateRange])
         )
         .order('desc')
         .take(args.limit);
     }
-    
+
     // Option 2: Use search with available filter fields
     const results = await ctx
       .table('articles')
@@ -187,17 +192,19 @@ export const advancedSearch = createPublicQuery()({
 ### Options for Complex Filtering with Search:
 
 1. **Use search with available filterFields** (recommended when possible):
+
 ```typescript
 // Add more filterFields to your search index
 searchIndex('search_content', {
   searchField: 'content',
   filterFields: ['category', 'author', 'status', 'dateGroup'], // Add what you need
-})
+});
 ```
 
 2. **Separate search and filter concerns**:
+
 ```typescript
-export const searchOrFilter = createPublicPaginatedQuery()({ 
+export const searchOrFilter = createPublicPaginatedQuery()({
   args: {
     query: z.string().optional(),
     category: z.string().optional(),
@@ -219,7 +226,7 @@ export const searchOrFilter = createPublicPaginatedQuery()({
         })
         .paginate(args.paginationOpts);
     }
-    
+
     // Option B: Without search, use streams for complex filtering
     return await stream(ctx.db, schema) // Note: streams still require ctx.db
       .query('articles')
@@ -244,6 +251,7 @@ export const searchOrFilter = createPublicPaginatedQuery()({
 ```
 
 3. **Post-process search results** (only for small result sets):
+
 ```typescript
 // Only viable if you can limit search results to manageable size
 const searchResults = await ctx
@@ -252,9 +260,10 @@ const searchResults = await ctx
   .take(100); // Limit to prevent memory issues
 
 // Then filter in memory
-const filtered = searchResults.filter(article => {
-  return article.publishedAt >= args.startDate && 
-         article.publishedAt <= args.endDate;
+const filtered = searchResults.filter((article) => {
+  return (
+    article.publishedAt >= args.startDate && article.publishedAt <= args.endDate
+  );
 });
 ```
 
@@ -393,7 +402,7 @@ export const getSuggestions = createPublicQuery()({
     // 1. Adding a dedicated prefix search index
     // 2. Using a trie data structure in a separate table
     // 3. For small datasets (<1000), this approach is acceptable
-    
+
     const suggestions = await ctx
       .table('searchSuggestions', 'count')
       .order('desc')
@@ -471,7 +480,7 @@ export const fuzzySearch = createPublicQuery()({
     // 1. Using a dedicated search service (Algolia, Elasticsearch)
     // 2. Pre-computing similar terms during write operations
     // 3. Using vector embeddings for semantic search
-    
+
     const articles = await ctx.table('articles').take(1000);
 
     const results = articles
@@ -567,7 +576,7 @@ export const searchWithHighlight = createPublicQuery()({
 // Track what users search for
 export const logSearch = createInternalMutation()({
   args: {
-    userId: zid('users').optional(),
+    userId: zid('user').optional(),
     query: z.string(),
     resultCount: z.number(),
     clickedResultId: zid('articles').optional(),

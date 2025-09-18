@@ -671,7 +671,7 @@ triggers.register('characters', aggregateCharacters.trigger());
 // ... register other aggregates
 
 // CASCADE DELETES - Triggers still work!
-triggers.register('users', async (ctx, change) => {
+triggers.register('user', async (ctx, change) => {
   if (change.operation === 'delete') {
     // Just delete - aggregates update automatically
     const characters = await ctx.table('characters', 'userId', (q) =>
@@ -692,7 +692,7 @@ triggers.register('users', async (ctx, change) => {
 ```typescript
 // ✅ GOOD: Namespace for complete isolation
 const byUser = new TableAggregate<{
-  Namespace: Id<'users'>;
+  Namespace: Id<'user'>;
   Key: number;
   DataModel: DataModel;
   TableName: 'activities';
@@ -703,7 +703,7 @@ const byUser = new TableAggregate<{
 
 // ❌ AVOID: Prefix without namespace causes contention
 const byUserPrefix = new TableAggregate<{
-  Key: [Id<'users'>, number];
+  Key: [Id<'user'>, number];
   DataModel: DataModel;
   TableName: 'activities';
 }>(components.byUserPrefix, {

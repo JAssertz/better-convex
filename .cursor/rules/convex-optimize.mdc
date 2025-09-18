@@ -17,11 +17,11 @@ This document covers optimization patterns for Convex queries at scale. Don't pr
 ```typescript
 // ❌ WRONG: Scans every document looking for a match
 const members = await ctx
-  .table('members')
+  .table('member')
   .filter((q) => q.eq(q.field('teamId'), args.teamId));
 
 // ✅ CORRECT: Uses index to jump to matching documents
-const members = await ctx.table('members', 'teamId', (q) =>
+const members = await ctx.table('member', 'teamId', (q) =>
   q.eq('teamId', args.teamId)
 );
 ```
@@ -50,7 +50,7 @@ export default schema;
 ```typescript
 // Use multi-field index when filtering by multiple fields
 const activeMembers = await ctx
-  .table('members', 'teamId_status', (q) =>
+  .table('member', 'teamId_status', (q) =>
     q.eq('teamId', args.teamId).eq('status', 'active')
   );
 ````
@@ -105,6 +105,7 @@ const count = await aggregateMessages.count(ctx, {
 ### ⚠️ WARNING: Post-Filtering Anti-Pattern
 
 **NEVER fetch documents then filter in memory** - This dangerous pattern can:
+
 - Miss items when paginating
 - Fetch too many documents and hit limits
 - Create inconsistent results
@@ -115,7 +116,7 @@ const memberships = await ctx
   .table('projectMembers')
   .filter((q) => q.eq(q.field('userId'), ctx.userId));
 // Filtering in memory - can miss pending invites!
-const pendingInvites = memberships.filter(m => m.acceptedAt === undefined);
+const pendingInvites = memberships.filter((m) => m.acceptedAt === undefined);
 
 // ✅ CORRECT: Filter at database level
 const pendingMemberships = await ctx
@@ -141,7 +142,7 @@ const pendingInvites = await stream(ctx.db, schema)
 
 ```typescript
 // ❌ INEFFICIENT: Redundant database query for current user
-const currentUser = await ctx.table('users').getX(ctx.userId); // Unnecessary query!
+const currentUser = await ctx.table('user').getX(ctx.userId); // Unnecessary query!
 
 // ✅ OPTIMAL: Use pre-loaded user from context
 const currentUser = ctx.user; // Already available in authenticated contexts
@@ -165,8 +166,8 @@ const message = await ctx.table('messages').getX(messageId);
 const author = await message.edgeX('author'); // Messages always have authors
 
 // When creating related entities
-const userId = await ctx.table('users').insert(userData);
-const user = await ctx.table('users').getX(userId); // Just inserted, must exist
+const userId = await ctx.table('user').insert(userData);
+const user = await ctx.table('user').getX(userId); // Just inserted, must exist
 const profile = await ctx.table('profiles').insert({ userId }).get();
 const profileX = await user.edgeX('profile'); // Now guaranteed to exist
 ```
@@ -204,7 +205,7 @@ const isFollowing = await user.edge('following').has(targetUserId);
 // More examples
 const hasTag = await message.edge('tags').has(tagId);
 const isStarred = await character.edge('starredBy').has(userId);
-const isMember = await team.edge('members').has(userId);
+const isMember = await team.edge('member').has(userId);
 ```
 
 **When to use .has():**
@@ -253,7 +254,7 @@ const isMember = await team.edge('members').has(userId);
 ```typescript
 // ✅ GOOD: Separate table for domain relationship
 characterActivities: defineTable({
-  userId: v.id('users'),
+  userId: v.id('user'),
   characterId: v.id('characters'),
   lastMessageAt: v.number(),
   // Could extend with:
@@ -293,7 +294,7 @@ const recentMessages = await ctx
 
 ```typescript
 const latestPost = await ctx.table('posts').order('desc').first();
-const user = await ctx.table('users').get('email', email); // Unique lookup by indexed field
+const user = await ctx.table('user').get('email', email); // Unique lookup by indexed field
 const singleDoc = await ctx.table('counters').unique(); // Throws if multiple matches
 ```
 
@@ -356,7 +357,7 @@ users: defineEnt({
 });
 
 // Every query reading users gets invalidated on heartbeat
-const profile = await ctx.table('users').get(userId); // Invalidated every 10s!
+const profile = await ctx.table('user').get(userId); // Invalidated every 10s!
 ```
 
 ### Solution: Isolate frequently-changing data
@@ -374,7 +375,7 @@ heartbeats: defineEnt({
 }).edge('user'),
 
 // Profile query not invalidated by heartbeats
-const profile = await ctx.table('users').get(userId);
+const profile = await ctx.table('user').get(userId);
 
 // Only queries that need online status read heartbeat
 const heartbeat = profile && await profile.edge('heartbeat');
@@ -441,7 +442,7 @@ const items = await ctx.table('cartItems', 'cartId', (q) =>
 // Safe: enforced max 100 at insert
 
 // ❌ AVOID: Fetching all members to count or process
-const members = await ctx.table('members', 'teamId', (q) =>
+const members = await ctx.table('member', 'teamId', (q) =>
   q.eq('teamId', teamId)
 );
 // Dangerous: could be millions - use pagination instead
@@ -474,7 +475,7 @@ const members = await ctx.table('members', 'teamId', (q) =>
 characters: defineEnt({
   name: v.string(),
   label: v.string().optional(),
-  userId: v.id('users'),
+  userId: v.id('user'),
   private: v.boolean(),
 }).searchIndex('search_name', {
   searchField: 'name',
@@ -548,7 +549,7 @@ characters: defineEnt({
    ```typescript
    // Search can only scan 1024 documents
    // Use filter fields to narrow results BEFORE scanning
-   ctx.table('users').search(
+   ctx.table('user').search(
      'search_name',
      (q) => q.search('name', 'john').eq('teamId', teamId) // Narrow to team first
    );
@@ -785,7 +786,7 @@ export const searchCharacters = createPublicPaginatedQuery()({
           return false;
         }
         // Can even do async lookups
-        const author = await ctx.table('users').get(char.userId);
+        const author = await ctx.table('user').get(char.userId);
         return author && !author.isBanned;
       })
       // Pagination happens AFTER filtering - consistent page sizes!
@@ -819,11 +820,11 @@ import { mergedStream } from 'convex-helpers/server/stream';
 
 // ⚠️ Streams still use ctx.db
 const activeUsers = stream(ctx.db, schema)
-  .query('users')
+  .query('user')
   .withIndex('status', (q) => q.eq('status', 'active'));
 
 const premiumUsers = stream(ctx.db, schema)
-  .query('users')
+  .query('user')
   .withIndex('plan', (q) => q.eq('plan', 'premium'));
 
 // Merge and get distinct users
@@ -901,7 +902,7 @@ export const searchCharacters = createPublicPaginatedQuery()({
         return false;
       }
       // Can even do async lookups
-      const author = await ctx.table('users').get(char.userId);
+      const author = await ctx.table('user').get(char.userId);
       return author && !author.isBanned;
     });
 
@@ -936,11 +937,11 @@ import { mergedStream } from 'convex-helpers/server/stream';
 
 // ⚠️ Streams still use ctx.db
 const activeUsers = stream(ctx.db, schema)
-  .query('users')
+  .query('user')
   .withIndex('status', (q) => q.eq('status', 'active'));
 
 const premiumUsers = stream(ctx.db, schema)
-  .query('users')
+  .query('user')
   .withIndex('plan', (q) => q.eq('plan', 'premium'));
 
 // Merge and get distinct users
@@ -985,7 +986,7 @@ const merged = mergedStream([activeUsers, premiumUsers], ['_creationTime'])
 ```typescript
 // ✅ BEST: Use Ents .map() directly - handles async internally
 const enrichedUsers = await ctx
-  .table('users')
+  .table('user')
   .take(10)
   .map(async (user) => {
     const profile = await user.edge('profile');
@@ -1004,7 +1005,7 @@ const paginatedResults = await ctx
   .paginate(args.paginationOpts)
   .map(async (msg) => ({
     ...msg.doc(),
-    user: await ctx.table('users').get(msg.userId),
+    user: await ctx.table('user').get(msg.userId),
   }));
 ```
 
@@ -1021,7 +1022,7 @@ const results = await asyncMap(ids, (id) => someAsyncOperation(id));
 
 // ✅ Use asyncMap for stream results (streams don't have built-in .map())
 import { stream } from 'convex-helpers/server/stream';
-const streamResults = await stream(ctx.db, schema).query('users').collect();
+const streamResults = await stream(ctx.db, schema).query('user').collect();
 const enriched = await asyncMap(streamResults, async (user) => {
   const profile = await ctx.table('profiles').get('userId', user._id);
   return { ...user, profile };
@@ -1072,7 +1073,7 @@ const educations = await ctx
 
 // More examples with built-in .map()
 const usersWithDetails = await ctx
-  .table('users')
+  .table('user')
   .take(50)
   .map(async (user) => {
     // Use Promise.all for parallel edge lookups
@@ -1092,16 +1093,16 @@ const usersWithDetails = await ctx
 // ❌ Manual Promise.all pattern
 const userPromises = [];
 for (const userId of userIds) {
-  userPromises.push(ctx.table('users').get(userId));
+  userPromises.push(ctx.table('user').get(userId));
 }
 const users = await Promise.all(userPromises);
 
 // ✅ Clean with Ents getMany (when IDs might not exist)
-const users = await ctx.table('users').getMany(userIds);
+const users = await ctx.table('user').getMany(userIds);
 // Returns (Doc | null)[] for each ID
 
 // ✅ Or use getManyX to throw if any ID doesn't exist
-const users = await ctx.table('users').getManyX(userIds);
+const users = await ctx.table('user').getManyX(userIds);
 // Returns Doc[] or throws if any missing
 
 // When to use each:
@@ -1120,7 +1121,7 @@ const user = await character.edgeX('user'); // Required relationship
 
 ```typescript
 // ❌ DANGEROUS: Could return millions of documents!
-const user = await ctx.table('users').get(userId);
+const user = await ctx.table('user').get(userId);
 const allUserPosts = await user.edge('posts'); // Fetches ALL posts!
 
 // ✅ SAFE: Use pagination for unbounded data
@@ -1130,7 +1131,7 @@ const recentPosts = await ctx
   .paginate(args.paginationOpts);
 
 // ✅ ACCEPTABLE: Limit results when traversing edges
-const user = await ctx.table('users').get(userId);
+const user = await ctx.table('user').get(userId);
 const recentPosts = await user.edge('posts').order('desc').take(5);
 // Safe: limited to 5 posts
 ```
@@ -1164,13 +1165,13 @@ const posts = await ctx
   .paginate(args.paginationOpts);
 
 // ✅ PATTERN 3: Use .take() for small previews
-const user = await ctx.table('users').getX(userId);
+const user = await ctx.table('user').getX(userId);
 const recentPosts = await user.edge('posts').order('desc').take(5);
 
 // ✅ PATTERN 4: Batch operations on current page only
 const posts = await ctx.table('posts').paginate(args.paginationOpts);
 const authorIds = posts.page.map((p) => p.authorId);
-const authors = await ctx.table('users').getMany(authorIds); // Only current page!
+const authors = await ctx.table('user').getMany(authorIds); // Only current page!
 ```
 
 ### Best Practices
@@ -1187,7 +1188,7 @@ const authors = await ctx.table('users').getMany(authorIds); // Only current pag
 
 ```typescript
 // ❌ Fetching all to filter/map/count
-const user = await ctx.table('users').get(userId);
+const user = await ctx.table('user').get(userId);
 const allPosts = await user.edge('posts');
 const publishedPosts = allPosts.filter((p) => p.status === 'published');
 const count = allPosts.length;
@@ -1282,7 +1283,7 @@ const character = {
 characters: defineEnt({
   name: v.string(),
   // ...
-}).edges('followers', { to: 'users' }), // many:many edge
+}).edges('followers', { to: 'user' }), // many:many edge
 
 users: defineEnt({
   name: v.string(),
@@ -1327,7 +1328,7 @@ export function getEntDefinitionsWithRules(ctx: QueryCtx) {
     posts: {
       read: async (post) => {
         // Fetches user for EVERY post in query!
-        const author = await ctx.table('users').get(post.authorId);
+        const author = await ctx.table('user').get(post.authorId);
         return author && !author.isBanned;
       },
     },
@@ -1356,7 +1357,7 @@ export function getEntDefinitionsWithRules(ctx: QueryCtx) {
 posts: defineEnt({
   content: v.string(),
   isPublic: v.boolean(), // Computed during insert
-  allowedUserIds: v.array(v.id('users')), // Pre-computed access list
+  allowedUserIds: v.array(v.id('user')), // Pre-computed access list
 }).index('isPublic', ['isPublic']); // Index for efficient filtering
 
 // Fast rule using pre-computed fields
@@ -1455,11 +1456,11 @@ const details = await character.edge('details');
 
 ```typescript
 // ✅ Use .doc() when you only need plain data (no edge traversal)
-const users = await ctx.table('users').take(100);
+const users = await ctx.table('user').take(100);
 const plainData = users.map((u) => u.doc()); // Skip ent overhead
 
 // ✅ Use .docs() for bulk conversion
-const plainUsers = await ctx.table('users').take(100).docs();
+const plainUsers = await ctx.table('user').take(100).docs();
 
 // When to use raw documents:
 // 1. Exporting data to external systems
@@ -1493,7 +1494,7 @@ const scheduled = await ctx.table.system('_scheduled_functions').take(50);
 
 ```typescript
 // ⚠️ CRITICAL: 1:many edges fetch ALL related documents by default!
-const user = await ctx.table('users').getX(userId);
+const user = await ctx.table('user').getX(userId);
 const allPosts = await user.edge('posts'); // Could fetch MILLIONS!
 
 // ✅ ALWAYS limit 1:many edge traversals

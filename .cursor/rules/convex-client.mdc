@@ -204,8 +204,8 @@ if (premiumGuard()) return; // Blocked
 
 ```typescript
 // Document IDs
-type UserId = Id<'users'>; // Use Id<T> for document IDs
-const userId = localStorage.getItem('id') as Id<'users'>; // Cast external IDs
+type UserId = Id<'user'>; // Use Id<T> for document IDs
+const userId = localStorage.getItem('id') as Id<'user'>; // Cast external IDs
 
 // Return type inference (client-side)
 import { FunctionReturnType } from 'convex/server';

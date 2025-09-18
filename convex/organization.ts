@@ -1,28 +1,12 @@
-import type { QueryCtx } from '@convex/_generated/server';
-import type {
-  BetterAuthInvitation,
-  BetterAuthOrganization,
-} from '@convex/authShared';
-
 import { ConvexError } from 'convex/values';
 import { z } from 'zod';
+import { zid } from 'convex-helpers/server/zod';
 
-import type { Id } from './_generated/dataModel';
-
-import { api, components } from './_generated/api';
-import { createAuth, getHeaders } from './auth';
-import {
-  getBetterAuthUser,
-  getBetterAuthUserById,
-} from './betterAuth/getBetterAuthUser';
-import {
-  type AuthQueryCtx,
-  createAuthMutation,
-  createAuthQuery,
-  createInternalMutation,
-  createPublicMutation,
-} from './functions';
-import { getRateLimitKey, rateLimiter } from './helpers/rateLimiter';
+import { api } from './_generated/api';
+import { createAuth } from './auth';
+import { getHeaders } from './betterAuth/helpers';
+import { createAuthMutation, createAuthQuery } from './functions';
+import { asyncMap } from 'convex-helpers';
 
 const MEMBER_LIMIT = 5;
 
@@ -33,22 +17,6 @@ function generateSlug(name: string): string {
     .replaceAll(/^-+|-+$/g, '')
     .slice(0, 50);
 }
-
-// Helper function to get organization by slug using Better Auth's findOne method
-const getBetterAuthOrganization = async (
-  ctx: QueryCtx,
-  slug: string
-): Promise<BetterAuthOrganization | null> => {
-  const org: BetterAuthOrganization | null = await ctx.runQuery(
-    components.betterAuth.adapter.findOne,
-    {
-      model: 'organization',
-      where: [{ field: 'slug', value: slug }],
-    }
-  );
-
-  return org;
-};
 
 // List all organizations for current user (excluding active organization)
 export const listOrganizations = createAuthQuery()({
@@ -127,7 +95,7 @@ export const createOrganization = createAuthMutation({
 
     while (attempt < 10) {
       // Check if slug is already taken
-      const existingOrg = await getBetterAuthOrganization(ctx, slug);
+      const existingOrg = await ctx.table('organization').get('slug', slug);
 
       if (!existingOrg) {
         break; // Slug is available!
@@ -203,7 +171,7 @@ export const updateOrganization = createAuthMutation({
         slugSchema.parse(args.slug);
 
         // Check if slug is taken
-        const existingOrg = await getBetterAuthOrganization(ctx, args.slug);
+        const existingOrg = await ctx.table('organization').get('slug', slug!);
 
         if (existingOrg && existingOrg._id !== ctx.user.activeOrganization.id) {
           throw new ConvexError({
@@ -249,7 +217,7 @@ export const setActiveOrganization = createAuthMutation({
   rateLimit: 'organization/setActive',
 })({
   args: {
-    organizationId: z.string(),
+    organizationId: zid('organization'),
   },
   returns: z.null(),
   handler: async (ctx, args) => {
@@ -273,32 +241,25 @@ export const setActiveOrganization = createAuthMutation({
 // Accept invitation
 export const acceptInvitation = createAuthMutation({})({
   args: {
-    invitationId: z.string(),
+    invitationId: zid('invitation'),
   },
   returns: z.null(),
   handler: async (ctx, args) => {
     const auth = createAuth(ctx);
     const headers = await getHeaders(ctx);
 
-    // Validate that the invitation is for the current user's email (optimized)
-    const invitation: BetterAuthInvitation | null = await ctx.runQuery(
-      components.betterAuth.adapter.findOne,
-      {
-        model: 'invitation',
-        where: [
-          { field: 'id', value: args.invitationId },
-          { field: 'email', value: ctx.user.email },
-        ],
-      }
-    );
+    // Validate that the invitation is for the current user's email
+    const invitation = await ctx.table('invitation').get(args.invitationId);
+    const validInvitation =
+      invitation?.email === ctx.user.email ? invitation : null;
 
-    if (!invitation) {
+    if (!validInvitation) {
       throw new ConvexError({
         code: 'FORBIDDEN',
         message: 'This invitation is not found for your email address',
       });
     }
-    if (invitation.status !== 'pending') {
+    if (validInvitation.status !== 'pending') {
       throw new ConvexError({
         code: 'BAD_REQUEST',
         message: 'This invitation has already been processed',
@@ -319,7 +280,7 @@ export const rejectInvitation = createAuthMutation({
   rateLimit: 'organization/rejectInvite',
 })({
   args: {
-    invitationId: z.string(),
+    invitationId: zid('invitation'),
   },
   returns: z.null(),
   handler: async (ctx, args) => {
@@ -327,24 +288,17 @@ export const rejectInvitation = createAuthMutation({
     const headers = await getHeaders(ctx);
 
     // Get the specific invitation directly
-    const invitation: BetterAuthInvitation | null = await ctx.runQuery(
-      components.betterAuth.adapter.findOne,
-      {
-        model: 'invitation',
-        where: [
-          { field: 'id', value: args.invitationId },
-          { field: 'email', value: ctx.user.email },
-        ],
-      }
-    );
+    const invitation = await ctx.table('invitation').get(args.invitationId);
+    const validInvitation =
+      invitation?.email === ctx.user.email ? invitation : null;
 
-    if (!invitation) {
+    if (!validInvitation) {
       throw new ConvexError({
         code: 'FORBIDDEN',
         message: 'This invitation is not found for your email address',
       });
     }
-    if (invitation.status !== 'pending') {
+    if (validInvitation.status !== 'pending') {
       throw new ConvexError({
         code: 'BAD_REQUEST',
         message: 'This invitation has already been processed',
@@ -365,7 +319,7 @@ export const removeMember = createAuthMutation({
   rateLimit: 'organization/removeMember',
 })({
   args: {
-    memberId: z.string(),
+    memberId: zid('member'),
   },
   returns: z.null(),
   handler: async (ctx, args) => {
@@ -397,7 +351,7 @@ export const leaveOrganization = createAuthMutation({
 })({
   args: {},
   returns: z.null(),
-  handler: async (ctx, args) => {
+  handler: async (ctx) => {
     // Get current member info to check role
     if (ctx.user.activeOrganization.role !== 'owner') {
       throw new ConvexError({
@@ -438,7 +392,7 @@ export const updateMemberRole = createAuthMutation({
   rateLimit: 'organization/updateRole',
 })({
   args: {
-    memberId: z.string(),
+    memberId: zid('member'),
     role: z.enum(['owner', 'member']),
   },
   returns: z.null(),
@@ -466,81 +420,11 @@ export const updateMemberRole = createAuthMutation({
   },
 });
 
-// Internal: Create personal organization for new user
-export const createPersonalOrganization = createInternalMutation()({
-  args: {
-    email: z.string(),
-    image: z.string().nullish(),
-    name: z.string(),
-    token: z.string(),
-    userId: z.string(),
-  },
-  returns: z
-    .object({
-      id: z.string(),
-      slug: z.string(),
-    })
-    .nullable(),
-  handler: async (ctx, args) => {
-    const auth = createAuth(ctx);
-
-    const headers = new Headers({
-      authorization: `Bearer ${args.token}`,
-    });
-
-    // Check if user already has any organizations
-    const existingOrgs = await auth.api.listOrganizations({ headers });
-
-    if (existingOrgs.length > 0) {
-      return null;
-    }
-
-    // Generate unique slug for personal org
-    const slug = `personal-${args.userId.slice(-8)}`;
-
-    const org = await auth.api.createOrganization({
-      body: {
-        logo: args.image || undefined,
-        monthlyCredits: 0,
-        name: `${args.name}'s Organization`,
-        slug,
-      },
-      headers,
-    });
-
-    if (!org) {
-      throw new ConvexError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create personal organization',
-      });
-    }
-
-    // Set as active organization (can't use internal.organization.setActiveOrganization without headers)
-    await auth.api.setActiveOrganization({
-      body: { organizationId: org.id },
-      headers,
-    });
-
-    // Update the user's last active organization and personal organization ID for future sessions
-    const userId = args.userId as Id<'users'>;
-
-    await ctx.table('users').getX(userId).patch({
-      lastActiveOrganizationId: org.id,
-      personalOrganizationId: org.id,
-    });
-
-    return {
-      id: org.id,
-      slug: org.slug,
-    };
-  },
-});
-
 // Delete organization (owner only)
 export const deleteOrganization = createAuthMutation({})({
   args: {},
   returns: z.null(),
-  handler: async (ctx, args) => {
+  handler: async (ctx) => {
     // Check if user is owner
     if (ctx.user.activeOrganization.role !== 'owner') {
       throw new ConvexError({
@@ -596,7 +480,7 @@ export const getOrganization = createAuthQuery()({
     const headers = await getHeaders(ctx);
 
     // Get organization by slug using Better Auth's findOne method (O(1) instead of O(n))
-    const org = await getBetterAuthOrganization(ctx, args.slug);
+    const org = await ctx.table('organization').get('slug', args.slug);
 
     if (!org) return null;
 
@@ -608,17 +492,8 @@ export const getOrganization = createAuthQuery()({
 
     if (!fullOrg) return null;
 
-    // Get Better Auth user for member comparison
-    const betterAuthUser = await getBetterAuthUser(ctx, ctx.userId);
-
-    if (!betterAuthUser) {
-      return null;
-    }
-
     // Get user's role from full organization members
-    const currentMember = fullOrg.members?.find(
-      (m) => m.userId === betterAuthUser._id
-    );
+    const currentMember = fullOrg.members?.find((m) => m.userId === ctx.userId);
 
     return {
       id: org._id,
@@ -637,7 +512,7 @@ export const getOrganization = createAuthQuery()({
 // Get organization overview with optional invitation details
 export const getOrganizationOverview = createAuthQuery()({
   args: {
-    inviteId: z.string().optional(),
+    inviteId: zid('invitation').optional(),
     slug: z.string(),
   },
   returns: z
@@ -669,7 +544,7 @@ export const getOrganizationOverview = createAuthQuery()({
     .nullable(),
   handler: async (ctx, args) => {
     // Get organization details
-    const org = await getBetterAuthOrganization(ctx, args.slug);
+    const org = await ctx.table('organization').get('slug', args.slug);
 
     if (!org) {
       return null;
@@ -688,46 +563,36 @@ export const getOrganizationOverview = createAuthQuery()({
 
     // Handle invitation - either by ID or auto-find by user email
     const invitationData = await (async () => {
-      let invitation: BetterAuthInvitation | null = null;
+      const invitation = await (async () => {
+        if (args.inviteId) {
+          // If inviteId is provided, fetch specific invitation
+          const invitation = await ctx.table('invitation').get(args.inviteId);
 
-      if (args.inviteId) {
-        // If inviteId is provided, fetch specific invitation
-        invitation = await ctx.runQuery(components.betterAuth.adapter.findOne, {
-          model: 'invitation',
-          where: [{ field: 'id', value: args.inviteId }],
-        });
+          if (!invitation || invitation.organizationId !== org._id) {
+            return null;
+          }
+          return invitation;
+        } else {
+          // If no inviteId, search for pending invitations for current user's email
+          const invitations = await ctx.table(
+            'invitation',
+            'email_status',
+            (q) => q.eq('email', ctx.user.email).eq('status', 'pending')
+          );
 
-        if (!invitation || invitation.organizationId !== org._id) {
-          return null;
+          // Find invitation matching this organization
+          return (
+            invitations.find((inv) => inv.organizationId === org._id) || null
+          );
         }
-      } else {
-        // If no inviteId, search for pending invitations for current user's email
-        const invitationsResponse: { page: BetterAuthInvitation[] } | null =
-          await ctx.runQuery(components.betterAuth.adapter.findMany, {
-            model: 'invitation',
-            paginationOpts: {
-              cursor: null,
-              numItems: 100,
-            },
-          });
+      })();
 
-        // Find invitation matching user's email and this organization
-        const invitationsList = invitationsResponse?.page || [];
-        invitation =
-          invitationsList.find(
-            (inv) =>
-              inv.email === ctx.user.email &&
-              inv.organizationId === org._id &&
-              inv.status === 'pending'
-          ) || null;
-
-        if (!invitation) {
-          return null;
-        }
+      if (!invitation) {
+        return null;
       }
 
       // Get inviter details
-      const inviter = await getBetterAuthUserById(ctx, invitation.inviterId);
+      const inviter = await ctx.table('user').get(invitation.inviterId);
 
       return {
         id: invitation._id,
@@ -784,9 +649,9 @@ export const listMembers = createAuthQuery()({
     const headers = await getHeaders(ctx);
     console.timeEnd('getHeaders');
 
-    console.time('betterAuth.adapter.findOne organization');
-    const org = await getBetterAuthOrganization(ctx, args.slug);
-    console.timeEnd('betterAuth.adapter.findOne organization');
+    console.time('betterAuth.findOne organization');
+    const org = await ctx.table('organization').get('slug', args.slug);
+    console.timeEnd('betterAuth.findOne organization');
 
     if (!org) {
       return {
@@ -801,14 +666,32 @@ export const listMembers = createAuthQuery()({
       });
     }
 
-    console.time('betterAuth.adapter.listMembers');
-    const response = await ctx.runQuery(
-      components.betterAuth.adapter.listMembers,
-      {
-        organizationId: org._id,
-      }
-    );
-    console.timeEnd('betterAuth.adapter.listMembers');
+    console.time('ctx.table.listMembers');
+    const members = await ctx
+      .table('member')
+      .getManyX('organizationId', [org._id]);
+
+    const membersWithUsers = await asyncMap(members, async (member) => {
+      const user = await member.edgeX('user');
+
+      return {
+        id: member._id,
+        createdAt: member.createdAt,
+        role: member.role,
+        user: {
+          id: user._id,
+          email: user.email,
+          image: user.image ?? undefined,
+          name: user.name,
+        },
+        userId: member.userId,
+      };
+    });
+
+    const response = {
+      members: membersWithUsers.filter(Boolean) as any[],
+    };
+    console.timeEnd('ctx.table.listMembers');
     console.time('auth.api.listMembers');
     await auth.api.listMembers({
       headers,
@@ -827,7 +710,7 @@ export const listMembers = createAuthQuery()({
     }
 
     // Enrich with user data
-    const enrichedMembers = response.members.map((member) => {
+    const enrichedMembersList = response.members.map((member) => {
       return {
         id: member.id,
         createdAt: member.createdAt,
@@ -846,68 +729,8 @@ export const listMembers = createAuthQuery()({
     return {
       currentUserRole: ctx.user.activeOrganization.role,
       isPersonal: org._id === ctx.user.personalOrganizationId,
-      members: enrichedMembers,
+      members: enrichedMembersList,
     };
-  },
-});
-
-// List pending invitations by organization slug
-export const listPendingInvitations = createAuthQuery()({
-  args: {
-    slug: z.string(),
-  },
-  returns: z.array(
-    z.object({
-      id: z.string(),
-      createdAt: z.number(),
-      email: z.string(),
-      expiresAt: z.number(),
-      organizationId: z.string(),
-      role: z.string(),
-      status: z.string(),
-    })
-  ),
-  handler: async (ctx, args) => {
-    const auth = createAuth(ctx);
-    const headers = await getHeaders(ctx);
-
-    // Get organization by slug using Better Auth's findOne method (O(1) instead of O(n))
-    const org = await getBetterAuthOrganization(ctx, args.slug);
-
-    if (!org) return [];
-    if (
-      ctx.user.activeOrganization.role !== 'owner' ||
-      ctx.user.activeOrganization.id !== org._id
-    ) {
-      return [];
-    }
-
-    // Check if user is owner or admin of this organization (optimized query)
-    const betterAuthUser = await getBetterAuthUser(ctx, ctx.userId);
-
-    if (!betterAuthUser) return [];
-
-    const response = await auth.api.listInvitations({
-      headers,
-      query: { organizationId: org._id },
-    });
-
-    if (!response) return [];
-
-    // Filter for pending invitations and enrich
-    const pendingInvitations = response
-      .filter((invitation) => invitation.status === 'pending')
-      .map((invitation) => ({
-        id: invitation.id,
-        createdAt: Date.now(), // Use current timestamp since createdAt not available
-        email: invitation.email,
-        expiresAt: invitation.expiresAt as any,
-        organizationId: invitation.organizationId,
-        role: invitation.role,
-        status: invitation.status,
-      }));
-
-    return pendingInvitations;
   },
 });
 
@@ -955,21 +778,17 @@ export const inviteMember = createAuthMutation({
     }
 
     // Check for existing pending invitations and cancel them
-    const existingInvitations: { page: BetterAuthInvitation[] } =
-      await ctx.runQuery(components.betterAuth.adapter.findMany, {
-        model: 'invitation',
-        paginationOpts: {
-          cursor: null,
-          numItems: 100,
-        },
-        where: [
-          { field: 'organizationId', value: orgId },
-          { field: 'status', value: 'pending' },
-          { field: 'email', value: args.email },
-        ],
-      });
+    const existingInvitations = await ctx.table(
+      'invitation',
+      'organizationId_email_status',
+      (q) =>
+        q
+          .eq('organizationId', orgId)
+          .eq('email', args.email)
+          .eq('status', 'pending')
+    );
 
-    for (const existingInvitation of existingInvitations.page) {
+    for (const existingInvitation of existingInvitations) {
       await auth.api.cancelInvitation({
         body: { invitationId: existingInvitation._id },
         headers,
@@ -1016,20 +835,14 @@ export const cancelInvitation = createAuthMutation({
   rateLimit: 'organization/cancelInvite',
 })({
   args: {
-    invitationId: z.string(),
+    invitationId: zid('invitation'),
   },
   returns: z.null(),
   handler: async (ctx, args) => {
     const auth = createAuth(ctx);
     const headers = await getHeaders(ctx);
 
-    const invitation: BetterAuthInvitation | null = await ctx.runQuery(
-      components.betterAuth.adapter.findOne,
-      {
-        model: 'invitation',
-        where: [{ field: 'id', value: args.invitationId }],
-      }
-    );
+    const invitation = await ctx.table('invitation').get(args.invitationId);
 
     if (
       ctx.user.activeOrganization.role !== 'owner' ||

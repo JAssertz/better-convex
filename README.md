@@ -230,7 +230,7 @@ In authenticated functions, `ctx.user` is a pre-loaded `SessionUser` with full e
 ```typescript
 handler: async (ctx, args) => {
   // ❌ Don't refetch the user
-  const user = await ctx.table('users').get(ctx.user._id);
+  const user = await ctx.table('user').get(ctx.user._id);
 
   // ✅ Use pre-loaded user
   await ctx.user.patch({ credits: ctx.user.credits - 1 });
@@ -276,7 +276,7 @@ Two different validator systems are used:
 // Functions (z.) - in convex/*.ts
 args: {
   email: z.string().email(),
-  id: zid('users') // Always use zid() for IDs
+  id: zid('user') // Always use zid() for IDs
 }
 ```
 

@@ -1,8 +1,3 @@
-import { components } from '@convex/_generated/api';
-import {
-  getBetterAuthUser,
-  getBetterAuthUserByEmail,
-} from '@convex/betterAuth/getBetterAuthUser';
 import { zid } from 'convex-helpers/server/zod';
 import { ConvexError } from 'convex/values';
 import { z } from 'zod';
@@ -24,21 +19,14 @@ export const checkUserAdminStatus = createAuthQuery({
   role: 'admin',
 })({
   args: {
-    userId: zid('users'),
+    userId: zid('user'),
   },
   returns: z.object({
     isAdmin: z.boolean(),
     role: z.string().nullish(),
   }),
   handler: async (ctx, args) => {
-    const user = await getBetterAuthUser(ctx, args.userId);
-
-    if (!user) {
-      throw new ConvexError({
-        code: 'NOT_FOUND',
-        message: 'User not found',
-      });
-    }
+    const user = await ctx.table('user').getX(args.userId);
 
     return {
       isAdmin: user.role === 'admin',
@@ -47,13 +35,13 @@ export const checkUserAdminStatus = createAuthQuery({
   },
 });
 
-// Update user role in our application (separate from Better Auth's role)
+// Update user role
 export const updateUserRole = createAuthMutation({
   role: 'admin',
 })({
   args: {
     role: z.enum(['user', 'admin']),
-    userId: zid('users'),
+    userId: zid('user'),
   },
   returns: z.boolean(),
   handler: async (ctx, args) => {
@@ -65,14 +53,8 @@ export const updateUserRole = createAuthMutation({
       });
     }
 
-    const targetUser = await getBetterAuthUser(ctx, args.userId);
+    const targetUser = await ctx.table('user').getX(args.userId);
 
-    if (!targetUser) {
-      throw new ConvexError({
-        code: 'NOT_FOUND',
-        message: 'User not found',
-      });
-    }
     // Can't demote admin unless you are admin
     if (targetUser.role === 'admin' && !ctx.user.isAdmin) {
       throw new ConvexError({
@@ -81,20 +63,8 @@ export const updateUserRole = createAuthMutation({
       });
     }
 
-    // Update role in Better Auth
-    await ctx.runMutation(components.betterAuth.adapter.updateOne, {
-      input: {
-        model: 'user',
-        update: {
-          role: args.role.toLowerCase(), // Better Auth uses lowercase roles
-        },
-        where: [
-          {
-            field: 'userId',
-            value: args.userId,
-          },
-        ],
-      },
+    await targetUser.patch({
+      role: args.role.toLowerCase(),
     });
 
     return true;
@@ -111,37 +81,24 @@ export const grantAdminByEmail = createAuthMutation({
   },
   returns: z.object({
     success: z.boolean(),
-    userId: zid('users').optional(),
+    userId: zid('user').optional(),
   }),
   handler: async (ctx, args) => {
-    // Find user by email in Better Auth
-    const betterAuthUser = await getBetterAuthUserByEmail(ctx, args.email);
+    const user = await ctx.table('user').get('email', args.email);
 
-    if (!betterAuthUser || !betterAuthUser.userId) {
+    if (!user) {
       return {
         success: false,
       };
     }
 
-    // Update role in Better Auth
-    await ctx.runMutation(components.betterAuth.adapter.updateOne, {
-      input: {
-        model: 'user',
-        update: {
-          role: args.role.toLowerCase(), // Better Auth uses lowercase roles
-        },
-        where: [
-          {
-            field: 'userId',
-            value: betterAuthUser.userId,
-          },
-        ],
-      },
+    await user.patch({
+      role: args.role.toLowerCase(),
     });
 
     return {
       success: true,
-      userId: betterAuthUser.userId as Id<'users'>,
+      userId: user._id,
     };
   },
 });
@@ -154,7 +111,7 @@ export const getAllUsers = createAuthPaginatedQuery()({
   },
   handler: async (ctx, args) => {
     // Build query
-    const query = ctx.table('users');
+    const query = ctx.table('user');
 
     // Filter by search term if provided
     if (args.search) {
@@ -164,27 +121,25 @@ export const getAllUsers = createAuthPaginatedQuery()({
       // You can add a search index later for better performance
       const result = await query.paginate(args.paginationOpts);
 
-      // Enrich with Better Auth data and filter
       const enrichedPage = await Promise.all(
         result.page.map(async (user) => {
-          const betterAuthUser = await getBetterAuthUser(ctx, user._id);
-          const betterAuthEmail = betterAuthUser?.email || '';
+          const email = user?.email || '';
 
           // Check if any field matches search
           if (
             !user.name?.toLowerCase().includes(searchLower) &&
-            !betterAuthEmail.toLowerCase().includes(searchLower)
+            !email.toLowerCase().includes(searchLower)
           ) {
             return null;
           }
 
           return {
             ...user.doc(),
-            banExpiresAt: betterAuthUser?.banExpires,
-            banReason: betterAuthUser?.banReason,
-            email: betterAuthEmail,
-            isBanned: betterAuthUser?.banned || false,
-            role: betterAuthUser?.role || 'user',
+            banExpiresAt: user?.banExpires,
+            banReason: user?.banReason,
+            email: email,
+            isBanned: user?.banned || false,
+            role: user?.role || 'user',
           };
         })
       );
@@ -198,18 +153,15 @@ export const getAllUsers = createAuthPaginatedQuery()({
     // Regular pagination without search
     const result = await query.paginate(args.paginationOpts);
 
-    // Enrich with Better Auth data
     const enrichedPage = await Promise.all(
       result.page.map(async (user) => {
-        const betterAuthUser = await getBetterAuthUser(ctx, user._id);
-
         const userData = {
           ...user.doc(),
-          banExpiresAt: betterAuthUser?.banExpires,
-          banReason: betterAuthUser?.banReason,
-          email: betterAuthUser?.email || '',
-          isBanned: betterAuthUser?.banned || false,
-          role: betterAuthUser?.role || 'user',
+          banExpiresAt: user?.banExpires,
+          banReason: user?.banReason,
+          email: user?.email || '',
+          isBanned: user?.banned || false,
+          role: user?.role || 'user',
         };
 
         // Filter by role if specified
@@ -236,9 +188,9 @@ export const getDashboardStats = createAuthQuery({
   returns: z.object({
     recentUsers: z.array(
       z.object({
-        _id: zid('users'),
+        _id: zid('user'),
         _creationTime: z.number(),
-        image: z.string().optional(),
+        image: z.string().nullish(),
         name: z.string().optional(),
       })
     ),
@@ -254,7 +206,7 @@ export const getDashboardStats = createAuthQuery({
   handler: async (ctx) => {
     // Get recent users
     const recentUsers = await ctx
-      .table('users')
+      .table('user')
       .order('desc')
       .take(5)
       .map(async (user) => ({
@@ -267,7 +219,7 @@ export const getDashboardStats = createAuthQuery({
     // Get users from last 7 days for growth calculation
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const usersLast7Days = await ctx
-      .table('users')
+      .table('user')
       .filter((q) => q.gte(q.field('_creationTime'), sevenDaysAgo))
       .take(1000); // Reasonable limit for 7 days of users
 
@@ -293,13 +245,11 @@ export const getDashboardStats = createAuthQuery({
     }
 
     // Count admins from last 100 users (representative sample)
-    const sampleUsers = await ctx.table('users').take(100);
+    const sampleUsers = await ctx.table('user').take(100);
     let adminCount = 0;
 
     for (const user of sampleUsers) {
-      const betterAuthUser = await getBetterAuthUser(ctx, user._id);
-
-      if (betterAuthUser?.role === 'admin') {
+      if (user.role === 'admin') {
         adminCount++;
       }
     }

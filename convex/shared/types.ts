@@ -7,6 +7,14 @@ import type { WithoutSystemFields } from 'convex/server';
 
 import type { Doc, TableNames } from '../_generated/dataModel';
 import type { entDefinitions } from '../schema';
+import type schema from '../schema';
+import type { getCtxWithTable } from '@convex/functions';
+import { MutationCtx, QueryCtx } from '@convex/_generated/server';
+
+export type Schema = typeof schema;
+
+export type CtxWithTable<Ctx extends QueryCtx | MutationCtx = QueryCtx> =
+  ReturnType<typeof getCtxWithTable<Ctx>>;
 
 export type DocWithId<TableName extends TableNames> = WithoutSystemFields<
   Doc<TableName>

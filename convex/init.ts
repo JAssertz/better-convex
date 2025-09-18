@@ -26,26 +26,21 @@ export default createInternalMutation({
     let isFirstInit = true;
 
     for (const adminEmail of adminEmails) {
-      // Check if user exists in our app table by email (via name field for now)
-      const existingUser = await ctx.table('users').get('email', adminEmail);
+      // Check if user exists in our app table by email
+      const existingUser = await ctx.table('user').get('email', adminEmail);
 
       if (existingUser) {
         console.info(`  ✅ Admin user exists: ${adminEmail}`);
         isFirstInit = false;
       } else {
-        // Create user in app database only
         // Better Auth will link to this when they sign in
-        const newUserId: any = await ctx.runMutation(
-          internal.authInternal.onCreateUser,
-          {
-            email: adminEmail,
-            name: 'Admin',
-          }
-        );
-
-        console.info(
-          `  ✅ Created admin user in app: ${adminEmail} (ID: ${newUserId})`
-        );
+        // const userId = await createUser(ctx, {
+        //   email: adminEmail,
+        //   name: 'Admin',
+        // });
+        // console.info(
+        //   `  ✅ Created admin user in app: ${adminEmail} (ID: ${userId})`
+        // );
       }
     }
 

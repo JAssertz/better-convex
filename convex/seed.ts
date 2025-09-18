@@ -1,16 +1,12 @@
-import { createUser } from '@convex/authInternal';
 import { zid } from 'convex-helpers/server/zod';
 import { z } from 'zod';
 
 import type { Id } from './_generated/dataModel';
 
 import { internal } from './_generated/api';
-import {
-  createInternalAction,
-  createInternalMutation,
-  createAuthAction,
-} from './functions';
+import { createInternalMutation, createAuthAction } from './functions';
 import { getEnv } from './helpers/getEnv';
+import { createUser } from '@convex/authHelpers';
 
 // Admin configuration - moved inside functions to avoid module-level execution
 const getAdminConfig = () => {
@@ -93,15 +89,15 @@ export const cleanupSeedData = createInternalMutation()({
 // Seed users
 export const seedUsers = createInternalMutation()({
   args: {},
-  returns: z.array(zid('users')),
+  returns: z.array(zid('user')),
   handler: async (ctx) => {
     console.info('👤 Creating users...');
 
-    const userIds: Id<'users'>[] = [];
+    const userIds: Id<'user'>[] = [];
 
     // First, get the admin user if it exists
     const adminEmail = getAdminConfig().adminEmail;
-    const adminUser = await ctx.table('users').get('email', adminEmail);
+    const adminUser = await ctx.table('user').get('email', adminEmail);
 
     if (adminUser) {
       userIds.push(adminUser._id);
@@ -113,7 +109,7 @@ export const seedUsers = createInternalMutation()({
     for (const userData of usersData) {
       // Check if user exists by email
       const existing = await ctx
-        .table('users')
+        .table('user')
         .filter((q) => q.eq(q.field('email'), userData.email))
         .unique();
 
@@ -130,7 +126,7 @@ export const seedUsers = createInternalMutation()({
           updateData.image = userData.image;
         }
 
-        await ctx.table('users').getX(existing._id).patch(updateData);
+        await ctx.table('user').getX(existing._id).patch(updateData);
         userIds.push(existing._id);
         console.info(`  ✅ Updated user: ${userData.name}`);
       } else {
@@ -197,7 +193,7 @@ export const generateSamples = createAuthAction()({
 export const generateSamplesBatch = createInternalMutation()({
   args: {
     count: z.number(),
-    userId: zid('users'),
+    userId: zid('user'),
     batchIndex: z.number(),
   },
   returns: z.object({

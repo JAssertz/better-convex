@@ -34,7 +34,7 @@ subscriptions: defineEnt({
   metadata: v.record(v.string(), v.any()),
 })
   .field('subscriptionId', v.string(), { unique: true })
-  .edge('user', { to: 'users', field: 'userId' })
+  .edge('user', { to: 'user', field: 'userId' })
   .index('userId_status', ['userId', 'status'])
 ```
 
@@ -82,7 +82,7 @@ plugins: [
             internal.polarInternal.updateUserPolarCustomerId,
             {
               customerId: payload.data.id,
-              userId: payload.data.metadata.userId as Id<'users'>,
+              userId: payload.data.metadata.userId as Id<'user'>,
             }
           );
         },
@@ -406,14 +406,14 @@ export const getProduct = (productId: string) =>
 ```typescript
 // Update user's Polar customer ID
 export const updateUserPolarCustomerId = createInternalMutation()({
-  args: { customerId: z.string(), userId: zid('users') },
+  args: { customerId: z.string(), userId: zid('user') },
   returns: z.null(),
   handler: async (ctx, args) => {
-    const user = await ctx.table('users').getX(args.userId);
+    const user = await ctx.table('user').getX(args.userId);
 
     // Check for duplicate
     const existingUser = await ctx
-      .table('users')
+      .table('user')
       .get('customerId', args.customerId);
     if (existingUser && existingUser._id !== args.userId) {
       throw new ConvexError({
@@ -433,7 +433,7 @@ export const createSubscription = createInternalMutation()({
     subscription: extendConvexSchema(schema.tables.subscriptions.validator, {
       productId: z.string(),
       subscriptionId: z.string(),
-      userId: zid('users'),
+      userId: zid('user'),
     }),
   },
   returns: z.null(),

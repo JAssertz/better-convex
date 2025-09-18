@@ -73,7 +73,7 @@ export const searchCharacters = createPublicPaginatedQuery()({
           return false;
         }
         // Can do async lookups - use ctx.table() inside streams!
-        const author = await ctx.table('users').get(char.userId);
+        const author = await ctx.table('user').get(char.userId);
         return author && !author.isBanned;
       })
       .paginate(args.paginationOpts); // Consistent page sizes!
@@ -90,8 +90,8 @@ import { mergedStream } from 'convex-helpers/server/stream';
 
 export const conversation = createPublicPaginatedQuery()({
   args: {
-    u1: zid('users'),
-    u2: zid('users'),
+    u1: zid('user'),
+    u2: zid('user'),
   },
   handler: async (ctx, args) => {
     // Stream of messages u1 → u2
@@ -162,7 +162,7 @@ export const messageRecipients = createAuthPaginatedQuery()({
       .withIndex('from_to', (q) => q.eq('from', ctx.userId))
       .distinct(['to']) // Get first message to each unique recipient
       .map(async (message) => {
-        const user = await ctx.table('users').get(message.to);
+        const user = await ctx.table('user').get(message.to);
         return user!;
       })
       .paginate(args.paginationOpts);
@@ -234,7 +234,7 @@ export const uniqueActiveAuthors = createPublicPaginatedQuery()({
       .distinct(['authorId'])
       // Map to author details
       .map(async (post) => {
-        const author = await ctx.table('users').get(post.authorId);
+        const author = await ctx.table('user').get(post.authorId);
         if (!author) return null;
 
         // Count author's posts - use ctx.table() inside stream operations
@@ -316,12 +316,10 @@ export const unifiedSearch = createPublicPaginatedQuery()({
 ### Stream Performance
 
 1. **Document Scanning**: `filterWith` scans documents until page is full
-
    - Set reasonable `maximumRowsRead` in paginationOpts
    - Use indexes to reduce initial set
 
 2. **Pagination Cursors**: More complex than regular queries
-
    - Include indexed fields (even from filtered docs)
    - Only work with same stream construction
    - Use `endCursor` for reactive pagination
@@ -389,7 +387,7 @@ const enriched = stream(ctx.db, schema)
   .query('posts')
   .map(async (post) => {
     // Use ctx.table() for lookups inside streams
-    const author = await ctx.table('users').get(post.authorId);
+    const author = await ctx.table('user').get(post.authorId);
     // Handle missing documents
     return author ? { ...post, author } : null;
   })

@@ -21,7 +21,7 @@ export const triggers = new Triggers<DataModel>();
 // No manual aggregate updates needed in mutations!
 
 // User count aggregate
-triggers.register('users', aggregateUsers.trigger());
+triggers.register('user', aggregateUsers.trigger());
 
 // Todo aggregates - multiple aggregates on same table
 triggers.register('todos', aggregateTodosByUser.trigger());

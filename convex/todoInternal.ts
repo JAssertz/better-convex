@@ -26,7 +26,7 @@ export const getUsersWithOverdueTodos = createInternalQuery()({
   },
   returns: z.array(
     z.object({
-      userId: zid('users'),
+      userId: zid('user'),
       email: z.string(),
       name: z.string().optional(),
       overdueTodos: z.array(
@@ -57,7 +57,7 @@ export const getUsersWithOverdueTodos = createInternalQuery()({
       .take(1000); // Get more than limit to group by user
 
     // Group by user
-    const userTodos = new Map<Id<'users'>, typeof overdueTodos>();
+    const userTodos = new Map<Id<'user'>, typeof overdueTodos>();
     for (const todo of overdueTodos) {
       const existing = userTodos.get(todo.userId) || [];
       existing.push(todo);
@@ -66,7 +66,7 @@ export const getUsersWithOverdueTodos = createInternalQuery()({
 
     // Get user details and format response
     const results: Array<{
-      userId: Id<'users'>;
+      userId: Id<'user'>;
       email: string;
       name: string | undefined;
       overdueTodos: Array<{
@@ -79,7 +79,7 @@ export const getUsersWithOverdueTodos = createInternalQuery()({
     for (const [userId, todos] of userTodos) {
       if (results.length >= args.limit) break;
 
-      const user = await ctx.table('users').get(userId);
+      const user = await ctx.table('user').get(userId);
       if (user) {
         results.push({
           userId,
@@ -133,7 +133,7 @@ export const getSystemStats = createInternalQuery()({
     const todayStart = new Date().setHours(0, 0, 0, 0);
 
     // User stats
-    const allUsers = await ctx.table('users');
+    const allUsers = await ctx.table('user');
     // For active users, check by creation time since _lastModified doesn't exist
     const activeUsers = allUsers.filter((u) => u._creationTime > thirtyDaysAgo);
 
@@ -338,7 +338,7 @@ export const archiveOldCompletedTodos = createInternalMutation()({
 // Recalculate user statistics
 export const recalculateUserStats = createInternalMutation()({
   args: {
-    userId: zid('users'),
+    userId: zid('user'),
   },
   returns: z.object({
     totalTodos: z.number(),
@@ -346,7 +346,7 @@ export const recalculateUserStats = createInternalMutation()({
     streak: z.number(),
   }),
   handler: async (ctx, args) => {
-    const user = await ctx.table('users').getX(args.userId);
+    const user = await ctx.table('user').getX(args.userId);
 
     // Get todo counts from aggregates (exclude soft-deleted)
     const totalTodos = await aggregateTodosByUser.count(ctx, {
@@ -455,7 +455,7 @@ export const processDailySummaries = createInternalAction()({
   handler: async (ctx) => {
     // Get users with overdue todos
     const usersToNotify: {
-      userId: Id<'users'>;
+      userId: Id<'user'>;
       email: string;
       name?: string;
       overdueTodos: Array<{
@@ -482,7 +482,7 @@ export const processDailySummaries = createInternalAction()({
         //   data: user,
         // });
 
-        console.log(
+        console.info(
           `Would send email to ${user.email} about ${user.overdueTodos.length} overdue todos`
         );
         sent++;
@@ -503,7 +503,7 @@ export const processDailySummaries = createInternalAction()({
 // Generate weekly report
 export const generateWeeklyReport = createInternalAction()({
   args: {
-    userId: zid('users'),
+    userId: zid('user'),
   },
   returns: z.object({
     week: z.object({
@@ -625,7 +625,7 @@ export const generateWeeklyReport = createInternalAction()({
 // Internal query for weekly activity
 export const getUserWeeklyActivity = createInternalQuery()({
   args: {
-    userId: zid('users'),
+    userId: zid('user'),
     weekStart: z.number(),
   },
   returns: z.object({

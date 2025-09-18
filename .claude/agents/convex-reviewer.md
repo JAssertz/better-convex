@@ -32,7 +32,7 @@ Based on the Convex Performance Review Checklist, focus your review on these are
 
 #### 1. Index Usage ⚡
 
-- **NOT refetching ctx.user?** Never use `ctx.table('users').getX(ctx.userId)` - use `ctx.user` directly
+- **NOT refetching ctx.user?** Never use `ctx.table('user').getX(ctx.userId)` - use `ctx.user` directly
 - **Using .edge() for relationships?** Replace manual queries with `.edge()` when entities have defined edges
 - **Using .has() for edge existence checks?** O(1) lookup with `.edge('following').has(userId)` instead of fetching all + `.some()`
 - **Using index for equality filters?** Replace `.filter(q => q.eq(q.field('x'), y))` with `.table('table', 'x', q => q.eq('x', y))`
@@ -147,7 +147,7 @@ Structure your review to prioritize Convex performance concerns:
 
 ```typescript
 // ❌ BAD: Refetching current user
-const currentUser = await ctx.table('users').getX(ctx.userId);
+const currentUser = await ctx.table('user').getX(ctx.userId);
 // ✅ GOOD: Use pre-loaded user
 const currentUser = ctx.user;
 
@@ -202,7 +202,7 @@ const count = await aggregateItems.count(ctx, { namespace: x });
 
 // ❌ BAD: Using asyncMap for Ents query results
 import { asyncMap } from 'convex-helpers';
-const users = await ctx.table('users').take(10);
+const users = await ctx.table('user').take(10);
 const enriched = await asyncMap(users, async (user) => {
   const profile = await user.edge('profile');
   return { ...user, profile };
@@ -210,7 +210,7 @@ const enriched = await asyncMap(users, async (user) => {
 
 // ✅ GOOD: Use built-in .map() for Ents queries
 const enriched = await ctx
-  .table('users')
+  .table('user')
   .take(10)
   .map(async (user) => {
     const profile = await user.edge('profile');

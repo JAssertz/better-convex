@@ -138,7 +138,7 @@ export const createOrg = createAuthMutation({
     logo: z.string().url().optional(),
     metadata: z.record(z.any()).optional(),
   },
-  returns: zid('organizations'),
+  returns: zid('organization'),
   handler: async (ctx, args) => {
     const auth = createAuth(ctx);
     const headers = await betterAuthComponent.getHeaders(ctx);
@@ -232,7 +232,7 @@ export const inviteMember = createAuthMutation({
   args: {
     email: z.string().email(),
     role: z.enum(['owner', 'admin', 'member']),
-    organizationId: zid('organizations').optional(),
+    organizationId: zid('organization').optional(),
     teamId: zid('teams').optional(),
     resend: z.boolean().optional(),
   },

@@ -1,77 +1,73 @@
-// import './polar/polyfills';
-
-import {
-  type AuthFunctions,
-  type GenericCtx,
-  createClient,
-} from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
-// import {
-//   checkout,
-//   polar,
-//   portal,
-//   usage,
-//   webhooks,
-// } from '@polar-sh/better-auth';
-// import { Polar } from '@polar-sh/sdk';
 import { betterAuth } from 'better-auth';
 import { admin, organization } from 'better-auth/plugins';
 
-import type { DataModel, Id } from './_generated/dataModel';
-import type { InternalMutationCtx } from './functions';
-
-import { api, components, internal } from './_generated/api';
-import { getBetterAuthUserById } from './betterAuth/getBetterAuthUser';
-// import { convertToDatabaseSubscription } from './polar/helpers';
-// import { getProduct } from './polar/product';
-import authSchema from './betterAuth/schema';
+import { type AuthFunctions, createClient } from './betterAuth/client';
+import { api, internal } from './_generated/api';
+import { ActionCtx, type GenericCtx } from './_generated/server';
+import { entsTableFactory } from 'convex-ents';
+import { entDefinitions } from './schema';
+import { createPersonalOrganization } from './organizationHelpers';
+import { getEnv } from './helpers/getEnv';
 
 const authFunctions: AuthFunctions = internal.auth;
 
-export const authComponent = createClient<DataModel, typeof authSchema>(
-  components.betterAuth,
-  {
-    authFunctions,
-    local: { schema: authSchema },
-    triggers: {
-      user: {
-        onCreate: async (ctx, user) => {
-          const { email, image, name } = user;
+export const authComponent = createClient({
+  authFunctions,
+  triggers: {
+    user: {
+      onCreate: async (ctx, user) => {
+        const table = entsTableFactory(ctx, entDefinitions);
 
-          // Create app user before better-auth user
-          const userId = await ctx.runMutation(
-            internal.authInternal.onCreateUser,
-            {
-              bio: user.bio,
-              email,
-              image,
-              name,
-            }
-          );
+        const env = getEnv();
+        const adminEmails = env.ADMIN;
 
-          await authComponent.setUserId(ctx, user._id, userId);
-        },
-        onDelete: async (ctx, userId) => {
-          await ctx.runMutation(internal.authInternal.onDeleteUser, {
-            userId: userId as unknown as Id<'users'>,
-          });
-        },
-        onUpdate: async (ctx, user) => {
-          await ctx.runMutation(internal.authInternal.onUpdateUser, {
-            image: user.image,
-            name: user.name,
-            userId: user.userId as Id<'users'>,
-          });
-        },
+        // Check if this user email is in the admin list
+        if (user.role !== 'admin' && adminEmails?.includes(user.email)) {
+          await table('user').getX(user._id).patch({ role: 'admin' });
+        }
+
+        // Create personal organization for the new user
+        await createPersonalOrganization(ctx, {
+          email: user.email,
+          image: user.image || null,
+          name: user.name,
+          userId: user._id,
+        });
+
+        // Create Polar customer for the new user
+        // await ctx.scheduler.runAfter(0, internal.polar.customer.createCustomer, {
+        //   userId: args.userId,
+        //   email: user.email,
+        //   name: user.name,
+        //   userId: user.userId,
+        // });
       },
     },
-    verbose: false,
-  }
-);
+    session: {
+      onCreate: async (ctx, session) => {
+        const table = entsTableFactory(ctx, entDefinitions);
+
+        if (!session.activeOrganizationId) {
+          const user = await table('user').getX(session.userId);
+
+          await table('session')
+            .getX(session._id)
+            .patch({
+              activeOrganizationId:
+                user.lastActiveOrganizationId || user.personalOrganizationId,
+            });
+        }
+      },
+    },
+  },
+  verbose: false,
+});
 
 export const { onCreate, onDelete, onUpdate } = authComponent.triggersApi();
 
-export const createAuth = (ctx: GenericCtx<DataModel>) => {
+export const createAuth = <Ctx extends GenericCtx = ActionCtx>(_ctx: Ctx) => {
+  const ctx = _ctx as ActionCtx;
   const baseURL = process.env.NEXT_PUBLIC_SITE_URL!;
 
   return betterAuth({
@@ -83,54 +79,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     },
     baseURL,
     database: authComponent.adapter(ctx),
-    databaseHooks: {
-      session: {
-        create: {
-          after: async (session) => {
-            // After session is created (OAuth login), ensure user has a personal organization
-            await (ctx as InternalMutationCtx).runMutation(
-              internal.authInternal.afterSessionCreate,
-              { token: session.token, userId: session.userId }
-            );
-          },
-          before: async (session) => {
-            const user = await getBetterAuthUserById(
-              ctx as any,
-              session.userId
-            );
-            // createAuth requires string
-            const lastActiveOrgId: string = await ctx.runQuery(
-              internal.authInternal.getLastActiveOrganizationId,
-              { betterAuthUserId: session.userId, userId: user!.userId }
-            );
-
-            return {
-              data: {
-                ...session,
-                activeOrganizationId: lastActiveOrgId,
-              },
-            };
-          },
-        },
-      },
-      // NOTE: not called when using components.betterAuth.adapter.create
-      user: {
-        create: {
-          after: async (user) => {
-            await (ctx as InternalMutationCtx).runMutation(
-              internal.authInternal.afterUserCreate,
-              {
-                id: user.id,
-                email: user.email,
-              }
-            );
-          },
-        },
-      },
-    },
-    logger: {
-      disabled: true,
-    },
+    logger: { disabled: true },
     plugins: [
       admin(),
       organization({
@@ -151,7 +100,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
         },
         sendInvitationEmail: async (data) => {
           // Send invitation email via Resend
-          await (ctx as any).scheduler.runAfter(
+          await ctx.scheduler.runAfter(
             0,
             api.emails.sendOrganizationInviteEmail,
             {
@@ -166,153 +115,9 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
           );
         },
       }),
-      // polar({
-      //   client: new Polar({
-      //     accessToken: process.env.POLAR_ACCESS_TOKEN!,
-      //     server:
-      //       process.env.DEPLOY_ENV === 'production' ? 'production' : 'sandbox',
-      //   }),
-      //   use: [
-      //     checkout({
-      //       authenticatedUsersOnly: true,
-      //       products: [
-      //         {
-      //           productId: process.env.POLAR_PRODUCT_PREMIUM!,
-      //           slug: 'premium',
-      //         },
-      //         // {
-      //         //   productId: process.env.POLAR_PRODUCT_TEAM!,
-      //         //   slug: 'team',
-      //         // },
-      //         {
-      //           productId: process.env.POLAR_PRODUCT_CREDITS!,
-      //           slug: 'credits',
-      //         },
-      //       ],
-      //       successUrl: '/success?checkout_id={CHECKOUT_ID}',
-      //       theme: 'light',
-      //     }),
-      //     portal(),
-      //     usage(),
-      //     webhooks({
-      //       secret: process.env.POLAR_WEBHOOK_SECRET!,
-      //       onCustomerCreated: async (payload) => {
-      //         let userId = payload?.data.metadata.userId as
-      //           | Id<'users'>
-      //           | undefined;
-
-      //         if (!userId) {
-      //           const user = await getBetterAuthUserById(
-      //             ctx as any,
-      //             payload.data.id
-      //           );
-      //           userId = user?.userId;
-      //         }
-      //         if (!userId) {
-      //           return;
-      //         }
-
-      //         await (ctx as InternalMutationCtx).runMutation(
-      //           internal.polar.customer.updateUserPolarCustomerId,
-      //           {
-      //             customerId: payload.data.id,
-      //             userId,
-      //           }
-      //         );
-      //       },
-      //       onOrderPaid: async (payload) => {
-      //         // Check if it's a credits product purchase
-      //         if (
-      //           payload.data.productId === process.env.POLAR_PRODUCT_CREDITS
-      //         ) {
-      //           // Get the amount paid (in cents)
-      //           const amountInCents =
-      //             payload.data.netAmount || payload.data.totalAmount || 0;
-      //           const credits = amountInCents;
-
-      //           // Extract organization ID from referenceId metadata
-      //           const organizationId = payload.data.metadata?.referenceId as
-      //             | string
-      //             | undefined;
-
-      //           if (credits > 0 && organizationId) {
-      //             // Add credits directly to organization
-      //             await (ctx as InternalMutationCtx).runMutation(
-      //               internal.polar.credit.addPurchasedCredits,
-      //               {
-      //                 amount: credits,
-      //                 organizationId,
-      //               }
-      //             );
-      //           }
-      //         }
-      //       },
-      //       onSubscriptionCreated: async (payload) => {
-      //         if (!payload.data.customer.metadata.userId) {
-      //           return;
-      //         }
-
-      //         await (ctx as InternalMutationCtx).runMutation(
-      //           internal.polar.subscription.createSubscription,
-      //           {
-      //             subscription: convertToDatabaseSubscription(payload.data),
-      //           }
-      //         );
-      //       },
-      //       onSubscriptionUpdated: async (payload) => {
-      //         if (!payload.data.customer.metadata.userId) {
-      //           return;
-      //         }
-
-      //         const updated = await (ctx as InternalMutationCtx).runMutation(
-      //           internal.polar.subscription.updateSubscription,
-      //           {
-      //             subscription: convertToDatabaseSubscription(payload.data),
-      //           }
-      //         );
-
-      //         if (!updated) {
-      //           return;
-      //         }
-
-      //         // Handle monthly credits reset for organization-based subscriptions
-      //         const organizationId = payload.data.metadata?.referenceId as
-      //           | string
-      //           | undefined;
-
-      //         if (organizationId) {
-      //           // Determine monthly credit amount based on product price
-      //           const product = getProduct(payload.data.productId);
-      //           const monthlyPrice = product?.prices.find(
-      //             (p) => p.recurringInterval === 'month'
-      //           );
-      //           // Credits = price in cents (2000 cents = 2000 credits)
-      //           const monthlyCreditsInCents = monthlyPrice?.priceAmount ?? 0;
-
-      //           // Reset monthly credits for the organization
-      //           if (monthlyCreditsInCents > 0) {
-      //             await (ctx as InternalMutationCtx).runMutation(
-      //               internal.polar.credit.resetMonthlyCredits,
-      //               {
-      //                 newAmount: monthlyCreditsInCents,
-      //                 organizationId,
-      //               }
-      //             );
-      //           }
-      //         }
-      //       },
-      //     }),
-      //   ],
-      // }),
       convex(),
     ],
     session: {
-      additionalFields: {
-        activeOrganizationId: {
-          required: false,
-          type: 'string',
-        },
-      },
       expiresIn: 60 * 60 * 24 * 30, // 30 days
       updateAge: 60 * 60 * 24 * 15, // 15 days
     },
@@ -354,7 +159,6 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
       },
     },
     telemetry: { enabled: false },
-    // trustedOrigins: [process.env.NEXT_PUBLIC_SITE_URL!],
     user: {
       additionalFields: {
         bio: {
@@ -402,8 +206,4 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
       },
     },
   });
-};
-
-export const getHeaders = async (ctx: GenericCtx<DataModel>) => {
-  return await authComponent.getHeaders(ctx);
 };

@@ -88,7 +88,7 @@ await auth.api.createUser({
 export const getAllUsers = createAuthPaginatedQuery()({
   handler: async (ctx, args) => {
     const users = await ctx
-      .table('users')
+      .table('user')
       .search('search_username_name', (q) => q.search('name', args.search))
       .paginate(args.paginationOpts);
 
@@ -264,9 +264,9 @@ To work with admin data, sync between Better Auth and app tables:
 
 ```typescript
 // Get user with admin status
-const getUserWithRole = async (ctx, userId: Id<'users'>) => {
+const getUserWithRole = async (ctx, userId: Id<'user'>) => {
   const [appUser, betterAuthUser] = await Promise.all([
-    ctx.table('users').get(userId),
+    ctx.table('user').get(userId),
     getBetterAuthUser(ctx, userId),
   ]);
 
@@ -283,9 +283,9 @@ const getUserWithRole = async (ctx, userId: Id<'users'>) => {
 
 ```typescript
 // Sync user data from both tables
-const syncUserData = async (ctx, userId: Id<'users'>) => {
+const syncUserData = async (ctx, userId: Id<'user'>) => {
   const [appUser, betterAuthUser] = await Promise.all([
-    ctx.table('users').get(userId),
+    ctx.table('user').get(userId),
     getBetterAuthUser(ctx, userId),
   ]);
   return {

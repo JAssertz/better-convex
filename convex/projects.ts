@@ -126,17 +126,17 @@ export const get = createPublicQuery()({
       _creationTime: z.number(),
       name: z.string(),
       description: z.string().optional(),
-      ownerId: zid('users'),
+      ownerId: zid('user'),
       isPublic: z.boolean(),
       archived: z.boolean(),
       owner: z.object({
-        _id: zid('users'),
+        _id: zid('user'),
         name: z.string().nullable(),
         email: z.string(),
       }),
       members: z.array(
         z.object({
-          _id: zid('users'),
+          _id: zid('user'),
           name: z.string().nullable(),
           email: z.string(),
           joinedAt: z.number(),
@@ -171,14 +171,14 @@ export const get = createPublicQuery()({
         .firstX();
     }
 
-    const owner = await ctx.table('users').getX(project.ownerId);
+    const owner = await ctx.table('user').getX(project.ownerId);
 
     const members = await ctx
       .table('projectMembers', 'projectId', (q) =>
         q.eq('projectId', project._id)
       )
       .map(async (member) => {
-        const user = await ctx.table('users').getX(member.userId);
+        const user = await ctx.table('user').getX(member.userId);
 
         return {
           _id: user._id,
@@ -347,7 +347,7 @@ export const addMember = createAuthMutation({
     }
 
     // Find user by email
-    const userToAdd = await ctx.table('users').getX('email', args.userEmail);
+    const userToAdd = await ctx.table('user').getX('email', args.userEmail);
 
     // Check if already member or owner
     if (userToAdd._id === project.ownerId) {
@@ -380,7 +380,7 @@ export const removeMember = createAuthMutation({
 })({
   args: {
     projectId: zid('projects'),
-    userId: zid('users'),
+    userId: zid('user'),
   },
   returns: z.null(),
   handler: async (ctx, args) => {
@@ -433,7 +433,7 @@ export const transfer = createAuthMutation({
 })({
   args: {
     projectId: zid('projects'),
-    newOwnerId: zid('users'),
+    newOwnerId: zid('user'),
   },
   returns: z.null(),
   handler: async (ctx, args) => {
@@ -448,7 +448,7 @@ export const transfer = createAuthMutation({
     }
 
     // Check new owner exists
-    await ctx.table('users').getX(args.newOwnerId);
+    await ctx.table('user').getX(args.newOwnerId);
 
     // If new owner is currently a member, remove them
     const memberRecord = await ctx

@@ -4,7 +4,7 @@ import { getEnv } from '@convex/helpers/getEnv';
 import schema from '@convex/schema';
 import { z } from 'zod';
 
-import { components, internal } from './_generated/api';
+import { internal } from './_generated/api';
 import {
   createInternalAction,
   createInternalMutation,
@@ -80,7 +80,7 @@ export const resetAuth = createInternalMutation({
   handler: async (ctx) => {
     const betterAuthTables = [
       'account',
-      'invitation',
+      'invitationss',
       'jwks',
       'member',
       'organization',
@@ -107,7 +107,7 @@ export const deleteAuthPage = createInternalMutation({
   },
   handler: async (ctx, args) => {
     const result: any = await ctx.runMutation(
-      components.betterAuth.adapter.deleteMany,
+      internal.betterAuth.adapter.deleteMany,
       {
         input: {
           model: args.tableName as any,
@@ -142,7 +142,7 @@ export const getAdminUsers = createInternalQuery()({
     const adminUsers: any[] = [];
 
     for (const email of adminEmails) {
-      const user = await ctx.table('users').get('email', email);
+      const user = await ctx.table('user').get('email', email);
 
       if (user) {
         adminUsers.push(user);

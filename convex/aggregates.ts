@@ -10,7 +10,7 @@ export const aggregateUsers = new TableAggregate<{
   DataModel: DataModel;
   Key: null; // No sorting, just counting
   Namespace: string; // userId
-  TableName: 'users';
+  TableName: 'user';
 }>(components.aggregateUsers, {
   namespace: (doc) => doc._id,
   sortKey: () => null, // We only care about counting, not sorting
@@ -20,7 +20,7 @@ export const aggregateUsers = new TableAggregate<{
 export const aggregateTodosByUser = new TableAggregate<{
   DataModel: DataModel;
   Key: [string, boolean, boolean]; // [priority, completed, isDeleted]
-  Namespace: Id<'users'>;
+  Namespace: Id<'user'>;
   TableName: 'todos';
 }>(components.aggregateTodosByUser, {
   namespace: (doc) => doc.userId,

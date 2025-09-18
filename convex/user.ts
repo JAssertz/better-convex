@@ -1,6 +1,3 @@
-import type { Session } from '@convex/authShared';
-
-import { createAuth, getHeaders } from '@convex/auth';
 import { zid } from 'convex-helpers/server/zod';
 import { z } from 'zod';
 
@@ -12,14 +9,7 @@ export const getIsAuthenticated = createPublicQuery({
   publicOnly: true,
 })({
   handler: async (ctx) => {
-    const auth = createAuth(ctx);
-    const headers = await getHeaders(ctx);
-
-    const session = (await auth.api.getSession({
-      headers,
-    })) as Session | null;
-
-    return !!session;
+    return !!(await ctx.auth.getUserIdentity());
   },
 });
 
@@ -40,7 +30,7 @@ export const getSessionUser = createPublicQuery()({
 export const getCurrentUser = createPublicQuery()({
   returns: z.union([
     z.object({
-      id: zid('users'),
+      id: zid('user'),
       activeOrganization: z.object({
         id: z.string(),
         createdAt: z.any(),
@@ -49,7 +39,7 @@ export const getCurrentUser = createPublicQuery()({
         role: z.string(),
         slug: z.string(),
       }),
-      image: z.string().optional(),
+      image: z.string().nullish(),
       isAdmin: z.boolean(),
       name: z.string().optional(),
       session: z.object({
@@ -68,14 +58,7 @@ export const getCurrentUser = createPublicQuery()({
       return null;
     }
 
-    const {
-      id,
-      activeOrganization,
-      image,
-      isAdmin,
-      name,
-      session,
-    } = userEnt;
+    const { id, activeOrganization, image, isAdmin, name, session } = userEnt;
 
     return {
       id,

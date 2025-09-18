@@ -61,12 +61,12 @@ export const cleanupStaleData = createInternalMutation()({
 
     // Find stale sessions
     const staleSessions = await ctx
-      .table('sessions')
+      .table('session')
       .filter((q) => q.lt(q.field('lastActiveAt'), thirtyDaysAgo));
 
     // Delete them
     for (const session of staleSessions) {
-      await ctx.table('sessions').getX(session._id).delete();
+      await ctx.table('session').getX(session._id).delete();
     }
 
     return { deletedCount: staleSessions.length };
@@ -135,9 +135,13 @@ export const processPayment = createAuthMutation()({
     });
 
     // Schedule payment processing after 5 seconds (5000ms)
-    const jobId = await ctx.scheduler.runAfter(5000, internal.payments.chargeCard, {
-      orderId: args.orderId,
-    });
+    const jobId = await ctx.scheduler.runAfter(
+      5000,
+      internal.payments.chargeCard,
+      {
+        orderId: args.orderId,
+      }
+    );
 
     // Store jobId if you need to cancel later
     await ctx.table('orders').getX(args.orderId).patch({
@@ -155,12 +159,16 @@ Useful for triggering actions conditionally after mutation success:
 
 ```typescript
 export const createWithSideEffects = createAuthMutation()({
-  args: { data: z.object({ /* ... */ }) },
+  args: {
+    data: z.object({
+      /* ... */
+    }),
+  },
   returns: zid('items'),
   handler: async (ctx, args) => {
     // Do mutation work
     const itemId = await ctx.table('items').insert(args.data);
-    
+
     // Schedule action to run immediately after mutation commits
     await ctx.scheduler.runAfter(0, internal.items.sendNotification, {
       itemId,
@@ -389,14 +397,22 @@ Query the `_scheduled_functions` system table to check status:
 ```typescript
 export const getScheduledJobStatus = createPublicQuery()({
   args: { jobId: zid('_scheduled_functions') },
-  returns: z.object({
-    name: z.string(),
-    scheduledTime: z.number(),
-    completedTime: z.number().optional(),
-    state: z.object({
-      kind: z.enum(['pending', 'inProgress', 'success', 'failed', 'canceled']),
-    }),
-  }).nullable(),
+  returns: z
+    .object({
+      name: z.string(),
+      scheduledTime: z.number(),
+      completedTime: z.number().optional(),
+      state: z.object({
+        kind: z.enum([
+          'pending',
+          'inProgress',
+          'success',
+          'failed',
+          'canceled',
+        ]),
+      }),
+    })
+    .nullable(),
   handler: async (ctx, args) => {
     return await ctx.db.system.get(args.jobId);
   },
@@ -404,17 +420,19 @@ export const getScheduledJobStatus = createPublicQuery()({
 
 export const listPendingJobs = createPublicQuery()({
   args: {},
-  returns: z.array(z.object({
-    _id: zid('_scheduled_functions'),
-    name: z.string(),
-    scheduledTime: z.number(),
-  })),
+  returns: z.array(
+    z.object({
+      _id: zid('_scheduled_functions'),
+      name: z.string(),
+      scheduledTime: z.number(),
+    })
+  ),
   handler: async (ctx, args) => {
     const jobs = await ctx.db.system
       .query('_scheduled_functions')
       .filter((q) => q.eq(q.field('state.kind'), 'pending'))
       .collect();
-    
+
     return jobs.map(({ _id, name, scheduledTime }) => ({
       _id,
       name,
@@ -435,21 +453,25 @@ export const listPendingJobs = createPublicQuery()({
 ## Error Handling
 
 ### Mutations
+
 - **Automatic retry**: Internal Convex errors are automatically retried
 - **Guaranteed execution**: Once scheduled, mutations execute exactly once
 - **Permanent failure**: Only fails on developer errors
 
 ### Actions
+
 - **No automatic retry**: Actions may have side effects, so not retried
 - **At most once**: Actions execute at most once
 - **Manual retry pattern**:
 
 ```typescript
 export const retryableAction = createInternalAction()({
-  args: { 
+  args: {
     attempts: z.number().default(0),
     maxAttempts: z.number().default(3),
-    data: z.object({ /* ... */ }),
+    data: z.object({
+      /* ... */
+    }),
   },
   returns: z.null(),
   handler: async (ctx, args) => {
@@ -527,7 +549,7 @@ export const registerCron = createAuthMutation()({
       ? { kind: 'interval' as const, ms: args.intervalMs }
       : { kind: 'cron' as const, cronspec: args.cronspec! };
 
-    const nextRunTime = args.intervalMs 
+    const nextRunTime = args.intervalMs
       ? Date.now() + args.intervalMs
       : calculateNextCronTime(args.cronspec!);
 
@@ -562,13 +584,13 @@ export const executeCron = createInternalMutation()({
       const jobId = await ctx.scheduler.runAfter(delay, internal.crons.executeCron, {
         cronId: args.cronId,
       });
-      
+
       await cron.patch({ schedulerJobId: jobId });
       return null;
     }
 
     // Execute the cron function
-    await ctx.scheduler.runAfter(0, 
+    await ctx.scheduler.runAfter(0,
       getFunctionReference(cron.functionName) as any,
       cron.args
     );
@@ -588,7 +610,7 @@ export const executeCron = createInternalMutation()({
     const jobId = await ctx.scheduler.runAfter(0, internal.crons.executeCron, {
       cronId: args.cronId,
     });
-    
+
     await cron.patch({ schedulerJobId: jobId });
     return null;
   },

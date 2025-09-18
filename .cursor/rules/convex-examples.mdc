@@ -44,7 +44,7 @@ import { v } from 'convex/values';
 const schema = defineEntSchema({
   channels: defineEnt({
     name: v.string(),
-    createdBy: v.id('users'),
+    createdBy: v.id('user'),
   }),
 
   users: defineEnt({
@@ -56,7 +56,7 @@ const schema = defineEntSchema({
 
   messages: defineEnt({
     channelId: v.id('channels'),
-    authorId: v.optional(v.id('users')),
+    authorId: v.optional(v.id('user')),
     content: v.string(),
   })
     .index('channel', ['channelId'])
@@ -64,7 +64,7 @@ const schema = defineEntSchema({
 
   channelMembers: defineEnt({
     channelId: v.id('channels'),
-    userId: v.id('users'),
+    userId: v.id('user'),
     joinedAt: v.number(),
   })
     .index('channel', ['channelId'])
@@ -101,9 +101,9 @@ export const createUser = createPublicMutation()({
   args: {
     name: z.string(),
   },
-  returns: zid('users'),
+  returns: zid('user'),
   handler: async (ctx, args) => {
-    return await ctx.table('users').insert({
+    return await ctx.table('user').insert({
       name: args.name,
     });
   },
@@ -135,11 +135,11 @@ export const listMessages = createPublicQuery()({
       _id: zid('messages'),
       _creationTime: z.number(),
       channelId: zid('channels'),
-      authorId: z.union([zid('users'), z.null()]).optional(),
+      authorId: z.union([zid('user'), z.null()]).optional(),
       author: z
         .union([
           z.object({
-            _id: zid('users'),
+            _id: zid('user'),
             name: z.string(),
           }),
           z.null(),
@@ -159,7 +159,7 @@ export const listMessages = createPublicQuery()({
     ];
 
     // Fetch all authors at once
-    const authors = await ctx.table('users').getMany(authorIds);
+    const authors = await ctx.table('user').getMany(authorIds);
     const authorMap = new Map(authors.map((a) => a && [a._id, a]));
 
     // Combine messages with authors
@@ -202,7 +202,7 @@ export const getChannelMembers = createPublicQuery()({
   args: { channelId: zid('channels') },
   returns: z.array(
     z.object({
-      _id: zid('users'),
+      _id: zid('user'),
       name: z.string(),
       lastSeen: z.number().optional(),
     })
@@ -215,7 +215,7 @@ export const getChannelMembers = createPublicQuery()({
 
     // Fetch user details and last activity in parallel
     return await asyncMap(members, async (member) => {
-      const user = await ctx.table('users').get(member.userId);
+      const user = await ctx.table('user').get(member.userId);
       if (!user) return null;
 
       // Get last message timestamp
@@ -283,7 +283,7 @@ export const loadContext = createInternalQuery()({
     const result = [];
     for (const message of messages) {
       if (message.authorId) {
-        const user = await ctx.table('users').getX(message.authorId);
+        const user = await ctx.table('user').getX(message.authorId);
         result.push({
           role: 'user' as const,
           content: `${user.name}: ${message.content}`,
@@ -347,8 +347,8 @@ export function Chat({ channelId }: { channelId: Id<'channels'> }) {
 ```typescript
 // Add to schema.ts
 follows: defineEnt({
-  followerId: v.id('users'),
-  followingId: v.id('users'),
+  followerId: v.id('user'),
+  followingId: v.id('user'),
 })
   .index('follower', ['followerId'])
   .index('following', ['followingId'])
@@ -361,7 +361,7 @@ follows: defineEnt({
 // convex/follows.ts
 export const follow = createAuthMutation()({
   args: {
-    userToFollowId: zid('users'),
+    userToFollowId: zid('user'),
   },
   returns: z.boolean(),
   handler: async (ctx, args) => {
@@ -390,11 +390,11 @@ export const follow = createAuthMutation()({
 
 export const getFollowers = createPublicQuery()({
   args: {
-    userId: zid('users'),
+    userId: zid('user'),
   },
   returns: z.array(
     z.object({
-      _id: zid('users'),
+      _id: zid('user'),
       name: z.string(),
       username: z.string(),
     })
@@ -407,7 +407,7 @@ export const getFollowers = createPublicQuery()({
 
     // Get user details
     const followerIds = follows.map((f) => f.followerId);
-    const users = await ctx.table('users').getMany(followerIds);
+    const users = await ctx.table('user').getMany(followerIds);
 
     return users.filter((u) => u !== null) as any;
   },
@@ -422,7 +422,7 @@ export const getFollowers = createPublicQuery()({
 // Add to schema.ts
 comments: defineEnt({
   documentId: v.id('documents'),
-  userId: v.id('users'),
+  userId: v.id('user'),
   content: v.string(),
   parentId: v.optional(v.id('comments')),
 })
@@ -432,7 +432,7 @@ comments: defineEnt({
 
 upvotes: defineEnt({
   commentId: v.id('comments'),
-  userId: v.id('users'),
+  userId: v.id('user'),
 })
   .index('comment', ['commentId'])
   .index('user', ['userId'])
@@ -483,7 +483,7 @@ export const getCommentsWithUpvotes = createPublicQuery()({
       _id: zid('comments'),
       content: z.string(),
       user: z.object({
-        _id: zid('users'),
+        _id: zid('user'),
         name: z.string(),
       }),
       upvoteCount: z.number(),
@@ -499,7 +499,7 @@ export const getCommentsWithUpvotes = createPublicQuery()({
 
     // Get users
     const userIds = [...new Set(comments.map((c) => c.userId))];
-    const users = await ctx.table('users').getMany(userIds);
+    const users = await ctx.table('user').getMany(userIds);
     const userMap = new Map(users.map((u) => u && [u._id, u]));
 
     // Get upvotes
@@ -563,7 +563,7 @@ export const getCommentsWithUpvotes = createPublicQuery()({
 ```typescript
 // Add to schema.ts
 progress: defineEnt({
-  userId: v.id('users'),
+  userId: v.id('user'),
   skillId: v.id('skills'),
   level: v.number(),
   completedAt: v.optional(v.number()),

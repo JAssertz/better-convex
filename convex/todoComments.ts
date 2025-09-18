@@ -133,9 +133,9 @@ export const getCommentThread = createPublicQuery()({
         }),
         user: z
           .object({
-            _id: zid('users'),
+            _id: zid('user'),
             name: z.string().optional(),
-            image: z.string().optional(),
+            image: z.string().nullish(),
           })
           .nullable(),
         parent: z
@@ -235,7 +235,7 @@ export const getCommentThread = createPublicQuery()({
 // Get user's recent comments
 export const getUserComments = createPublicPaginatedQuery()({
   args: {
-    userId: zid('users'),
+    userId: zid('user'),
     includeTodo: z.boolean().default(true),
   },
   handler: async (ctx, args) => {
@@ -486,7 +486,7 @@ async function checkTodoAccess(ctx: any, todo: any): Promise<boolean> {
 
     // Check if user is project member
     if (project) {
-      const isMember = await project.edge('members').has(ctx.userId);
+      const isMember = await project.edge('member').has(ctx.userId);
       if (isMember || project.ownerId === ctx.userId) return true;
     }
   }

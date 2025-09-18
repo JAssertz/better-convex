@@ -1,5 +1,3 @@
-import type { InvitationStatus } from 'better-auth/plugins';
-
 import type { Doc, Id } from './_generated/dataModel';
 
 export type Session = {
@@ -8,13 +6,13 @@ export type Session = {
 };
 
 export type AuthSession = {
-  id: string;
+  id: Id<'session'>;
   createdAt: number;
   expiresAt: number;
   token: string;
   updatedAt: number;
-  userId: string;
-  activeOrganizationId?: string | null;
+  userId: Id<'user'>;
+  activeOrganizationId?: Id<'organization'> | null;
   activeTeamId?: string | null;
   impersonatedBy?: string | null;
   ipAddress?: string | null;
@@ -22,14 +20,14 @@ export type AuthSession = {
 };
 
 export type BetterAuthUser = {
-  _id: string;
+  _id: Id<'user'>;
   _creationTime: number;
   createdAt: number;
   email: string;
   emailVerified: boolean;
   name: string;
   updatedAt: number;
-  userId: Id<'users'>;
+  userId: Id<'user'>;
   banExpires?: number | null;
   banned?: boolean | null;
   banReason?: string | null;
@@ -56,49 +54,20 @@ export type AuthUser = Pick<
   | 'name'
   | 'role'
 > & {
-  id: string;
+  id: Id<'user'>;
   createdAt: number;
   updatedAt: number;
-  userId: Id<'users'>;
+  userId: Id<'user'>;
 };
 
-export type SessionUser = Omit<AuthUser, 'image' | 'name'> &
-  Doc<'users'> & {
-    id: Id<'users'>;
-    activeOrganization: Omit<BetterAuthOrganization, '_id'> &
-      Pick<BetterAuthMember, 'role'> & {
-        id: string;
-      };
-    isAdmin: boolean;
-    session: AuthSession;
-    plan?: 'premium' | 'team';
-  };
-
-export type BetterAuthOrganization = {
-  _id: string;
-  createdAt: number;
-  logo: string | null;
-  metadata: string | null;
-  monthlyCredits: number;
-  name: string;
-  slug: string;
-};
-
-export type BetterAuthMember = {
-  _id: string;
-  createdAt: number;
-  organizationId: string;
-  role: 'member' | 'owner';
-  userId: string;
-};
-
-export type BetterAuthInvitation = {
-  _id: string;
-  email: string;
-  expiresAt: number;
-  inviterId: string;
-  organizationId: string;
-  role: 'member' | 'owner';
-  status: InvitationStatus;
-  teamId: string | null;
+// TODO simplify types
+export type SessionUser = Doc<'user'> & {
+  id: Id<'user'>;
+  activeOrganization: Omit<Doc<'organization'>, '_id'> &
+    Pick<Doc<'member'>, 'role'> & {
+      id: Id<'organization'>;
+    };
+  isAdmin: boolean;
+  session: AuthSession;
+  plan?: 'premium' | 'team';
 };

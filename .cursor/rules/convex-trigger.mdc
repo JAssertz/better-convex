@@ -47,8 +47,8 @@ export const internalMutation = customMutation(
 ```typescript
 import { triggers } from './functions';
 
-// Register a trigger for the "users" table
-triggers.register('users', async (ctx, change) => {
+// Register a trigger for the "user" table
+triggers.register('user', async (ctx, change) => {
   console.info('user changed', change);
 });
 ```
@@ -59,7 +59,7 @@ triggers.register('users', async (ctx, change) => {
 
 ```typescript
 // Basic trigger registration
-triggers.register('users', async (ctx, change) => {
+triggers.register('user', async (ctx, change) => {
   // change.operation: "insert" | "update" | "delete"
   // change.id: document ID
   // change.newDoc: new document (insert/update)
@@ -79,7 +79,7 @@ import { mutation } from './functions'; // NOT from "./_generated/server"
 export const createUser = mutation({
   handler: async (ctx, args) => {
     // This automatically triggers registered functions
-    await ctx.table('users').insert({ name: 'Alice' });
+    await ctx.table('user').insert({ name: 'Alice' });
   },
 });
 ```
@@ -105,7 +105,7 @@ triggers.register('books', async (ctx, change) => {
 ### Data Validation
 
 ```typescript
-triggers.register('users', async (ctx, change) => {
+triggers.register('user', async (ctx, change) => {
   if (change.newDoc) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(change.newDoc.email)) {
@@ -165,9 +165,9 @@ triggers.register('messages', async (ctx, change) => {
 ### Asynchronous Processing
 
 ```typescript
-const scheduled: Record<Id<'users'>, Id<'_scheduled_functions'>> = {};
+const scheduled: Record<Id<'user'>, Id<'_scheduled_functions'>> = {};
 
-triggers.register('users', async (ctx, change) => {
+triggers.register('user', async (ctx, change) => {
   // Cancel previous scheduled function
   if (scheduled[change.id]) {
     await ctx.scheduler.cancel(scheduled[change.id]);
@@ -191,7 +191,7 @@ Instead of relying on "magic" triggers, consider explicit wrapper functions:
 ```typescript
 // ✅ GOOD: Explicit and discoverable
 async function createUser(ctx: MutationCtx, name: string) {
-  const user = await ctx.table('users').insert({ name }).get();
+  const user = await ctx.table('user').insert({ name }).get();
   await ctx
     .table('userProfile')
     .insert({ userId: user._id, createdAt: Date.now() });
@@ -200,7 +200,7 @@ async function createUser(ctx: MutationCtx, name: string) {
 }
 
 // ❌ AVOID: Hidden side effects
-triggers.register('users', async (ctx, change) => {
+triggers.register('user', async (ctx, change) => {
   if (change.operation === 'insert') {
     await ctx.table('userProfile').insert({ userId: change.id });
   }
@@ -285,7 +285,7 @@ triggers.register('characterStars', aggregateCharacterStars.trigger());
 triggers.register('characterSkills', aggregateCharacterSkills.trigger());
 
 // Example of data validation trigger (still useful)
-triggers.register('users', async (ctx, change) => {
+triggers.register('user', async (ctx, change) => {
   if (change.newDoc && !change.newDoc.email.includes('@')) {
     throw new Error('Invalid email');
   }
