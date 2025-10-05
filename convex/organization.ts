@@ -150,6 +150,15 @@ export const updateOrganization = createAuthMutation({
   },
   returns: z.null(),
   handler: async (ctx, args) => {
+    // Check active organization exists first
+    if (!ctx.user.activeOrganization?.id) {
+      throw new ConvexError({
+        code: 'UNAUTHORIZED',
+        message: 'No active organization',
+      });
+    }
+
+    // Then check permissions
     await hasPermission(ctx, {
       permissions: { organization: ['update'] },
     });
@@ -158,7 +167,7 @@ export const updateOrganization = createAuthMutation({
 
     // If slug is provided, validate it
     if (args.slug) {
-      if (ctx.user.activeOrganization?.id === ctx.user.personalOrganizationId) {
+      if (ctx.user.activeOrganization.id === ctx.user.personalOrganizationId) {
         slug = undefined;
       } else {
         slugSchema.parse(args.slug);
@@ -168,7 +177,7 @@ export const updateOrganization = createAuthMutation({
 
         if (
           existingOrg &&
-          existingOrg._id !== ctx.user.activeOrganization?.id
+          existingOrg._id !== ctx.user.activeOrganization.id
         ) {
           throw new ConvexError({
             code: 'BAD_REQUEST',
@@ -177,12 +186,6 @@ export const updateOrganization = createAuthMutation({
         }
       }
     }
-    if (!ctx.user.activeOrganization?.id) {
-      throw new ConvexError({
-        code: 'UNAUTHORIZED',
-        message: 'No active organization',
-      });
-    }
 
     await ctx
       .table('organization')
@@ -190,7 +193,7 @@ export const updateOrganization = createAuthMutation({
       .patch({
         logo: args.logo,
         name: args.name,
-        ...(slug ? { slug: args.slug } : {}),
+        ...(slug ? { slug } : {}),
       });
 
     return null;

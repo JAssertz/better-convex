@@ -12,8 +12,8 @@ importers:
         specifier: ^0.1.23
         version: 0.1.23(convex@1.27.1(react@19.1.1))
       '@convex-dev/better-auth':
-        specifier: 0.8.6
-        version: 0.8.6(@standard-schema/spec@1.0.0)(better-auth@1.3.13(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)
+        specifier: 0.8.9
+        version: 0.8.9(@standard-schema/spec@1.0.0)(better-auth@1.3.24(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)
       '@convex-dev/rate-limiter':
         specifier: ^0.2.10
         version: 0.2.12(convex@1.27.1(react@19.1.1))(react@19.1.1)
@@ -117,11 +117,11 @@ importers:
         specifier: 5.86.0
         version: 5.86.0(react@19.1.1)
       better-auth:
-        specifier: 1.3.13
-        version: 1.3.13(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
+        specifier: 1.3.24
+        version: 1.3.24(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       better-auth-convex:
-        specifier: ^0.2.2
-        version: 0.2.2(@convex-dev/better-auth@0.8.6(@standard-schema/spec@1.0.0)(better-auth@1.3.13(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2))(@standard-schema/spec@1.0.0)(better-auth@1.3.13(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)(zod@3.25.76)
+        specifier: ^0.3.1
+        version: 0.3.1(@convex-dev/better-auth@0.8.9(@standard-schema/spec@1.0.0)(better-auth@1.3.24(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2))(@standard-schema/spec@1.0.0)(better-auth@1.3.24(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)(zod@3.25.76)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -286,6 +286,9 @@ packages:
     resolution: {integrity: sha512-Q/N6JNWvIvPnLDvjlE1OUBLPQHH6l3CltCEsHIujp45zQUSSh8K+gHnaEX45yAT1nyngnINhvWtzN+Nb9D8RAQ==}
     engines: {node: '>=6.9.0'}
 
+  '@better-auth/core@1.3.24':
+    resolution: {integrity: sha512-nU4aj5SA0COXAls0p3htIWmGPOG+76HULd9tG8CEUfwcK95rRrUIUN74FKvsAu3b18AVj3E7cL4bYrQS3KYKRw==}
+
   '@better-auth/utils@0.3.0':
     resolution: {integrity: sha512-W+Adw6ZA6mgvnSnhOki270rwJ42t4XzSK6YWGF//BbVXL6SwCLWfyzBc1lN2m/4RM28KubdBKQ4X5VMoLRNPQw==}
 
@@ -308,8 +311,8 @@ packages:
       react:
         optional: true
 
-  '@convex-dev/better-auth@0.8.6':
-    resolution: {integrity: sha512-iP2erc4YKz0HzrWSdaSRv2ck3gsdb2yBwUdSOsM0ebvNMcTsoWEBuu07cq6lUGMyJ97qxOnZDtN7CemTXKpSpA==}
+  '@convex-dev/better-auth@0.8.9':
+    resolution: {integrity: sha512-t6x2lYsgv0sGL14xmIsTqxVltkS//mWtIjb+Wm39rWUCgeqmCTqsyhQnmTDQNwaqZS0sH0WfTObNHu3xbCSx1w==}
     peerDependencies:
       better-auth: 1.3.8
       convex: ^1.26.2
@@ -2233,24 +2236,24 @@ packages:
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
 
-  better-auth-convex@0.2.2:
-    resolution: {integrity: sha512-oZh+pyYH2wbIcwTNbY0ytD4pEM/PFEe0TWEgm0s5fgA6Gt/sv4aFHiqlLjiXmaqAiBZSgFXhSxr935xx3GNRbw==}
+  better-auth-convex@0.3.1:
+    resolution: {integrity: sha512-qGUDYYPi+6Vdrd4NtPUYOpRHlSEsbxZzyLfMZgxB4Xu2S6G9lOnKXY2L9AmDrKmVacXFCPzLUN9P5twJWQrLYw==}
     peerDependencies:
       '@convex-dev/better-auth': '>=0.8.6'
       better-auth: '>=1.3.13'
       convex: '>=1.26.2'
 
-  better-auth@1.3.13:
-    resolution: {integrity: sha512-vNIVExB87JTM19+1+p6SZ6xbzZFLw4ug8ir61qCArE8UbIN3SZQi0T3/PjubpWPwsLjINBsVizeHxPf5S7Ss0A==}
+  better-auth@1.3.24:
+    resolution: {integrity: sha512-LyxIbnB2FExhjqQ/J1G8S8EAbmTBDFOz6CjqHNNu15Gux+c4fF0Si1YNLprROEb4EGNuGUfslurW0Q6nZ+Dobg==}
     peerDependencies:
       '@lynx-js/react': '*'
-      '@sveltejs/kit': ^2.0.0
-      next: ^14.0.0 || ^15.0.0
-      react: ^18.0.0 || ^19.0.0
-      react-dom: ^18.0.0 || ^19.0.0
-      solid-js: ^1.0.0
-      svelte: ^4.0.0 || ^5.0.0
-      vue: ^3.0.0
+      '@sveltejs/kit': '*'
+      next: '*'
+      react: '*'
+      react-dom: '*'
+      solid-js: '*'
+      svelte: '*'
+      vue: '*'
     peerDependenciesMeta:
       '@lynx-js/react':
         optional: true
@@ -4129,6 +4132,11 @@ snapshots:
 
   '@babel/runtime@7.28.4': {}
 
+  '@better-auth/core@1.3.24':
+    dependencies:
+      better-call: 1.0.19
+      zod: 4.1.8
+
   '@better-auth/utils@0.3.0': {}
 
   '@better-fetch/fetch@1.1.18': {}
@@ -4153,10 +4161,10 @@ snapshots:
     optionalDependencies:
       react: 19.1.1
 
-  '@convex-dev/better-auth@0.8.6(@standard-schema/spec@1.0.0)(better-auth@1.3.13(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)':
+  '@convex-dev/better-auth@0.8.9(@standard-schema/spec@1.0.0)(better-auth@1.3.24(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)':
     dependencies:
       '@better-fetch/fetch': 1.1.18
-      better-auth: 1.3.13(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
+      better-auth: 1.3.24(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       common-tags: 1.8.2
       convex: 1.27.1(react@19.1.1)
       convex-helpers: 0.1.104(@standard-schema/spec@1.0.0)(convex@1.27.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)(zod@3.25.76)
@@ -5955,10 +5963,10 @@ snapshots:
 
   balanced-match@1.0.2: {}
 
-  better-auth-convex@0.2.2(@convex-dev/better-auth@0.8.6(@standard-schema/spec@1.0.0)(better-auth@1.3.13(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2))(@standard-schema/spec@1.0.0)(better-auth@1.3.13(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)(zod@3.25.76):
+  better-auth-convex@0.3.1(@convex-dev/better-auth@0.8.9(@standard-schema/spec@1.0.0)(better-auth@1.3.24(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2))(@standard-schema/spec@1.0.0)(better-auth@1.3.24(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)(zod@3.25.76):
     dependencies:
-      '@convex-dev/better-auth': 0.8.6(@standard-schema/spec@1.0.0)(better-auth@1.3.13(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)
-      better-auth: 1.3.13(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
+      '@convex-dev/better-auth': 0.8.9(@standard-schema/spec@1.0.0)(better-auth@1.3.24(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(convex@1.27.1(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)
+      better-auth: 1.3.24(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       common-tags: 1.8.2
       convex: 1.27.1(react@19.1.1)
       convex-helpers: 0.1.104(@standard-schema/spec@1.0.0)(convex@1.27.1(react@19.1.1))(react@19.1.1)(typescript@5.9.2)(zod@3.25.76)
@@ -5970,8 +5978,9 @@ snapshots:
       - typescript
       - zod
 
-  better-auth@1.3.13(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1):
+  better-auth@1.3.24(next@15.5.3(react-dom@19.1.1(react@19.1.1))(react@19.1.1))(react-dom@19.1.1(react@19.1.1))(react@19.1.1):
     dependencies:
+      '@better-auth/core': 1.3.24
       '@better-auth/utils': 0.3.0
       '@better-fetch/fetch': 1.1.18
       '@noble/ciphers': 2.0.0

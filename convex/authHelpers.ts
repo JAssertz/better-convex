@@ -1,6 +1,6 @@
 import type { MutationCtx, QueryCtx } from '@convex/_generated/server';
 import type { CtxWithTable, Ent, EntWriter } from '@convex/shared/types';
-import { getAuthUserId, getSession } from 'better-auth-convex';
+import { getSession } from 'better-auth-convex';
 import { getProduct, productToPlan } from '@convex/polar/product';
 import { Doc, Id } from '@convex/_generated/dataModel';
 
@@ -23,13 +23,7 @@ export type SessionUser = Omit<Doc<'user'>, '_creationTime' | '_id'> & {
 };
 
 const getSessionData = async (ctx: CtxWithTable<MutationCtx>) => {
-  const userId = await getAuthUserId(ctx);
-
-  if (!userId) {
-    return null;
-  }
-
-  const session = await getSession(ctx, userId);
+  const session = await getSession(ctx);
 
   if (!session) {
     return null;
@@ -39,7 +33,7 @@ const getSessionData = async (ctx: CtxWithTable<MutationCtx>) => {
     session.activeOrganizationId as Id<'organization'> | null;
 
   const [user, subscription] = await Promise.all([
-    ctx.table('user').get(userId),
+    ctx.table('user').get(session.userId),
     (async () => {
       if (!activeOrganizationId) {
         return null;
@@ -76,7 +70,7 @@ const getSessionData = async (ctx: CtxWithTable<MutationCtx>) => {
       ctx.table('organization').getX(activeOrganizationId),
       ctx
         .table('member')
-        .get('organizationId_userId', activeOrganizationId, userId),
+        .get('organizationId_userId', activeOrganizationId, session.userId),
     ]);
 
     return {
