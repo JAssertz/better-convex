@@ -223,7 +223,7 @@ const schema = defineEntSchema({
 // Includes: user, session, account, organization, member, invitation
 ```
 
-## Key Patterns from `.cursor/rules/convex.mdc`
+## Key Patterns from `.claude/rules/convex.mdc`
 
 ### Authentication Context
 
@@ -316,7 +316,7 @@ src/lib/convex/
 
 This template includes specialized AI agents and coding rules to enhance your development experience:
 
-### Cursor Rules (`.cursor/rules/`)
+### Cursor Rules (`.claude/rules/`)
 
 #### Core Convex Rules
 

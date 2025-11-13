@@ -1,0 +1,275 @@
+---
+description: Use when updating or maintaining Convex documentation rules (convex.mdc and convex-*.mdc files) - provides content guidelines, context optimization principles, and usage vs setup separation patterns
+globs: .claude/rules/convex*.mdc
+alwaysApply: false
+---
+
+# Convex Documentation Guidelines
+
+This document outlines the rules and principles for maintaining `convex.mdc` and related `convex-*.mdc` documentation files.
+
+## Core Principles
+
+### 1. Context Optimization
+
+**convex.mdc is included in EVERY LLM request**, so it must be:
+
+- **Compact**
+- **Usage-focused**: Include patterns used in almost every feature
+- **No setup instructions**: Setup is one-time, usage is continuous
+- **Convex Ents migration**: All examples should use `ctx.table()` instead of `ctx.db`
+
+### 2. Usage vs Setup Separation
+
+**convex.mdc** contains:
+
+- ✅ **USAGE patterns**: How to use features when coding
+- ✅ **Common patterns**: Used in almost every feature
+- ✅ **Essential examples**: Basic usage of each concept
+- ✅ **File path references**: Where to edit for each pattern
+- ❌ **NO setup instructions**
+- ❌ **NO installation commands**: One-time tasks don't belong here
+
+**convex-\*.mdc** files contain:
+
+- Detailed documentation for specific features
+- Setup instructions and installation
+- Advanced patterns not used frequently
+- Complete examples with full context
+
+## Content Guidelines
+
+### What Stays in convex.mdc
+
+1. **Authentication patterns**
+
+   - Function wrappers (createAuthQuery, etc.)
+   - Basic examples
+   - File paths for editing
+
+2. **Validators**
+
+   - Quick reference for v. validators (schema only)
+   - Quick reference for z. validators (functions)
+   - Critical rules (zid for IDs, .optional() not .nullable())
+
+3. **React Integration**
+
+   - Essential hooks (usePublicQuery, useAuthQuery, etc.)
+   - Basic patterns
+   - Common pitfalls
+
+4. **Core Patterns**
+
+   - Function types and registration
+   - Query/mutation basics
+   - Relationship helpers (compact version)
+   - TypeScript patterns (compact)
+
+5. **File Path References**
+   - **Edit:** markers throughout
+   - Shows LLM where to make changes
+
+### What Goes to convex-\*.mdc
+
+1. **Setup Instructions**
+
+   - npm install commands
+   - Configuration files
+   - Environment variables
+   - One-time initialization
+
+2. **Advanced Patterns**
+
+   - Complex examples
+   - Edge cases
+   - Performance optimizations
+   - Detailed explanations
+
+3. **Feature-Specific Details**
+   - Cron job configuration
+   - HTTP endpoint routing
+   - Search index setup
+   - Aggregate component setup
+
+## Formatting Rules
+
+### Code Examples
+
+```typescript
+// Keep examples minimal but complete
+export const example = createAuthQuery()({
+  args: { id: zid("items") },
+  returns: z.object({ name: z.string() }),
+  handler: async (ctx, args) => {
+    return await ctx.table("items").get(args.id);
+  },
+});
+```
+
+### Quick References
+
+Use compact formats for common patterns:
+
+```
+**Quick Reference:**
+- `v.id('table')` - Document IDs
+- `v.string()`, `v.number()` - Basic types
+```
+
+### File Path Markers
+
+Always indicate where to edit:
+
+```
+**Edit:** `convex/functions.ts`
+**Edit:** `convex/*.ts` files
+**Edit:** `src/components/**/*.tsx`
+```
+
+### Warnings and Rules
+
+Highlight critical information:
+
+```
+**CRITICAL:** NEVER use raw `query`, `mutation`, `action`
+**WARNING:** NEVER use `ctx.db` - always use `ctx.table()` for Convex Ents
+**Rules:** No `any` | No manual complex types | Strict ID types
+```
+
+## Linking Strategy
+
+### Basic Usage + Link Pattern
+
+Don't just link - provide basic usage THEN link for details:
+
+````markdown
+## Convex Aggregate
+
+**Edit:** `convex/aggregates.ts`
+
+For efficient aggregation operations (counts, sums, rankings), see [convex-aggregate.mdc](mdc:.claude/rules/convex-aggregate.mdc).
+
+```typescript
+// Basic aggregate usage
+const leaderboard = new TableAggregate<...>(components.leaderboard, {
+  namespace: (doc) => doc.gameId,
+  sortKey: (doc) => doc.score,
+});
+```
+````
+
+````
+
+### See Also Section
+
+End convex.mdc with links to all detailed docs:
+```markdown
+## See Also
+
+For specific patterns and detailed examples:
+
+- [convex-aggregate.mdc](mdc:.claude/rules/convex-aggregate.mdc) - Efficient aggregation operations
+- [convex-examples.mdc](mdc:.claude/rules/convex-examples.mdc) - Complete application examples
+...
+````
+
+## Optimization Techniques
+
+### 1. Consolidate Examples
+
+Before:
+
+```typescript
+// Public query
+export const getData = createPublicQuery()({...});
+
+// Auth query
+export const getUserData = createAuthQuery()({...});
+
+// Public mutation
+export const updateData = createPublicMutation()({...});
+```
+
+After:
+
+```typescript
+// All function types in one example with comments
+export const example = createAuthQuery()({ // or createPublicQuery, etc.
+  args: { id: zid('items') },
+  returns: z.object({ name: z.string() }),
+  handler: async (ctx, args) => { ... },
+});
+```
+
+### 2. Use Tables for Comparisons
+
+Instead of verbose explanations, use compact tables:
+
+```
+| Feature | Built-in `.filter()` | `filter` helper |
+| ------- | -------------------- | --------------- |
+| Arrays  | ❌                   | ✅              |
+```
+
+### 3. Inline Short Rules
+
+Instead of bullet lists, use inline format:
+
+```
+**Performance:** N+1 is fast (~1ms/doc) | Arrays max 10 items | Use indexes
+```
+
+### 4. Remove Redundant Sections
+
+- Combine similar examples
+- Remove obvious explanations
+- Skip rarely-used options
+
+## Maintenance Workflow
+
+1. **When adding new features**:
+
+   - Add basic usage to convex.mdc if used frequently
+   - Add detailed docs to appropriate convex-\*.mdc
+   - Include file path references
+
+2. **When updating**:
+
+   - Maintain line count target (~800-900 lines)
+   - Keep examples minimal but complete
+
+3. **Regular reviews**:
+   - Remove patterns that became obsolete
+   - Update file paths if structure changes
+   - Consolidate similar examples
+
+## Key Reminders
+
+- **convex.mdc** is included in EVERY request - keep it lean
+- **USAGE not SETUP** - setup happens once, usage happens constantly
+- **Basic usage + link** - don't just link, show essential patterns
+- **File paths everywhere** - LLM needs to know where to edit
+- **Compact but complete** - minimal examples that still work
+
+## Common Mistakes to Avoid
+
+1. ❌ Adding installation commands to convex.mdc
+2. ❌ Including one-time setup in convex.mdc
+3. ❌ Just linking without basic usage examples
+4. ❌ Verbose explanations instead of code examples
+5. ❌ Missing file path references
+6. ❌ Including edge cases in main doc
+7. ❌ Forgetting to update main file after extraction
+8. ❌ Using `ctx.db` instead of `ctx.table()` in examples
+9. ❌ Not updating streams to use Ents (streams still require `ctx.db`)
+
+## Future Extensions
+
+When creating new convex-\*.mdc files:
+
+1. Follow the same structure as existing files
+2. Include setup instructions if applicable
+3. Provide complete, runnable examples
+4. Link back to convex.mdc for core concepts
+5. Update the "See Also" section in convex.mdc

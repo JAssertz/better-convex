@@ -1,0 +1,316 @@
+---
+description: Use when implementing admin features (user management, banning, role assignment, impersonation) with Better Auth and Convex - provides server-side admin API patterns, dual table architecture guidance, and client integration
+globs: convex/admin*.ts
+alwaysApply: false
+---
+
+# Convex Admin with Better Auth
+
+## Architecture
+
+**Dual Table System:** Better Auth users (auth, roles) + Application users (app data) linked via `userId`
+
+## Server-Side Admin API Pattern
+
+**Edit:** `convex/admin.ts`
+
+```typescript
+// ALL Better Auth admin APIs available server-side via auth.api
+export const adminOperation = createAuthMutation({
+  role: "admin",
+})({
+  handler: async (ctx, args) => {
+    const auth = createAuth(ctx);
+    const headers = await betterAuthComponent.getHeaders(ctx);
+
+    // Access ANY Better Auth admin method
+    await auth.api.banUser({ body: { userId }, headers });
+    await auth.api.setUserPassword({ body: { userId, newPassword }, headers });
+    await auth.api.impersonateUser({ body: { userId }, headers });
+    // ... all auth.api.* methods available
+  },
+});
+```
+
+**Benefits:** Rate limiting | Batch operations | Custom validation | Transaction support
+
+## Setup
+
+**Edit:** `convex/auth.ts` - Add `admin()` plugin  
+**Edit:** `.env.local` - Set `ADMIN=["admin@example.com"]`  
+**Edit:** `convex/init.ts` - Auto-create admin users on init
+
+```typescript
+// convex/auth.ts
+plugins: [convex(), admin()];
+
+// convex/init.ts - Creates users in both tables
+export const ensureAdminUser = createInternalMutation({
+  devOnly: true,
+})({
+  handler: async (ctx) => {
+    for (const email of getEnv().ADMIN) {
+      const userId = await createUserCalled(ctx, { email });
+      await ctx.runMutation(components.betterAuth.adapter.create, {
+        input: { model: "user", data: { email, role: "admin", userId } },
+      });
+    }
+  },
+});
+```
+
+## Admin API Operations
+
+### Pattern for ALL Operations
+
+```typescript
+// Server-side: auth.api.methodName()
+const auth = createAuth(ctx);
+await auth.api.methodName({
+  body: { ...params },
+  headers: await betterAuthComponent.getHeaders(ctx),
+});
+
+// Client-side: authClient.admin.methodName()
+await authClient.admin.methodName({ ...params });
+```
+
+### User Management
+
+```typescript
+// Create User
+await auth.api.createUser({
+  body: { email, password, name, role, data: { custom } },
+  headers,
+});
+
+// List Users (custom implementation for pagination)
+export const getAllUsers = createAuthPaginatedQuery()({
+  handler: async (ctx, args) => {
+    const users = await ctx
+      .table("user")
+      .search("search_username_name", (q) => q.search("name", args.search))
+      .paginate(args.paginationOpts);
+
+    // Enrich with Better Auth data
+    return enrichWithBetterAuthData(users);
+  },
+});
+
+// Set Role
+await auth.api.setRole({ body: { userId, role }, headers });
+
+// Set Password
+await auth.api.setUserPassword({ body: { userId, newPassword }, headers });
+```
+
+### Banning & Sessions
+
+```typescript
+// Ban/Unban
+await auth.api.banUser({ body: { userId, banReason, banExpiresIn }, headers });
+await auth.api.unbanUser({ body: { userId }, headers });
+
+// Sessions
+await auth.api.listUserSessions({ body: { userId }, headers });
+await auth.api.revokeUserSession({ body: { sessionToken }, headers });
+await auth.api.revokeUserSessions({ body: { userId }, headers });
+
+// Impersonation
+const session = await auth.api.impersonateUser({ body: { userId }, headers });
+await auth.api.stopImpersonating({ headers });
+
+// User Deletion
+await auth.api.removeUser({ body: { userId }, headers });
+```
+
+### Permissions
+
+```typescript
+// Check permissions
+const hasPermission = await auth.api.hasPermission({
+  body: { userId, permissions: { user: ["delete"], session: ["revoke"] } },
+  headers,
+});
+
+// Admin check shorthand
+if (!ctx.user.isAdmin) {
+  throw new ConvexError({ code: "FORBIDDEN", message: "Admin required" });
+}
+```
+
+## Custom Operations
+
+```typescript
+// Dashboard stats with aggregates (O(log n))
+export const getDashboardStats = createAuthQuery({ role: "admin" })({
+  handler: async (ctx) => {
+    const [totalUsers, totalCharacters] = await Promise.all([
+      aggregateTotalUsers.count(ctx, { namespace: "global", bounds: {} }),
+      aggregateTotalCharacters.count(ctx, { namespace: "global", bounds: {} }),
+    ]);
+    return { totalUsers, totalCharacters };
+  },
+});
+
+// Grant admin by email
+export const grantAdminByEmail = createAuthMutation({ role: "admin" })({
+  args: { email: z.string().email() },
+  handler: async (ctx, args) => {
+    const betterAuthUser = await getBetterAuthUserByEmail(ctx, args.email);
+    if (!betterAuthUser) return { success: false };
+
+    await ctx.runMutation(components.betterAuth.adapter.updateOne, {
+      input: {
+        model: "user",
+        where: [{ field: "id", value: betterAuthUser.id }],
+        update: { role: "admin" },
+      },
+    });
+    return { success: true, userId: betterAuthUser.userId };
+  },
+});
+```
+
+## Client Integration
+
+**Edit:** `src/lib/auth-client.ts`
+
+```typescript
+import { adminClient } from "better-auth/client/plugins";
+
+export const authClient = createAuthClient({
+  plugins: [adminClient({ ac, roles: { admin, user } })],
+});
+
+// React hooks
+export const useIsAdmin = () => useCurrentUser()?.isAdmin || false;
+```
+
+## Schema
+
+### Better Auth Component Tables
+
+The admin plugin extends Better Auth component tables that **cannot be modified directly**:
+
+```typescript
+// User table (from Better Auth component) with admin extensions:
+// NOTE: We don't use Better Auth's image, name, username, or displayUsername fields
+//       These are managed in our app's users table (see convex/schema.ts)
+user: defineTable({
+  banExpires: v.optional(v.union(v.null(), v.float64())),
+  banReason: v.optional(v.union(v.null(), v.string())),
+  banned: v.optional(v.union(v.null(), v.boolean())),
+  createdAt: v.float64(),
+  displayUsername: v.optional(v.union(v.null(), v.string())), // NOT USED - see app users table
+  email: v.string(),
+  emailVerified: v.boolean(),
+  image: v.optional(v.union(v.null(), v.string())), // NOT USED - see app users table
+  isAnonymous: v.optional(v.union(v.null(), v.boolean())),
+  name: v.string(), // NOT USED - see app users table
+  phoneNumber: v.optional(v.union(v.null(), v.string())),
+  phoneNumberVerified: v.optional(v.union(v.null(), v.boolean())),
+  role: v.optional(v.union(v.null(), v.string())), // 'admin' | 'user'
+  teamId: v.optional(v.union(v.null(), v.string())),
+  twoFactorEnabled: v.optional(v.union(v.null(), v.boolean())),
+  updatedAt: v.float64(),
+  userId: v.optional(v.union(v.null(), v.string())), // Links to app users table
+  username: v.optional(v.union(v.null(), v.string())), // NOT USED - see app users table
+})
+  .index('email_name', ['email', 'name'])
+  .index('name', ['name'])
+  .index('phoneNumber', ['phoneNumber'])
+  .index('userId', ['userId'])
+  .index('username', ['username']),
+
+// Session table extensions for impersonation:
+session: defineTable({
+  // ... existing session fields ...
+  impersonatedBy: v.optional(v.union(v.null(), v.string())), // userId of admin
+  // ... other fields ...
+})
+```
+
+### App-Level User Table
+
+Your application's `users` table manages profile data that Better Auth doesn't handle:
+
+```typescript
+// convex/schema.ts
+user: defineEnt({
+  // Profile fields (managed by app, not Better Auth)
+  name: v.optional(v.string()), // User's display name
+  image: v.optional(v.string()), // Profile image URL
+  username: v.string(), // Unique username
+  firstName: v.optional(v.string()),
+  lastName: v.optional(v.string()),
+  bio: v.optional(v.string()),
+  location: v.optional(v.string()),
+  website: v.optional(v.string()),
+  // ... other app-specific fields
+
+  // The userId field links to Better Auth user.id automatically
+}).searchIndex("search_username_name", {
+  searchField: "name",
+  filterFields: ["username"],
+});
+```
+
+**Important:** Profile fields like `name`, `image`, `username` are stored in the app's `users` table, NOT in Better Auth's user table. Better Auth only manages authentication-related fields (email, role, ban status).
+
+### Syncing Admin Data
+
+To work with admin data, sync between Better Auth and app tables:
+
+```typescript
+// Get user with admin status
+const getUserWithRole = async (ctx, userId: Id<"user">) => {
+  const [appUser, betterAuthUser] = await Promise.all([
+    ctx.table("user").get(userId),
+    getBetterAuthUser(ctx, userId),
+  ]);
+
+  return {
+    ...appUser,
+    role: betterAuthUser?.role || "user",
+    banned: betterAuthUser?.banned || false,
+    isAdmin: betterAuthUser?.role === "admin",
+  };
+};
+```
+
+## Common Patterns
+
+```typescript
+// Sync user data from both tables
+const syncUserData = async (ctx, userId: Id<"user">) => {
+  const [appUser, betterAuthUser] = await Promise.all([
+    ctx.table("user").get(userId),
+    getBetterAuthUser(ctx, userId),
+  ]);
+  return {
+    ...appUser,
+    email: betterAuthUser?.email,
+    role: betterAuthUser?.role,
+  };
+};
+
+// Admin page guard (RSC)
+await adminGuard(); // Redirects if not admin
+```
+
+## API Reference
+
+All Better Auth admin APIs are available server-side via `auth.api.*` and client-side via `authClient.admin.*`:
+
+- **User Management**: `createUser`, `setRole`, `setUserPassword`, `removeUser`
+- **Ban System**: `banUser`, `unbanUser`
+- **Sessions**: `listUserSessions`, `revokeUserSession`, `revokeUserSessions`
+- **Impersonation**: `impersonateUser`, `stopImpersonating`
+- **Permissions**: `hasPermission`
+
+Custom implementations for app-specific needs:
+
+- **List Users**: Paginated query with search
+- **Dashboard Stats**: Aggregated metrics
+- **Grant Admin**: Email-based role assignment

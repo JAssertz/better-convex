@@ -1,0 +1,1558 @@
+---
+description: Use when optimizing Convex queries for scale (thousands+ documents) - provides patterns for efficient indexing, query structure, caching optimization, and avoiding common performance pitfalls
+globs: **/*.ts,**/*.tsx
+alwaysApply: false
+---
+
+# Convex Query Optimization
+
+This document covers optimization patterns for Convex queries at scale. Don't prematurely optimize - these patterns are for when you have thousands of documents.
+
+## 1. Use Indexes Instead of Scanning
+
+**Edit:** `convex/schema.ts` for indexes, `convex/*.ts` for queries
+
+### Problem: Full table scans
+
+```typescript
+// ❌ WRONG: Scans every document looking for a match
+const members = await ctx
+  .table("member")
+  .filter((q) => q.eq(q.field("teamId"), args.teamId));
+
+// ✅ CORRECT: Uses index to jump to matching documents
+const members = await ctx.table("member", "teamId", (q) =>
+  q.eq("teamId", args.teamId)
+);
+```
+
+### Schema with indexes
+
+````typescript
+// convex/schema.ts
+import { defineEnt, defineEntSchema } from 'convex-ents';
+import { v } from 'convex/values';
+
+const schema = defineEntSchema({
+  members: defineEnt({
+    teamId: v.id('teams'),
+    status: v.union(v.literal('invited'), v.literal('active')),
+    // ...
+  })
+    .index('teamId', ['teamId'])
+    .index('teamId_status', ['teamId', 'status']), // Multi-field index
+});
+
+export default schema;
+
+### Multi-field indexes for complex queries
+
+```typescript
+// Use multi-field index when filtering by multiple fields
+const activeMembers = await ctx
+  .table('member', 'teamId_status', (q) =>
+    q.eq('teamId', args.teamId).eq('status', 'active')
+  );
+````
+
+### Codebase Audit: Search for `.filter(q =>`
+
+Look at every `.filter()` call:
+
+- Is the table always small? (< 1000 docs)
+- Are you using an index first?
+- Search for `q.eq(q.field(` - these should use indexes
+
+**Rule:** If you see `.filter(q => q.eq(q.field("fieldName"), value))`, create an index on `fieldName`
+
+## 2. Limit Documents with Pagination
+
+**CRITICAL:** NEVER fetch all documents without knowing the table size. Always use `ctx.table()` instead of `ctx.db`.
+
+### Problem: Fetching unlimited documents
+
+```typescript
+// ❌ WRONG: Will break with thousands of posts
+return await ctx.table("posts").order("desc");
+
+// ✅ OPTIMAL: Aggregates for counting with millions of documents (O(log n))
+const count = await aggregatePosts.count(ctx, {
+  namespace: categoryId,
+  bounds: {} as any,
+});
+
+// ✅ GOOD: Pagination for user-facing lists
+return await ctx.table("posts").order("desc").paginate(args.paginationOpts);
+
+// ✅ ACCEPTABLE: Limits to 50 documents (ONLY for small bounded datasets)
+return await ctx.table("posts").order("desc").take(50);
+```
+
+### When to use each pattern
+
+**🚨 CRITICAL FOR SCALE: Aggregates FIRST for counting operations**
+
+**Aggregates** - PRIMARY solution for counting with millions of documents (O(log n))
+
+```typescript
+// ✅ OPTIMAL: O(log n) count scales to millions of documents
+const count = await aggregateMessages.count(ctx, {
+  namespace: channelId,
+  bounds: {} as any,
+});
+```
+
+### ⚠️ WARNING: Post-Filtering Anti-Pattern
+
+**NEVER fetch documents then filter in memory** - This dangerous pattern can:
+
+- Miss items when paginating
+- Fetch too many documents and hit limits
+- Create inconsistent results
+
+```typescript
+// ❌ DANGEROUS: Post-filtering after fetching
+const memberships = await ctx
+  .table("projectMembers")
+  .filter((q) => q.eq(q.field("userId"), ctx.userId));
+// Filtering in memory - can miss pending invites!
+const pendingInvites = memberships.filter((m) => m.acceptedAt === undefined);
+
+// ✅ CORRECT: Filter at database level
+const pendingMemberships = await ctx
+  .table("projectMembers", "userId", (q) => q.eq("userId", ctx.userId))
+  .filter((q) => q.eq(q.field("acceptedAt"), undefined));
+
+// ✅ ALTERNATIVE: Use streams for complex filters
+import { stream } from "convex-helpers/server/stream";
+const pendingInvites = await stream(ctx.db, schema)
+  .query("projectMembers")
+  .withIndex("userId", (q) => q.eq("userId", ctx.userId))
+  .filterWith(async (m) => m.acceptedAt === undefined)
+  .paginate(args.paginationOpts);
+```
+
+### Use getX and edgeX for Required Relationships
+
+**IMPORTANT**: When you know a document or relationship MUST exist, use the `X` variants to avoid unnecessary null checks and make your code cleaner.
+
+**⚠️ CAUTION**: Don't use `edgeX` for optional relationships - it will throw!
+
+**🚨 CRITICAL**: In authenticated contexts, `ctx.user` is already loaded - NEVER fetch it again!
+
+```typescript
+// ❌ INEFFICIENT: Redundant database query for current user
+const currentUser = await ctx.table("user").getX(ctx.userId); // Unnecessary query!
+
+// ✅ OPTIMAL: Use pre-loaded user from context
+const currentUser = ctx.user; // Already available in authenticated contexts
+
+// ❌ VERBOSE: Unnecessary null checks for required relationships
+const character = await ctx.table("characters").get(characterId);
+if (!character) {
+  throw new ConvexError({ code: "NOT_FOUND", message: "Character not found" });
+}
+const user = await character.edge("user");
+if (!user) {
+  throw new ConvexError({ code: "NOT_FOUND", message: "User not found" });
+}
+
+// ✅ CLEAN: Use X variants for required entities
+const character = await ctx.table("characters").getX(characterId); // Throws if not found
+const user = await character.edgeX("user"); // Characters ALWAYS have a user
+
+// More examples of when to use X variants
+const message = await ctx.table("messages").getX(messageId);
+const author = await message.edgeX("author"); // Messages always have authors
+
+// When creating related entities
+const userId = await ctx.table("user").insert(userData);
+const user = await ctx.table("user").getX(userId); // Just inserted, must exist
+const profile = await ctx.table("profiles").insert({ userId }).get();
+const profileX = await user.edgeX("profile"); // Now guaranteed to exist
+```
+
+**When to use getX/edgeX:**
+
+- After successful insert operations
+- For required foreign key relationships
+- In mutation handlers where entity existence is validated
+- For 1:1 relationships on the required side
+- When the schema guarantees the relationship exists
+- For the main entity being operated on (character in character.ts)
+
+**When to use get/edge:**
+
+- For optional relationships (may be null or empty array)
+- In queries where entity might not exist
+- For user-provided IDs that need validation
+- For 1:1 relationships on the optional side
+- For many:many relationships that might be empty
+- When the relationship is not guaranteed by business logic
+
+### Use .has() for Efficient Edge Existence Checks
+
+**IMPORTANT**: For many:many edges, use `.has()` to check if a specific relationship exists without fetching all related entities.
+
+```typescript
+// ❌ INEFFICIENT: Fetching all to check existence
+const following = await user.edge("following");
+const isFollowing = following.some((u) => u._id === targetUserId);
+
+// ✅ EFFICIENT: O(1) lookup with .has()
+const isFollowing = await user.edge("following").has(targetUserId);
+
+// More examples
+const hasTag = await message.edge("tags").has(tagId);
+const isStarred = await character.edge("starredBy").has(userId);
+const isMember = await team.edge("member").has(userId);
+```
+
+**When to use .has():**
+
+- Checking if a many:many relationship exists
+- Toggle operations (follow/unfollow, star/unstar)
+- Permission checks (is user member of team)
+- Any boolean "exists" check for edges
+
+**Benefits:**
+
+- O(1) operation instead of O(n)
+- No unnecessary data transfer
+- Works with all edge types that support multiple relationships
+
+### Aggregates vs Denormalization for Small Lookups
+
+**IMPORTANT**: Use aggregates even for ≤100 page size lookups. Here's why:
+
+**Aggregates are preferred because:**
+
+- **Flexibility with bounds**: Can query ranges, prefixes, and complex conditions
+- **No schema changes**: Add new aggregates without modifying tables
+- **Easier maintenance**: Triggers handle everything automatically
+- **Still fast**: 100 O(log n) operations are very efficient
+- **Dynamic filtering**: Supports complex queries without pre-computing every combination
+- Only denormalize when aggregate can't be used
+
+### When to Keep Separate Tables vs Using Aggregates
+
+**Keep a separate table (like `characterActivities`) when:**
+
+- **Domain relationship exists**: The table represents a meaningful business relationship
+- **Additional metadata needed**: May add fields like `interaction_count`, `last_action_type`
+- **Query patterns require it**: Need to query by multiple dimensions (userId + characterId)
+- **Normalized design**: Avoids duplicating data across multiple aggregates
+
+**Use aggregates when:**
+
+- **Pure statistics**: Just counting or summing values
+- **No domain meaning**: It's purely a performance optimization
+- **Single-purpose**: Only used for one type of query
+
+**Example: Why `characterActivities` is a good separate table:**
+
+```typescript
+// ✅ GOOD: Separate table for domain relationship
+characterActivities: defineTable({
+  userId: v.id("user"),
+  characterId: v.id("characters"),
+  lastMessageAt: v.number(),
+  // Could extend with:
+  // interactionCount: v.number(),
+  // lastActionType: v.string(), // 'chat', 'star', 'view'
+  // favoriteQuotes: v.array(v.string()),
+})
+  .index("userId", ["userId"])
+  .index("userId_characterId", ["userId", "characterId"]);
+
+// This represents "user's history with character" - a real domain concept
+// Not just a cache or performance optimization
+```
+
+**`.paginate()`** - User-facing lists with "load more" functionality
+
+```typescript
+// Use with createPublicPaginatedQuery() or createAuthPaginatedQuery()
+export const listPosts = createPublicPaginatedQuery()({
+  handler: async (ctx, args) => {
+    return await ctx.table("posts").order("desc").paginate(args.paginationOpts);
+  },
+});
+```
+
+**`.take(n)`** - ONLY for small bounded datasets where you don't need total count
+
+```typescript
+// Show "25+ messages" in UI (ONLY for bounded channels with enforced limits)
+const recentMessages = await ctx
+  .table("messages", "channelId", (q) => q.eq("channelId", channelId))
+  .order("desc")
+  .take(25);
+```
+
+**`.first()` / `.unique()`** - Single document
+
+```typescript
+const latestPost = await ctx.table("posts").order("desc").first();
+const user = await ctx.table("user").get("email", email); // Unique lookup by indexed field
+const singleDoc = await ctx.table("counters").unique(); // Throws if multiple matches
+```
+
+### Enforce limits at insert time
+
+Instead of paginating everything, consider:
+
+- Max 100 teams per user
+- Max 10 email addresses per account
+- Max 100 items per cart
+
+```typescript
+// ✅ OPTIMAL: Use aggregates for counting at scale (O(log n))
+const teamCount = await aggregateTeamMembers.count(ctx, {
+  namespace: userId,
+  bounds: {} as any,
+});
+if (teamCount >= 100) {
+  throw new ConvexError("Maximum 100 teams per user");
+}
+
+// ❌ AVOID: Fetching all to count (O(n) operation - breaks with millions)
+const teamMembers = await ctx.table("teamMembers", "userId", (q) =>
+  q.eq("userId", userId)
+);
+if (teamMembers.length >= 100) {
+  throw new ConvexError("Maximum 100 teams per user");
+}
+```
+
+### Codebase Audit: Search for fetching all documents
+
+Every pattern that fetches all documents must either:
+
+1. Use an index to limit documents
+2. Be on a table with enforced size limits
+3. Have a comment explaining why unlimited is safe
+4. **PREFERRED**: Use aggregates for counting operations (O(log n) vs O(n))
+
+**🚨 CRITICAL Rules for Scale:**
+
+- **Counting (PRIMARY)**: Use aggregates from [convex-aggregate.mdc](mdc:.claude/rules/convex-aggregate.mdc) for O(log n) performance with millions of documents
+- **User-facing lists**: Use `.paginate()` for "load more" functionality
+- **Small bounded datasets**: Use `.take(n)` ONLY when you don't need total count and table has enforced size limits
+- **Never**: Fetch all documents or count by length on unbounded tables - will break with millions of documents
+
+## 3. Optimize for Query Caching
+
+Convex automatically caches queries and invalidates when referenced documents change. Optimize by isolating frequently-changing data.
+
+### Problem: Frequent cache invalidation
+
+```typescript
+// ❌ WRONG: User document changes every 10 seconds
+// convex/schema.ts
+user: defineEnt({
+  name: v.string(),
+  profilePicUrl: v.string(),
+  lastSeen: v.number(), // Updates every heartbeat
+});
+
+// Every query reading users gets invalidated on heartbeat
+const profile = await ctx.table("user").get(userId); // Invalidated every 10s!
+```
+
+### Solution: Isolate frequently-changing data
+
+```typescript
+// ✅ CORRECT: Separate frequently-changing data
+// convex/schema.ts
+user: defineEnt({
+  name: v.string(),
+  profilePicUrl: v.string(),
+}).edge('heartbeat', { ref: true }), // 1:1 edge to heartbeat
+
+heartbeats: defineEnt({
+  lastSeen: v.number(),
+}).edge('user'),
+
+// Profile query not invalidated by heartbeats
+const profile = await ctx.table('user').get(userId);
+
+// Only queries that need online status read heartbeat
+const heartbeat = profile && await profile.edge('heartbeat');
+const isOnline = heartbeat && (Date.now() - heartbeat.lastSeen < 30000);
+```
+
+### Codebase Audit: Search for `.patch()` and `.replace()`
+
+Look for frequently updated fields:
+
+- Timestamps (lastSeen, lastActive)
+- Counters (viewCount, messageCount)
+- Status fields that change often
+
+If these are in widely-referenced documents, move to separate tables.
+
+## Performance Best Practices
+
+### Index Guidelines
+
+- **Use indexes for equality filters** - Use index parameter in `ctx.table()`
+- **Multi-field indexes are efficient** - Prefer one `["teamId", "status"]` over two separate indexes
+- **Index limit** - Too many indexes slow inserts (16 indexes ≈ 17x insert cost)
+
+### Query Limits
+
+- **Read limit** - Convex limits documents read per transaction
+- **Default take** - `.take()` defaults to 100 if not specified
+- **Pagination** - Use for unbounded data sets
+
+### Document Size
+
+- **Arrays** - Keep to 10 elements max
+- **Nested objects** - Avoid deep nesting
+- **Large data** - Use separate tables with references
+
+## Common Patterns
+
+```typescript
+// ✅ OPTIMAL: Use aggregates for counting at scale
+const memberCount = await aggregateMembers.count(ctx, {
+  namespace: teamId,
+  bounds: {} as any,
+});
+
+// ✅ GOOD: Paginated list with filters
+export const listPosts = createAuthPaginatedQuery()({
+  args: { status: z.optional(z.string()) },
+  handler: async (ctx, args) => {
+    if (args.status) {
+      return await ctx
+        .table("posts", "status", (q) => q.eq("status", args.status))
+        .order("desc")
+        .paginate(args.paginationOpts);
+    }
+    return await ctx.table("posts").order("desc").paginate(args.paginationOpts);
+  },
+});
+
+// ✅ ACCEPTABLE: Small bounded collection with enforced limits
+const items = await ctx.table("cartItems", "cartId", (q) =>
+  q.eq("cartId", cartId)
+);
+// Safe: enforced max 100 at insert
+
+// ❌ AVOID: Fetching all members to count or process
+const members = await ctx.table("member", "teamId", (q) =>
+  q.eq("teamId", teamId)
+);
+// Dangerous: could be millions - use pagination instead
+```
+
+## 4. Full Text Search Optimization
+
+**Edit:** `convex/schema.ts` for search indexes, `convex/*.ts` for queries
+
+### When to Use Search Indexes vs Regular Indexes
+
+**Use Regular Indexes** when:
+
+- Exact matching on fields (`status === 'active'`)
+- Range queries on numbers/dates
+- Sorting by specific fields
+- You need custom ordering
+
+**Use Search Indexes** when:
+
+- Text search within string fields
+- Typeahead/autocomplete features
+- Finding keywords in content
+- Relevance-based results
+
+### Search Index Best Practices
+
+```typescript
+// ✅ GOOD: Filter fields for common filters
+characters: defineEnt({
+  name: v.string(),
+  label: v.string().optional(),
+  userId: v.id("user"),
+  private: v.boolean(),
+}).searchIndex("search_name", {
+  searchField: "name",
+  filterFields: ["userId", "private"], // Indexed equality filters
+});
+
+// ❌ BAD: No filter fields = post-filtering required
+// .searchIndex('search_name', {
+//   searchField: 'name',
+//   // Missing filterFields - all filtering happens in memory!
+// });
+```
+
+### Efficient Search Queries
+
+```typescript
+// ✅ EFFICIENT: Use filter fields in search expression
+const results = await ctx
+  .table("characters")
+  .search(
+    "search_name",
+    (q) =>
+      q
+        .search("name", args.query)
+        .eq("private", false) // Uses index
+        .eq("userId", excludeUserId) // Uses index
+  )
+  .paginate(args.paginationOpts);
+
+// ❌ INEFFICIENT: Post-filtering after search
+const results = await ctx
+  .table("characters")
+  .search("search_name", (q) => q.search("name", args.query))
+  .filter((q) => q.eq(q.field("private"), false)) // Scans all results!
+  .paginate(args.paginationOpts);
+```
+
+### Search vs Filter Performance
+
+```typescript
+// Problem: Can't search on multiple fields
+// ❌ This doesn't work - only one search field allowed
+// .searchIndex('search_name_label', {
+//   searchField: ['name', 'label'], // NOT SUPPORTED
+// })
+
+// Solution 1: Search primary field, filter secondary
+const results = await ctx
+  .table("characters")
+  .search("search_name", (q) => q.search("name", query))
+  .filter((q) =>
+    q.or(q.eq(q.field("name"), query), q.eq(q.field("label"), query))
+  )
+  .take(50);
+
+// Solution 2: Concatenated search field
+characters: defineEnt({
+  name: v.string(),
+  label: v.string().optional(),
+  searchText: v.string(), // name + ' ' + label
+}).searchIndex("search_all", {
+  searchField: "searchText",
+  filterFields: ["private", "userId"],
+});
+```
+
+### Key Limitations & Workarounds
+
+1. **1024 Document Scan Limit**
+
+   ```typescript
+   // Search can only scan 1024 documents
+   // Use filter fields to narrow results BEFORE scanning
+   ctx.table("user").search(
+     "search_name",
+     (q) => q.search("name", "john").eq("teamId", teamId) // Narrow to team first
+   );
+   ```
+
+2. **No Custom Ordering**
+
+   ```typescript
+   // ❌ Can't order search results by date
+   ctx.table('posts').search(...).order('desc') // NOT SUPPORTED
+
+   // ✅ Post-sort in memory for small result sets
+   const results = await ctx.table('posts').search(...).take(50);
+   results.sort((a, b) => b._creationTime - a._creationTime);
+   ```
+
+3. **Single Search Field**
+   ```typescript
+   // For multi-field search, consider:
+   // 1. Denormalized search field (concatenated)
+   // 2. Multiple search indexes (query separately)
+   // 3. Post-filtering for secondary matches
+   ```
+
+### Search Index Patterns
+
+```typescript
+// Pattern 1: Optional search with fallback to regular index
+export const listCharacters = createPublicPaginatedQuery()({
+  args: { query: z.string().optional() },
+  handler: async (ctx, args) => {
+    if (args.query) {
+      // Use search index when query provided
+      return await ctx
+        .table("characters")
+        .search("search_name", (q) =>
+          q.search("name", args.query!).eq("private", false)
+        )
+        .paginate(args.paginationOpts);
+    } else {
+      // Use regular index when no search
+      return await ctx
+        .table("characters", "private", (q) => q.eq("private", false))
+        .order("desc")
+        .paginate(args.paginationOpts);
+    }
+  },
+});
+
+// Pattern 2: For complex filters with search, use streams
+// See [convex-streams.mdc](mdc:.claude/rules/convex-streams.mdc)
+```
+
+## 5. Pagination with Filtering
+
+**Edit:** `convex/*.ts` files using `.filter()` + `.paginate()`
+
+### Important: Choose the Right Filtering Approach
+
+1. **Simple filters:** Use built-in `.filter()` - maintains full page sizes with pagination!
+2. **Complex filters WITHOUT pagination:** Use `filter` helper from `convex-helpers/server/filter`
+3. **Complex filters WITH pagination:** Use streams from `convex-helpers/server/stream`
+
+### Built-in `.filter()` Maintains Full Page Sizes
+
+**Good news:** Built-in `.filter()` with `.paginate()` returns the requested number of items!
+
+```typescript
+// ✅ GOOD: Always returns 10 items (if available)
+export const exploreCharacters = createPublicPaginatedQuery()({
+  args: { status: z.string().optional() },
+  handler: async (ctx, args) => {
+    return await ctx
+      .table("characters")
+      .filter((q) => q.eq(q.field("status"), args.status))
+      .paginate(args.paginationOpts);
+    // Convex keeps fetching until it finds 10 matching items!
+  },
+});
+```
+
+### Complex Filtering Options
+
+**Limitation:** Built-in `.filter()` only supports simple field comparisons (eq, neq, gt, lt).
+
+```typescript
+// ❌ CAN'T DO with built-in .filter():
+// - Array operations: categories.includes('strategy')
+// - String operations: name.toLowerCase().includes('john')
+// - Async lookups: Check if author is premium
+// - Complex logic: Multiple conditions with custom logic
+```
+
+#### Option 1: Filter Helper (No Pagination)
+
+```typescript
+import { filter } from "convex-helpers/server/filter";
+
+// ✅ GOOD: Complex filtering without pagination
+const topPosts = await filter(
+  ctx.table("posts", "status", (q) => q.eq("status", "published")),
+  (post) => {
+    // Full TypeScript power
+    return (
+      post.tags.includes("featured") &&
+      post.title.toLowerCase().includes(searchTerm) &&
+      post.views > 1000
+    );
+  }
+).take(10); // Works with .take(), .first(), unique()
+```
+
+#### Option 2: Streams (With Pagination)
+
+```typescript
+import { stream } from "convex-helpers/server/stream";
+import schema from "./schema";
+
+// ✅ BEST: Complex filtering with consistent pagination
+export const searchCharacters = createPublicPaginatedQuery()({
+  args: { category: z.string().optional() },
+  handler: async (ctx, args) => {
+    return await stream(ctx.db, schema) // ⚠️ Stream still uses ctx.db
+      .query("characters")
+      .withIndex("private", (q) => q.eq("private", false))
+      .filterWith(async (char) => {
+        // Full TypeScript power + consistent page sizes!
+        return char.categories?.includes(args.category);
+      })
+      .paginate(args.paginationOpts);
+  },
+});
+```
+
+**Key Difference:** Filter helper with `.paginate()` returns variable page sizes. Streams always return the requested number of items.
+
+### How It Works
+
+1. Convex fetches documents up to the requested page size
+2. The filter predicate is applied to each document
+3. Non-matching documents are discarded
+4. Result: Variable number of items per page
+
+```typescript
+// Example flow:
+// 1. User requests: { numItems: 10 }
+// 2. Convex fetches: 10 documents from the table
+// 3. Filter applies: 3 match, 7 discarded
+// 4. User receives: { page: [3 items], isDone: false }
+
+// ⚠️ DANGER: Post-filtering can miss items entirely!
+// If first 10 docs don't match filter, page is empty
+// even though matching docs exist later in table
+```
+
+### Solutions
+
+#### Solution 1: Use Indexes for Filtering (Preferred)
+
+```typescript
+// ✅ BEST: Move filterable fields to indexes
+characters: defineEnt({
+  name: v.string(),
+  category: v.string(), // Denormalized for indexing
+  private: v.boolean(),
+})
+  .index("category", ["category"])
+  .index("private_category", ["private", "category"]);
+
+// Now filter at index level - consistent page sizes
+export const exploreCharacters = createPublicPaginatedQuery()({
+  args: { category: z.string().optional() },
+  handler: async (ctx, args) => {
+    if (args.category) {
+      return await ctx
+        .table("characters", "category", (q) => q.eq("category", args.category))
+        .paginate(args.paginationOpts);
+    }
+
+    return await ctx.table("characters").paginate(args.paginationOpts);
+    // Always returns requested number of items (if available)
+  },
+});
+```
+
+#### Solution 2: Denormalize Data (Use Sparingly)
+
+**⚠️ CAUTION**: Only denormalize when aggregate can't be used.
+
+```typescript
+// ⚠️ ONLY IF: Shown in lists AND no complex queries needed
+characters: defineEnt({
+  name: v.string(),
+  // Only denormalize simple booleans for index filtering
+  hasStrategyCategory: v.boolean(), // ONLY if no bounds queries needed
+  totalStarCount: v.number(), // ONLY if always shown in character lists
+});
+
+// ✅ BETTER: Use aggregates for counts and complex queries
+const starCount = await aggregateCharacterStars.count(ctx, {
+  namespace: characterId,
+  bounds: {} as any, // Can add bounds for date ranges, user filtering, etc.
+});
+```
+
+#### Solution 3: Streams for Consistent Page Sizes (Advanced)
+
+```typescript
+// ✅ BEST FOR COMPLEX CASES: Use streams from convex-helpers
+import { stream } from "convex-helpers/server/stream";
+import schema from "./schema";
+
+export const searchCharacters = createPublicPaginatedQuery()({
+  args: {
+    category: z.string().optional(),
+    minLevel: z.number().optional(),
+    tags: z.array(z.string()).optional(),
+  },
+  handler: async (ctx, args) => {
+    // Stream with filterWith - filters BEFORE pagination
+    // ⚠️ IMPORTANT: Streams still use ctx.db, not yet migrated to Ents
+    return await stream(ctx.db, schema) // Must use ctx.db here
+      .query("characters")
+      .withIndex("private", (q) => q.eq("private", false))
+      // Complex filtering happens BEFORE pagination
+      .filterWith(async (char) => {
+        if (args.category && !char.categories?.includes(args.category)) {
+          return false;
+        }
+        if (args.minLevel && char.level < args.minLevel) {
+          return false;
+        }
+        if (args.tags && !args.tags.some((tag) => char.tags?.includes(tag))) {
+          return false;
+        }
+        // Can even do async lookups
+        const author = await ctx.table("user").get(char.userId);
+        return author && !author.isBanned;
+      })
+      // Pagination happens AFTER filtering - consistent page sizes!
+      .paginate(args.paginationOpts);
+  },
+});
+```
+
+**Key Differences: `filter` helper vs Streams**
+
+| Feature               | `filter` helper             | Streams `filterWith`            |
+| --------------------- | --------------------------- | ------------------------------- |
+| Filtering timing      | During pagination           | Before pagination               |
+| Page size consistency | Variable (0-N items)        | Consistent (N items)            |
+| Performance           | Scans requested page size   | Scans until page is full        |
+| Complexity            | Simple, drop-in replacement | Requires schema import          |
+| Async predicates      | ✅ Supported                | ✅ Supported                    |
+| Database lookups      | ✅ Supported                | ✅ Supported                    |
+| Best for              | Simple cases, prototyping   | Production with complex filters |
+
+**Stream Additional Features:**
+
+- **Merge streams**: Combine multiple queries (UNION)
+- **Joins**: Use `flatMap` for complex joins
+- **Distinct**: Get unique values efficiently
+- **Map**: Transform documents in the stream
+
+```typescript
+// Example: Merge multiple filtered streams
+import { mergedStream } from "convex-helpers/server/stream";
+
+// ⚠️ Streams still use ctx.db
+const activeUsers = stream(ctx.db, schema)
+  .query("user")
+  .withIndex("status", (q) => q.eq("status", "active"));
+
+const premiumUsers = stream(ctx.db, schema)
+  .query("user")
+  .withIndex("plan", (q) => q.eq("plan", "premium"));
+
+// Merge and get distinct users
+const merged = mergedStream([activeUsers, premiumUsers], ["_creationTime"])
+  .distinct(["_id"])
+  .paginate(args.paginationOpts);
+```
+
+**When to Use Streams:**
+
+1. Need consistent page sizes with complex filters
+2. Combining data from multiple queries (UNION)
+3. Complex joins that need pagination
+4. Need distinct values with pagination
+5. Building SQL-like query patterns
+
+**Trade-offs:**
+
+- More complex API (requires schema)
+- Potentially more documents scanned
+- Pagination cursors are more fragile
+- Better for read-heavy operations
+
+### Best Practices
+
+1. **Prefer indexes** over post-query filtering
+2. **Use aggregates** for counts and lookups (even ≤100 items)
+3. **Document** variable page size behavior
+4. **Design UI** to handle variable results gracefully
+5. **Monitor** filter effectiveness (track avg results per page)
+6. **Consider streams** for production apps with complex filtering needs
+7. **Denormalize sparingly** - only when aggregate can't be used
+
+### Common Patterns to Audit
+
+```typescript
+// Search for these patterns in your codebase:
+// 1. filter(...).paginate()
+// 2. Complex predicates in filter()
+// 3. Array operations in filter predicates
+// 4. Multiple conditions in filter predicates
+// 5. Post-filtering: fetch then .filter() in JS
+// 6. Using .collect() on unbounded tables
+```
+
+#### Solution 3: Streams for Consistent Page Sizes (Advanced)
+
+```typescript
+// ✅ BEST FOR COMPLEX CASES: Use streams from convex-helpers
+import { stream } from "convex-helpers/server/stream";
+import schema from "./schema";
+
+export const searchCharacters = createPublicPaginatedQuery()({
+  args: {
+    category: z.string().optional(),
+    minLevel: z.number().optional(),
+    tags: z.array(z.string()).optional(),
+  },
+  handler: async (ctx, args) => {
+    // Stream with filterWith - filters BEFORE pagination
+    // ⚠️ IMPORTANT: Streams still use ctx.db, not yet migrated to Ents
+    const characters = stream(ctx.db, schema) // Must use ctx.db here
+      .query("characters")
+      .withIndex("private", (q) => q.eq("private", false));
+
+    // Complex filtering happens BEFORE pagination
+    const filtered = characters.filterWith(async (char) => {
+      if (args.category && !char.categories?.includes(args.category)) {
+        return false;
+      }
+      if (args.minLevel && char.level < args.minLevel) {
+        return false;
+      }
+      if (args.tags && !args.tags.some((tag) => char.tags?.includes(tag))) {
+        return false;
+      }
+      // Can even do async lookups
+      const author = await ctx.table("user").get(char.userId);
+      return author && !author.isBanned;
+    });
+
+    // Pagination happens AFTER filtering - consistent page sizes!
+    return await filtered.paginate(args.paginationOpts);
+  },
+});
+```
+
+**Key Differences: `filter` helper vs Streams**
+
+| Feature               | `filter` helper             | Streams `filterWith`            |
+| --------------------- | --------------------------- | ------------------------------- |
+| Filtering timing      | During pagination           | Before pagination               |
+| Page size consistency | Variable (0-N items)        | Consistent (N items)            |
+| Performance           | Scans requested page size   | Scans until page is full        |
+| Complexity            | Simple, drop-in replacement | Requires schema import          |
+| Async predicates      | ✅ Supported                | ✅ Supported                    |
+| Database lookups      | ✅ Supported                | ✅ Supported                    |
+| Best for              | Simple cases, prototyping   | Production with complex filters |
+
+**Stream Additional Features:**
+
+- **Merge streams**: Combine multiple queries (UNION)
+- **Joins**: Use `flatMap` for complex joins
+- **Distinct**: Get unique values efficiently
+- **Map**: Transform documents in the stream
+
+```typescript
+// Example: Merge multiple filtered streams
+import { mergedStream } from "convex-helpers/server/stream";
+
+// ⚠️ Streams still use ctx.db
+const activeUsers = stream(ctx.db, schema)
+  .query("user")
+  .withIndex("status", (q) => q.eq("status", "active"));
+
+const premiumUsers = stream(ctx.db, schema)
+  .query("user")
+  .withIndex("plan", (q) => q.eq("plan", "premium"));
+
+// Merge and get distinct users
+const merged = mergedStream([activeUsers, premiumUsers], ["_creationTime"])
+  .distinct(["_id"])
+  .paginate(args.paginationOpts);
+```
+
+**When to Use Streams:**
+
+1. Need consistent page sizes with complex filters
+2. Combining data from multiple queries (UNION)
+3. Complex joins that need pagination
+4. Need distinct values with pagination
+5. Building SQL-like query patterns
+
+**Trade-offs:**
+
+- More complex API (requires schema)
+- Potentially more documents scanned
+- Pagination cursors are more fragile
+- Better for read-heavy operations
+
+### Best Practices
+
+1. **Prefer indexes** over post-query filtering
+2. **Use aggregates** for counts and lookups (even ≤100 items)
+3. **Document** variable page size behavior
+4. **Design UI** to handle variable results gracefully
+5. **Monitor** filter effectiveness (track avg results per page)
+6. **Consider streams** for production apps with complex filtering needs
+7. **Denormalize sparingly** - only when aggregate can't be used
+
+## 6. Batch Operations & Relationship Helpers
+
+**Edit:** `convex/*.ts` files using batch operations
+
+### Use Ents Built-in `.map()` for Async Operations
+
+**IMPORTANT:** Convex Ents provides a built-in `.map()` method on query results that handles async operations internally. This is different from JavaScript's array `.map()`.
+
+```typescript
+// ✅ BEST: Use Ents .map() directly - handles async internally
+const enrichedUsers = await ctx
+  .table("user")
+  .take(10)
+  .map(async (user) => {
+    const profile = await user.edge("profile");
+    const messageCount = await user.edge("messages").count();
+    return {
+      ...user.doc(),
+      profile,
+      messageCount,
+    };
+  });
+
+// ✅ WORKS WITH PAGINATION: Chain .map() after .paginate()
+const paginatedResults = await ctx
+  .table("messages", "author", (q) => q.eq("author", args.author))
+  .order("desc")
+  .paginate(args.paginationOpts)
+  .map(async (msg) => ({
+    ...msg.doc(),
+    user: await ctx.table("user").get(msg.userId),
+  }));
+```
+
+### When to Use `asyncMap` from convex-helpers
+
+**Only use `asyncMap` for non-Ent arrays** (plain JavaScript arrays or stream results):
+
+```typescript
+import { asyncMap } from "convex-helpers";
+
+// ✅ Use asyncMap for plain arrays
+const ids = ["id1", "id2", "id3"];
+const results = await asyncMap(ids, (id) => someAsyncOperation(id));
+
+// ✅ Use asyncMap for stream results (streams don't have built-in .map())
+import { stream } from "convex-helpers/server/stream";
+const streamResults = await stream(ctx.db, schema).query("user").collect();
+const enriched = await asyncMap(streamResults, async (user) => {
+  const profile = await ctx.table("profiles").get("userId", user._id);
+  return { ...user, profile };
+});
+```
+
+### Prefer Edge Traversal Over Manual Queries
+
+When working with entities that have defined edges, **always use `.edge()` for cleaner, more maintainable code**:
+
+**⚠️ CRITICAL: Understand edge() vs edgeX() usage**
+
+```typescript
+// ❌ BAD: Using edgeX for optional relationships
+const skills = await work.edgeX("skills"); // THROWS if work has no skills!
+
+// ✅ GOOD: Use edge() for many:many or optional relationships
+const skills = await work.edge("skills"); // Returns empty array if none
+
+// ✅ GOOD: Use edgeX only for guaranteed relationships
+const user = await character.edgeX("user"); // Characters ALWAYS have a user
+```
+
+```typescript
+// ✅ BEST PRACTICE: Use .edge() for related data
+const character = await ctx.table("characters").getX(characterId);
+
+// Use edge().map() - Ents helper that handles async internally
+const educationsWithSkills = await character
+  .edge("educations")
+  .order("desc")
+  .take(10)
+  .map(async (education) => {
+    const skills = await education.edge("skills");
+    return {
+      ...education.doc(),
+      skills: skills.map((s) => ({ id: s._id, name: s.name, level: s.level })),
+    };
+  });
+
+// ❌ AVOID: Manual queries with indexes when edges are available
+const educations = await ctx
+  .table("characterEducations", "characterId", (q) =>
+    q.eq("characterId", character._id)
+  )
+  .order("desc")
+  .take(10);
+
+// More examples with built-in .map()
+const usersWithDetails = await ctx
+  .table("user")
+  .take(50)
+  .map(async (user) => {
+    // Use Promise.all for parallel edge lookups
+    const [profile, recentMessages] = await Promise.all([
+      user.edge("profile"),
+      user.edge("messages").order("desc").take(5),
+    ]);
+    return { ...user.doc(), profile, recentMessages };
+  });
+```
+
+### getMany for Batch ID Lookups with Ents
+
+**Use `getMany` or `getManyX` with Ents for fetching multiple documents by ID:**
+
+```typescript
+// ❌ Manual Promise.all pattern
+const userPromises = [];
+for (const userId of userIds) {
+  userPromises.push(ctx.table("user").get(userId));
+}
+const users = await Promise.all(userPromises);
+
+// ✅ Clean with Ents getMany (when IDs might not exist)
+const users = await ctx.table("user").getMany(userIds);
+// Returns (Doc | null)[] for each ID
+
+// ✅ Or use getManyX to throw if any ID doesn't exist
+const users = await ctx.table("user").getManyX(userIds);
+// Returns Doc[] or throws if any missing
+
+// When to use each:
+// - getMany: When IDs might not exist (deleted records, user-provided IDs)
+// - getManyX: When IDs MUST exist (from recent query, after insert)
+
+// Same principle applies to edge traversal
+const character = await ctx.table("characters").getX(characterId);
+const skills = await character.edge("skills"); // Array of skills
+const user = await character.edgeX("user"); // Required relationship
+```
+
+### WARNING: Fetching All Related Documents
+
+**⚠️ CRITICAL**: With Ents, fetching all related documents via edges is still like collect!
+
+```typescript
+// ❌ DANGEROUS: Could return millions of documents!
+const user = await ctx.table("user").get(userId);
+const allUserPosts = await user.edge("posts"); // Fetches ALL posts!
+
+// ✅ SAFE: Use pagination for unbounded data
+const recentPosts = await ctx
+  .table("posts", "userId", (q) => q.eq("userId", userId))
+  .order("desc")
+  .paginate(args.paginationOpts);
+
+// ✅ ACCEPTABLE: Limit results when traversing edges
+const user = await ctx.table("user").get(userId);
+const recentPosts = await user.edge("posts").order("desc").take(5);
+// Safe: limited to 5 posts
+```
+
+### When to Use Each Helper
+
+| Helper                          | Use When                          | Notes                               |
+| ------------------------------- | --------------------------------- | ----------------------------------- |
+| `ctx.table().getMany(ids)`      | Batch fetching by IDs             | Returns (Doc \| null)[] for each ID |
+| `ctx.table().getManyX(ids)`     | Batch fetching, must all exist    | Throws if any ID missing            |
+| `.map()` on Ents queries        | Async transforms on query results | Built-in, handles async internally  |
+| `asyncMap(items, fn)`           | Plain arrays or stream results    | From convex-helpers, not for Ents   |
+| `ent.edge('relation')`          | Traverse 1:1 or 1:many edge       | ⚠️ Fetches ALL for 1:many           |
+| `ent.edge('relation').take(n)`  | Limited edge traversal            | Safe with limit                     |
+| `ent.edge('relation').paginate` | Paginated edge traversal          | Best for unbounded relations        |
+| `ent.edge('relation').map()`    | Transform edge results with async | Built-in async handling             |
+
+### Safe Patterns for Unbounded Relationships
+
+```typescript
+// ✅ PATTERN 1: Use aggregates for counts
+const postCount = await aggregatePosts.count(ctx, {
+  namespace: userId,
+  bounds: {} as any,
+});
+
+// ✅ PATTERN 2: Use pagination for lists
+const posts = await ctx
+  .table("posts", "userId", (q) => q.eq("userId", userId))
+  .order("desc")
+  .paginate(args.paginationOpts);
+
+// ✅ PATTERN 3: Use .take() for small previews
+const user = await ctx.table("user").getX(userId);
+const recentPosts = await user.edge("posts").order("desc").take(5);
+
+// ✅ PATTERN 4: Batch operations on current page only
+const posts = await ctx.table("posts").paginate(args.paginationOpts);
+const authorIds = posts.page.map((p) => p.authorId);
+const authors = await ctx.table("user").getMany(authorIds); // Only current page!
+```
+
+### Best Practices
+
+1. **Use Ents `.map()`** for async transforms on query results (built-in async handling)
+2. **Use `asyncMap`** only for plain arrays or stream results, not Ents queries
+3. **Use `getMany/getManyX`** for batch ID lookups with Ents
+4. **NEVER fetch all** via edges on tables that could grow unbounded
+5. **Always limit edge traversal** with `.take()` or `.paginate()`
+6. **For large relationships**, use pagination or aggregates instead
+7. **Document edge cardinality** in your schema (1:1, 1:many, many:many)
+
+### Common Anti-Patterns
+
+```typescript
+// ❌ Fetching all to filter/map/count
+const user = await ctx.table("user").get(userId);
+const allPosts = await user.edge("posts");
+const publishedPosts = allPosts.filter((p) => p.status === "published");
+const count = allPosts.length;
+
+// ✅ Use index + aggregate instead
+const publishedPosts = await ctx
+  .table("posts", "userId_status", (q) =>
+    q.eq("userId", userId).eq("status", "published")
+  )
+  .paginate(args.paginationOpts);
+
+const count = await aggregatePosts.count(ctx, {
+  namespace: userId,
+  bounds: {} as any,
+});
+```
+
+## 7. Convex Platform Limits
+
+**Edit:** Understand these limits when designing your schema and queries
+
+### Index Limits
+
+- **Indexes per table:** 32 max
+- **Fields per index:** 16 max (no duplicate fields)
+- **Index name length:** 64 characters max
+- **Reserved fields:** Cannot index `_id`, `_creationTime` (automatically indexed)
+- **Search indexes per table:** 4 max
+- **Vector indexes per table:** 4 max
+- **Filters per search/vector index:** 16 max
+
+### Query & Mutation Limits
+
+- **Documents scanned per query/mutation:** 16,384 max
+- **Data scanned per query/mutation:** 8 MiB max
+- **db.get/db.query calls per function:** 4,096 max
+- **JS execution time per function:** 1 second max
+- **Documents written per mutation:** 8,192 max
+- **Data written per mutation:** 8 MiB max
+
+### Document Limits
+
+- **Document size:** 1 MiB max
+- **Fields per document:** 1,024 max
+- **Field name length:** 64 characters max (nested keys up to 1,024)
+- **Field nesting depth:** 16 max
+- **Array elements:** 8,192 max per array
+
+### Search Limits
+
+- **Search terms per query:** 16 max
+- **Filters per search query:** 8 max (full text), 64 max (vector)
+- **Term length:** 32 bytes max
+- **Result set:** 1,024 max (full text), 256 max (vector, defaults to 10)
+- **Vector dimensions:** 2-4096 range
+
+### Action Limits
+
+- **Action timeout:** 10 minutes max
+- **Memory limit:** 64 MB (Convex runtime), 512 MB (Node.js runtime)
+- **Concurrent operations per action:** 1,000 max
+- **Function argument/return size:** 16 MiB max
+- **HTTP action response size:** 20 MiB max
+
+### Design Implications
+
+```typescript
+// ❌ BAD: Too many indexes (approaching 32 limit)
+defineEnt({
+  // 20+ fields...
+})
+  .index("field1", ["field1"])
+  .index("field2", ["field2"]);
+// ... 30+ indexes - SLOW INSERTS!
+
+// ✅ GOOD: Consolidate with compound indexes
+defineEnt({
+  // fields...
+})
+  .index("user_status", ["userId", "status"])
+  .index("user_date", ["userId", "createdAt"]);
+// Reuse compound indexes for single-field queries too
+```
+
+```typescript
+// ❌ BAD: Large arrays in documents
+const character = {
+  followers: ['userId1', 'userId2', ...], // Could hit 8,192 limit!
+}
+
+// ✅ GOOD: Use many:many edge for unbounded relationships
+characters: defineEnt({
+  name: v.string(),
+  // ...
+}).edges('followers', { to: 'user' }), // many:many edge
+
+user: defineEnt({
+  name: v.string(),
+  // ...
+}).edges('followingCharacters', { to: 'characters' })
+```
+
+```typescript
+// ❌ BAD: Deep nesting (approaching 16 levels)
+const data = {
+  level1: {
+    level2: {
+      level3: {
+        // ... up to level 16
+      }
+    }
+  }
+}
+
+// ✅ GOOD: Flatten structure or use edges
+const mainEntity = defineEnt({
+  mainData: v.object({ ... }),
+}).edge('details'), // 1:1 edge to details
+
+const details = defineEnt({
+  // Details stored in separate table
+}).edge('mainEntity', { ref: true })
+```
+
+## 8. Rules (Row-Level Security) Performance
+
+**Edit:** `convex/rules.ts` for rule definitions
+
+### Performance Impact of Rules
+
+Rules add filtering overhead to every query. Every document fetched is passed through your rule function.
+
+```typescript
+// ❌ SLOW: Rules that fetch additional data (N+1 problem)
+export function getEntDefinitionsWithRules(ctx: QueryCtx) {
+  return addEntRules(entDefinitions, {
+    posts: {
+      read: async (post) => {
+        // Fetches user for EVERY post in query!
+        const author = await ctx.table("user").get(post.authorId);
+        return author && !author.isBanned;
+      },
+    },
+  });
+}
+
+// ✅ FAST: Rules that only check fields on the document
+export function getEntDefinitionsWithRules(ctx: QueryCtx) {
+  return addEntRules(entDefinitions, {
+    posts: {
+      read: async (post) => {
+        // Just check fields on the document - no additional queries
+        return !post.private || post.authorId === ctx.viewerId;
+      },
+    },
+  });
+}
+```
+
+### Optimization Strategies
+
+1. **Pre-compute access control fields** during writes:
+
+```typescript
+// Schema with pre-computed access control
+posts: defineEnt({
+  content: v.string(),
+  isPublic: v.boolean(), // Computed during insert
+  allowedUserIds: v.array(v.id("user")), // Pre-computed access list
+}).index("isPublic", ["isPublic"]); // Index for efficient filtering
+
+// Fast rule using pre-computed fields
+read: async (post) => {
+  return post.isPublic || post.allowedUserIds.includes(ctx.viewerId);
+};
+```
+
+2. **Use `ctx.skipRules` for trusted internal operations**:
+
+```typescript
+// Skip rules for background jobs, admin operations, or aggregations
+const allPosts = await ctx.skipRules.table("posts").take(1000);
+```
+
+3. **Index fields used in rule logic** for better query performance
+
+## 9. Bulk Operations & Transaction Batching
+
+**Edit:** `convex/*.ts` files with bulk operations
+
+### Performance Patterns
+
+```typescript
+// ✅ BEST: Use insertMany for bulk inserts
+await ctx.table("items").insertMany(items); // Single operation
+
+// ✅ GOOD: Loop inserts are still efficient - Convex batches in single transaction
+for (const item of items) {
+  await ctx.table("items").insert(item);
+}
+
+// ❌ AVOID: Unnecessary Promise.all - adds complexity without benefit
+await Promise.all(items.map((item) => ctx.table("items").insert(item)));
+
+// Large datasets: Process in batches of 100-1000
+const batchSize = 500;
+for (let i = 0; i < items.length; i += batchSize) {
+  const batch = items.slice(i, i + batchSize);
+  await ctx.table("items").insertMany(batch);
+}
+```
+
+**Key Points:**
+
+- All operations in a mutation run in a single transaction
+- `.insertMany()` is more efficient than loop inserts
+- Batch size of 100-1000 documents for optimal performance
+- Transaction limits: 8,192 documents written per mutation
+
+## 10. Lazy Loading Pattern for Heavy Data
+
+**Edit:** `convex/*.ts` files with heavy data
+
+### Problem: Loading unnecessary data
+
+```typescript
+// ❌ BAD: Always loading heavy fields
+characters: defineEnt({
+  name: v.string(),
+  biography: v.string(), // Could be 100KB!
+  detailedHistory: v.string(), // Could be 500KB!
+});
+
+// Every query loads all data
+const characters = await ctx.table("characters");
+```
+
+### Solution: Split heavy data into separate tables
+
+```typescript
+// ✅ GOOD: Lazy load heavy data
+characters: defineEnt({
+  name: v.string(),
+  // Light fields only
+}).edge('details', { ref: true }), // 1:1 edge
+
+characterDetails: defineEnt({
+  biography: v.string(),
+  detailedHistory: v.string(),
+}).edge('character'),
+
+// Load light data for lists
+const characters = await ctx.table('characters');
+
+// Load heavy data only when needed
+const character = await ctx.table('characters').getX(id);
+const details = await character.edge('details');
+```
+
+## 11. Raw Documents for Performance
+
+**Edit:** `convex/*.ts` files where ent methods aren't needed
+
+### When to Use .doc() and .docs()
+
+```typescript
+// ✅ Use .doc() when you only need plain data (no edge traversal)
+const users = await ctx.table("user").take(100);
+const plainData = users.map((u) => u.doc()); // Skip ent overhead
+
+// ✅ Use .docs() for bulk conversion
+const plainUsers = await ctx.table("user").take(100).docs();
+
+// When to use raw documents:
+// 1. Exporting data to external systems
+// 2. Bulk data processing without relationships
+// 3. Performance-critical read operations
+// 4. When you don't need edge traversal or ent methods
+```
+
+## 12. System Tables Performance
+
+**Edit:** `convex/*.ts` files accessing system tables
+
+### Accessing System Tables Efficiently
+
+```typescript
+// ✅ Access system tables with specific methods
+const files = await ctx.table.system("_storage").take(100);
+const scheduled = await ctx.table.system("_scheduled_functions").take(50);
+
+// ⚠️ System tables can be large - always limit results
+// - _storage: Could have thousands of files
+// - _scheduled_functions: Could have many scheduled tasks
+// - Always use .take(), .first(), or .paginate()
+```
+
+## 13. Edge Cardinality Performance Impact
+
+**Edit:** `convex/schema.ts` and `convex/*.ts` files with edges
+
+### Understanding Edge Performance
+
+```typescript
+// ⚠️ CRITICAL: 1:many edges fetch ALL related documents by default!
+const user = await ctx.table("user").getX(userId);
+const allPosts = await user.edge("posts"); // Could fetch MILLIONS!
+
+// ✅ ALWAYS limit 1:many edge traversals
+const recentPosts = await user.edge("posts").order("desc").take(10);
+const paginatedPosts = await user.edge("posts").paginate(args.paginationOpts);
+
+// Edge performance by type:
+// - 1:1 edges: Fast, single document lookup
+// - 1:many edges: ⚠️ Fetches ALL by default - ALWAYS limit!
+// - many:many edges: ⚠️ Fetches ALL by default - ALWAYS limit!
+```
+
+## Summary
+
+1. **Always use indexes** for equality filters with `ctx.table()`
+2. **Use aggregates for counting** - O(log n) vs O(n) performance with millions of documents
+3. **Never fetch all documents** - use `.paginate()` for user-facing lists
+4. **Isolate frequently-changing data** with separate tables and edges
+5. **Enforce limits at insert time** when possible, using aggregates for counting
+6. **Use search indexes** for text search with proper filter fields
+7. **Understand filter + paginate behavior** - filtering happens during, not after
+8. **Know platform limits** - design within Convex's boundaries for optimal performance
+9. **Limit edge traversals** - use `.take()` or `.paginate()` on 1:many edges
+10. **Use `.insertMany()`** for bulk operations instead of loop inserts
+11. **Use `.doc()/.docs()`** when you don't need ent methods for better performance
+12. **Always limit system table queries** - they can contain thousands of documents
+13. **Be aware of edge cardinality** - 1:many and many:many fetch ALL by default
+14. **Streams still use ctx.db** - not yet migrated to Ents API
+15. **Never post-filter after fetching** - filter at database level or use streams
+16. **Use edge() for optional relationships** - edgeX() only for guaranteed ones
+
+**Critical for Scale**: Replace fetching all documents with aggregates from [convex-aggregate.mdc](mdc:.claude/rules/convex-aggregate.mdc). These patterns are essential for millions of documents.
+
+## Decision Tree: Which Pattern to Use?
+
+```
+Need to COUNT documents?
+  ↓
+✅ Use AGGREGATES (O(log n) - scales to millions)
+  - await aggregateItems.count(ctx, { bounds: {} as any })
+  - Set up once with triggers, works automatically
+
+Need a USER-FACING LIST with "load more"?
+  ↓
+✅ Use PAGINATION (.paginate())
+  - createPublicPaginatedQuery() or createAuthPaginatedQuery()
+  - With Ents: ctx.table('items').paginate(args.paginationOpts)
+  - Consistent page sizes, good UX
+
+Need a SMALL PREVIEW of items (< 100) from BOUNDED table?
+  ↓
+✅ Use TAKE (.take(n))
+  - With Ents: ctx.table('items').take(5) or ent.edge('items').take(5)
+  - ONLY when table has enforced size limits
+  - ONLY when you don't need total count
+  - Example: "Show 5 most recent notifications"
+
+❌ NEVER fetch all documents without limits on production tables
+❌ NEVER traverse 1:many edges without .take() or .paginate()
+❌ NEVER count by fetching all documents - use aggregates
+```

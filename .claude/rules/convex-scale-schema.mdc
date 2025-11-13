@@ -1,0 +1,7 @@
+---
+description: Use when designing Convex schema for optimal query caching and performance at scale - provides schema design patterns from Convex documentation for maximizing cache efficiency
+globs: convex/schema.ts
+alwaysApply: false
+---
+
+https://stack.convex.dev/queries-that-scale#3-optimizing-queries-for-caching

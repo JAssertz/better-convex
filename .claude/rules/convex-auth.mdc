@@ -1,0 +1,253 @@
+---
+description: Use when working with Better Auth authentication schema in Convex - provides complete Better Auth component table schema reference (account, session, user, organization, etc.) and explains immutability constraints
+globs: convex/**/*.ts
+alwaysApply: false
+---
+
+Better-auth is used through a Convex Component managing their own table.
+
+Full schema:
+
+```ts
+import { defineSchema, defineTable } from 'convex/server';
+import { v } from 'convex/values';
+
+export default defineSchema({
+  account: defineTable({
+    accessToken: v.optional(v.union(v.null(), v.string())),
+    accessTokenExpiresAt: v.optional(v.union(v.null(), v.float64())),
+    accountId: v.string(),
+    createdAt: v.float64(),
+    idToken: v.optional(v.union(v.null(), v.string())),
+    password: v.optional(v.union(v.null(), v.string())),
+    providerId: v.string(),
+    refreshToken: v.optional(v.union(v.null(), v.string())),
+    refreshTokenExpiresAt: v.optional(v.union(v.null(), v.float64())),
+    scope: v.optional(v.union(v.null(), v.string())),
+    updatedAt: v.float64(),
+    userId: v.string(),
+  })
+    .index('accountId', ['accountId'])
+    .index('accountId_providerId', ['accountId', 'providerId'])
+    .index('providerId_userId', ['providerId', 'userId'])
+    .index('userId', ['userId']),
+  apikey: defineTable({
+    createdAt: v.float64(),
+    enabled: v.optional(v.union(v.null(), v.boolean())),
+    expiresAt: v.optional(v.union(v.null(), v.float64())),
+    key: v.string(),
+    lastRefillAt: v.optional(v.union(v.null(), v.float64())),
+    lastRequest: v.optional(v.union(v.null(), v.float64())),
+    metadata: v.optional(v.union(v.null(), v.string())),
+    name: v.optional(v.union(v.null(), v.string())),
+    permissions: v.optional(v.union(v.null(), v.string())),
+    prefix: v.optional(v.union(v.null(), v.string())),
+    rateLimitEnabled: v.optional(v.union(v.null(), v.boolean())),
+    rateLimitMax: v.optional(v.union(v.null(), v.float64())),
+    rateLimitTimeWindow: v.optional(v.union(v.null(), v.float64())),
+    refillAmount: v.optional(v.union(v.null(), v.float64())),
+    refillInterval: v.optional(v.union(v.null(), v.float64())),
+    remaining: v.optional(v.union(v.null(), v.float64())),
+    requestCount: v.optional(v.union(v.null(), v.float64())),
+    start: v.optional(v.union(v.null(), v.string())),
+    updatedAt: v.float64(),
+    userId: v.string(),
+  })
+    .index('key', ['key'])
+    .index('userId', ['userId']),
+  invitation: defineTable({
+    email: v.string(),
+    expiresAt: v.float64(),
+    inviterId: v.string(),
+    organizationId: v.string(),
+    role: v.optional(v.union(v.null(), v.string())),
+    status: v.string(),
+    teamId: v.optional(v.union(v.null(), v.string())),
+  })
+    .index('email_organizationId_status', ['email', 'organizationId', 'status'])
+    .index('inviterId', ['inviterId'])
+    .index('organizationId_status', ['organizationId', 'status'])
+    .index('role', ['role'])
+    .index('status', ['status'])
+    .index('teamId', ['teamId']),
+  jwks: defineTable({
+    createdAt: v.float64(),
+    privateKey: v.string(),
+    publicKey: v.string(),
+  }),
+  member: defineTable({
+    createdAt: v.float64(),
+    organizationId: v.string(),
+    role: v.string(),
+    userId: v.string(),
+  })
+    .index('organizationId_userId', ['organizationId', 'userId'])
+    .index('role', ['role'])
+    .index('userId', ['userId']),
+  oauthAccessToken: defineTable({
+    accessToken: v.optional(v.union(v.null(), v.string())),
+    accessTokenExpiresAt: v.optional(v.union(v.null(), v.float64())),
+    clientId: v.optional(v.union(v.null(), v.string())),
+    createdAt: v.optional(v.union(v.null(), v.float64())),
+    refreshToken: v.optional(v.union(v.null(), v.string())),
+    refreshTokenExpiresAt: v.optional(v.union(v.null(), v.float64())),
+    scopes: v.optional(v.union(v.null(), v.string())),
+    updatedAt: v.optional(v.union(v.null(), v.float64())),
+    userId: v.optional(v.union(v.null(), v.string())),
+  })
+    .index('accessToken', ['accessToken'])
+    .index('refreshToken', ['refreshToken']),
+  oauthApplication: defineTable({
+    clientId: v.optional(v.union(v.null(), v.string())),
+    clientSecret: v.optional(v.union(v.null(), v.string())),
+    createdAt: v.optional(v.union(v.null(), v.float64())),
+    disabled: v.optional(v.union(v.null(), v.boolean())),
+    icon: v.optional(v.union(v.null(), v.string())),
+    metadata: v.optional(v.union(v.null(), v.string())),
+    name: v.optional(v.union(v.null(), v.string())),
+    redirectURLs: v.optional(v.union(v.null(), v.string())),
+    type: v.optional(v.union(v.null(), v.string())),
+    updatedAt: v.optional(v.union(v.null(), v.float64())),
+    userId: v.optional(v.union(v.null(), v.string())),
+  }).index('clientId', ['clientId']),
+  oauthConsent: defineTable({
+    clientId: v.optional(v.union(v.null(), v.string())),
+    consentGiven: v.optional(v.union(v.null(), v.boolean())),
+    createdAt: v.optional(v.union(v.null(), v.float64())),
+    scopes: v.optional(v.union(v.null(), v.string())),
+    updatedAt: v.optional(v.union(v.null(), v.float64())),
+    userId: v.optional(v.union(v.null(), v.string())),
+  }).index('clientId_userId', ['clientId', 'userId']),
+  organization: defineTable({
+    createdAt: v.float64(),
+    logo: v.optional(v.union(v.null(), v.string())),
+    metadata: v.optional(v.union(v.null(), v.string())),
+    name: v.string(),
+    slug: v.optional(v.union(v.null(), v.string())),
+  })
+    .index('name', ['name'])
+    .index('slug', ['slug']),
+  passkey: defineTable({
+    aaguid: v.optional(v.union(v.null(), v.string())),
+    backedUp: v.boolean(),
+    counter: v.float64(),
+    createdAt: v.optional(v.union(v.null(), v.float64())),
+    credentialID: v.string(),
+    deviceType: v.string(),
+    name: v.optional(v.union(v.null(), v.string())),
+    publicKey: v.string(),
+    transports: v.optional(v.union(v.null(), v.string())),
+    userId: v.string(),
+  })
+    .index('credentialID', ['credentialID'])
+    .index('userId', ['userId']),
+  rateLimit: defineTable({
+    count: v.optional(v.union(v.null(), v.float64())),
+    key: v.optional(v.union(v.null(), v.string())),
+    lastRequest: v.optional(v.union(v.null(), v.float64())),
+  }).index('key', ['key']),
+  session: defineTable({
+    activeOrganizationId: v.optional(v.union(v.null(), v.string())),
+    activeTeamId: v.optional(v.union(v.null(), v.string())),
+    createdAt: v.float64(),
+    expiresAt: v.float64(),
+    impersonatedBy: v.optional(v.union(v.null(), v.string())),
+    ipAddress: v.optional(v.union(v.null(), v.string())),
+    token: v.string(),
+    updatedAt: v.float64(),
+    userAgent: v.optional(v.union(v.null(), v.string())),
+    userId: v.string(),
+  })
+    .index('expiresAt', ['expiresAt'])
+    .index('expiresAt_userId', ['expiresAt', 'userId'])
+    .index('token', ['token'])
+    .index('userId', ['userId']),
+  ssoProvider: defineTable({
+    domain: v.string(),
+    issuer: v.string(),
+    oidcConfig: v.optional(v.union(v.null(), v.string())),
+    organizationId: v.optional(v.union(v.null(), v.string())),
+    providerId: v.string(),
+    samlConfig: v.optional(v.union(v.null(), v.string())),
+    userId: v.optional(v.union(v.null(), v.string())),
+  })
+    .index('domain', ['domain'])
+    .index('organizationId', ['organizationId'])
+    .index('providerId', ['providerId'])
+    .index('userId', ['userId']),
+  subscription: defineTable({
+    cancelAtPeriodEnd: v.optional(v.union(v.null(), v.boolean())),
+    periodEnd: v.optional(v.union(v.null(), v.float64())),
+    periodStart: v.optional(v.union(v.null(), v.float64())),
+    plan: v.string(),
+    referenceId: v.string(),
+    seats: v.optional(v.union(v.null(), v.float64())),
+    status: v.optional(v.union(v.null(), v.string())),
+    stripeCustomerId: v.optional(v.union(v.null(), v.string())),
+    stripeSubscriptionId: v.optional(v.union(v.null(), v.string())),
+  })
+    .index('referenceId', ['referenceId'])
+    .index('stripeCustomerId', ['stripeCustomerId'])
+    .index('stripeSubscriptionId', ['stripeSubscriptionId']),
+  team: defineTable({
+    createdAt: v.float64(),
+    name: v.string(),
+    organizationId: v.string(),
+    updatedAt: v.optional(v.union(v.null(), v.float64())),
+  }).index('organizationId', ['organizationId']),
+  teamMember: defineTable({
+    createdAt: v.optional(v.union(v.null(), v.float64())),
+    teamId: v.string(),
+    userId: v.string(),
+  }).index('userId', ['userId']),
+  twoFactor: defineTable({
+    backupCodes: v.string(),
+    secret: v.string(),
+    userId: v.string(),
+  }).index('userId', ['userId']),
+  user: defineTable({
+    banExpires: v.optional(v.union(v.null(), v.float64())),
+    banReason: v.optional(v.union(v.null(), v.string())),
+    banned: v.optional(v.union(v.null(), v.boolean())),
+    createdAt: v.float64(),
+    displayUsername: v.optional(v.union(v.null(), v.string())),
+    email: v.string(),
+    emailVerified: v.boolean(),
+    image: v.optional(v.union(v.null(), v.string())),
+    isAnonymous: v.optional(v.union(v.null(), v.boolean())),
+    name: v.string(),
+    phoneNumber: v.optional(v.union(v.null(), v.string())),
+    phoneNumberVerified: v.optional(v.union(v.null(), v.boolean())),
+    role: v.optional(v.union(v.null(), v.string())),
+    stripeCustomerId: v.optional(v.union(v.null(), v.string())),
+    teamId: v.optional(v.union(v.null(), v.string())),
+    twoFactorEnabled: v.optional(v.union(v.null(), v.boolean())),
+    updatedAt: v.float64(),
+    userId: v.optional(v.union(v.null(), v.string())),
+    username: v.optional(v.union(v.null(), v.string())),
+  })
+    .index('email_name', ['email', 'name'])
+    .index('name', ['name'])
+    .index('phoneNumber', ['phoneNumber'])
+    .index('userId', ['userId'])
+    .index('username', ['username']),
+  verification: defineTable({
+    createdAt: v.optional(v.union(v.null(), v.float64())),
+    expiresAt: v.float64(),
+    identifier: v.string(),
+    updatedAt: v.optional(v.union(v.null(), v.float64())),
+    value: v.string(),
+  })
+    .index('expiresAt', ['expiresAt'])
+    .index('identifier', ['identifier']),
+  walletAddress: defineTable({
+    address: v.string(),
+    chainId: v.float64(),
+    createdAt: v.float64(),
+    isPrimary: v.optional(v.union(v.null(), v.boolean())),
+    userId: v.string(),
+  }).index('userId', ['userId']),
+});
+```
+
+This schema can't be managed: additional fields should be done in a <nameExtension>
