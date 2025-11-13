@@ -44,3 +44,14 @@ convex/.env
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.codex
+
+# START Ruler Generated Files
+/.claude/skills
+/.codex/config.toml
+/.cursor/rules
+/.skillz
+/AGENTS.md
+/CLAUDE.md
+# END Ruler Generated Files

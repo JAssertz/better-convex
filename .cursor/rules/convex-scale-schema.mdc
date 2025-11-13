@@ -1,7 +1,0 @@
----
-description:
-globs:
-alwaysApply: false
----
-
-https://stack.convex.dev/queries-that-scale#3-optimizing-queries-for-caching
