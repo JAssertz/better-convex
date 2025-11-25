@@ -44,6 +44,8 @@ export type CtxWithTable<Ctx extends MutationCtx | QueryCtx = QueryCtx> =
 type CtxUser<Ctx extends MutationCtx | QueryCtx = QueryCtx> = SessionUser &
   (Ctx extends MutationCtx ? EntWriter<'user'> : Ent<'user'>);
 
+export type GenericCtx = ActionCtx | MutationCtx | QueryCtx;
+
 export type PublicCtx<Ctx extends MutationCtx | QueryCtx = QueryCtx> =
   CtxWithTable<Ctx> & {
     auth: Auth & Partial<ReturnType<typeof getAuth> & { headers: Headers }>;

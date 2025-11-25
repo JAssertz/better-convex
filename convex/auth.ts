@@ -10,13 +10,8 @@ import {
 } from 'better-auth-convex';
 import { entsTableFactory } from 'convex-ents';
 import { api, internal } from './_generated/api';
-import type {
-  ActionCtx,
-  GenericCtx,
-  MutationCtx,
-  QueryCtx,
-} from './_generated/server';
-import { internalMutation } from './functions';
+import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
+import { type GenericCtx, internalMutation } from './functions';
 import { getEnv } from './helpers/getEnv';
 import { createPersonalOrganization } from './organizationHelpers';
 import schema, { entDefinitions } from './schema';

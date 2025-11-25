@@ -196,7 +196,7 @@ export const createUser = async (
 
 export const hasPermission = async (
   ctx: AuthCtx,
-  body: Parameters<typeof ctx.auth.api.hasPermission>[0]['body'],
+  body: NonNullable<Parameters<typeof ctx.auth.api.hasPermission>[0]>['body'],
   shouldThrow = true
 ) => {
   const canUpdate = await ctx.auth.api.hasPermission({
