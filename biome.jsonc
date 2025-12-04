@@ -41,7 +41,8 @@
       },
       "nursery": {
         "noShadow": "off", // chill,
-        "noIncrementDecrement": "off" // chill
+        "noIncrementDecrement": "off", // chill,
+        "noLeakedRender": "off" // false +
       },
       "complexity": {
         "useSimplifiedLogicExpression": "off", // false +
