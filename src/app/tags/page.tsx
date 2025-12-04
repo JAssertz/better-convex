@@ -16,13 +16,6 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -41,6 +34,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { WithSkeleton } from '@/components/ui/skeleton';
 import { useAuthMutation, useAuthQuery } from '@/lib/convex/hooks';
+import { cn } from '@/lib/utils';
 
 export default function TagsPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -199,125 +193,133 @@ export default function TagsPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="font-bold text-3xl">Tags</h1>
-          <p className="mt-2 text-muted-foreground">
-            Organize your todos with tags
-          </p>
-        </div>
-        <Dialog onOpenChange={setShowCreateDialog} open={showCreateDialog}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4" />
-              New Tag
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Tag</DialogTitle>
-              <DialogDescription>
-                Create a new tag to organize your todos
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="tag-name">Name</Label>
-                <Input
-                  id="tag-name"
-                  onChange={(e) =>
-                    setNewTag({ ...newTag, name: e.target.value })
-                  }
-                  placeholder="e.g., Work, Personal, Urgent"
-                  value={newTag.name}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="tag-color">Color (optional)</Label>
-                <div className="flex items-center gap-2">
+    <div className="mx-auto max-w-5xl @3xl:px-8 px-6 @3xl:py-12 py-8">
+      <header className="mb-10">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="font-semibold text-2xl tracking-tight">Tags</h1>
+            <p className="text-muted-foreground text-sm">
+              Organize your todos with tags
+            </p>
+          </div>
+          <Dialog onOpenChange={setShowCreateDialog} open={showCreateDialog}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="secondary">
+                <Plus className="h-4 w-4" />
+                New
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Tag</DialogTitle>
+                <DialogDescription>
+                  Create a new tag to organize your todos
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="tag-name">Name</Label>
                   <Input
-                    className="h-10 w-20 cursor-pointer"
-                    id="tag-color"
+                    id="tag-name"
                     onChange={(e) =>
-                      setNewTag({ ...newTag, color: e.target.value })
+                      setNewTag({ ...newTag, name: e.target.value })
                     }
-                    type="color"
-                    value={newTag.color || '#3B82F6'}
-                  />
-                  <Input
-                    className="flex-1"
-                    onChange={(e) =>
-                      setNewTag({ ...newTag, color: e.target.value })
-                    }
-                    placeholder="#3B82F6"
-                    value={newTag.color}
+                    placeholder="e.g., Work, Personal, Urgent"
+                    value={newTag.name}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tag-color">Color (optional)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      className="h-10 w-20 cursor-pointer"
+                      id="tag-color"
+                      onChange={(e) =>
+                        setNewTag({ ...newTag, color: e.target.value })
+                      }
+                      type="color"
+                      value={newTag.color || '#3B82F6'}
+                    />
+                    <Input
+                      className="flex-1"
+                      onChange={(e) =>
+                        setNewTag({ ...newTag, color: e.target.value })
+                      }
+                      placeholder="#3B82F6"
+                      value={newTag.color}
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
-            <DialogFooter>
-              <Button
-                onClick={() => setShowCreateDialog(false)}
-                variant="outline"
-              >
-                Cancel
-              </Button>
-              <Button disabled={createTag.isPending} onClick={handleCreateTag}>
-                Create
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+              <DialogFooter>
+                <Button
+                  onClick={() => setShowCreateDialog(false)}
+                  variant="ghost"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={createTag.isPending}
+                  onClick={handleCreateTag}
+                  variant="secondary"
+                >
+                  Create
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </header>
 
       {popularTags && popularTags.length > 0 && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-lg">Popular Tags</CardTitle>
-            <CardDescription>Most used tags across all users</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {popularTags.map((tag) => (
-                <Badge
-                  className="px-3 py-1"
-                  key={tag._id}
-                  style={{
-                    backgroundColor: `${tag.color}20`,
-                    color: tag.color,
-                    borderColor: tag.color,
-                  }}
-                  variant="outline"
-                >
-                  <Hash className="mr-1 h-3 w-3" />
-                  {tag.name}
-                  <span className="ml-2 text-xs opacity-70">
-                    ({tag.usageCount})
-                  </span>
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <section className="mb-8">
+          <h2 className="mb-3 font-medium text-muted-foreground text-sm uppercase tracking-wide">
+            Popular Tags
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {popularTags.map((tag) => (
+              <Badge
+                className="px-3 py-1"
+                key={tag._id}
+                style={{
+                  backgroundColor: `${tag.color}15`,
+                  color: tag.color,
+                }}
+                variant="secondary"
+              >
+                <Hash className="mr-1 h-3 w-3" />
+                {tag.name}
+                <span className="ml-1.5 opacity-60">({tag.usageCount})</span>
+              </Badge>
+            ))}
+          </div>
+        </section>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Your Tags</CardTitle>
-          <CardDescription>
-            {tags?.length || 0} tag{tags?.length !== 1 ? 's' : ''}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3">
-            {tags?.map((tag, index) => (
+      <section>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-medium text-muted-foreground text-sm uppercase tracking-wide">
+            Your Tags
+          </h2>
+          <span className="text-muted-foreground text-xs">
+            {tags?.length || 0} tags
+          </span>
+        </div>
+
+        {tags && tags.length > 0 && (
+          <div className="rounded-lg bg-secondary/30">
+            {tags.map((tag, index) => (
               <WithSkeleton
                 className="w-full"
                 isLoading={isLoading}
                 key={tag._id || index}
               >
-                <div className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50">
+                <div
+                  className={cn(
+                    'flex items-center justify-between px-4 py-3 transition-colors hover:bg-secondary/50',
+                    index !== 0 && 'border-border/30 border-t'
+                  )}
+                >
                   <div className="flex items-center gap-3">
                     <div
                       className="flex h-8 w-8 items-center justify-center rounded-full"
@@ -326,10 +328,9 @@ export default function TagsPage() {
                       <Tag className="h-4 w-4" style={{ color: tag.color }} />
                     </div>
                     <div>
-                      <div className="font-medium">{tag.name}</div>
-                      <div className="text-muted-foreground text-sm">
-                        Used in {tag.usageCount} todo
-                        {tag.usageCount !== 1 ? 's' : ''}
+                      <div className="font-medium text-sm">{tag.name}</div>
+                      <div className="text-muted-foreground text-xs">
+                        {tag.usageCount} todos
                       </div>
                     </div>
                   </div>
@@ -344,7 +345,7 @@ export default function TagsPage() {
                         <Edit2 className="h-4 w-4" />
                         Edit
                       </DropdownMenuItem>
-                      {tags?.length && tags.length > 1 && (
+                      {tags.length > 1 && (
                         <DropdownMenuItem onClick={() => openMergeDialog(tag)}>
                           <GitMerge className="h-4 w-4" />
                           Merge into...
@@ -363,18 +364,20 @@ export default function TagsPage() {
               </WithSkeleton>
             ))}
           </div>
+        )}
 
-          {tags?.length === 0 && !isLoading && (
-            <div className="py-8 text-center text-muted-foreground">
-              <Tag className="mx-auto mb-4 h-12 w-12 opacity-50" />
-              <p>No tags yet</p>
-              <p className="mt-2 text-sm">
-                Create your first tag to start organizing
-              </p>
+        {tags?.length === 0 && !isLoading && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="mb-4 rounded-full bg-secondary p-3">
+              <Tag className="h-6 w-6 text-muted-foreground" />
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <p className="font-medium">No tags yet</p>
+            <p className="mt-1 text-muted-foreground text-sm">
+              Create your first tag to start organizing
+            </p>
+          </div>
+        )}
+      </section>
 
       {/* Edit Tag Dialog */}
       <Dialog onOpenChange={setShowEditDialog} open={showEditDialog}>
@@ -417,11 +420,15 @@ export default function TagsPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setShowEditDialog(false)} variant="outline">
+            <Button onClick={() => setShowEditDialog(false)} variant="ghost">
               Cancel
             </Button>
-            <Button disabled={updateTag.isPending} onClick={handleEditTag}>
-              Save Changes
+            <Button
+              disabled={updateTag.isPending}
+              onClick={handleEditTag}
+              variant="secondary"
+            >
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -440,37 +447,40 @@ export default function TagsPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Select target tag</Label>
-              <div className="grid gap-2">
+              <div className="grid gap-1">
                 {tags
                   ?.filter((t) => t._id !== selectedTag?._id)
                   .map((tag) => (
                     <div
-                      className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-muted/50 ${
-                        mergeTarget === tag._id ? 'ring-2 ring-primary' : ''
-                      }`}
+                      className={cn(
+                        'flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-secondary/50',
+                        mergeTarget === tag._id &&
+                          'bg-secondary ring-2 ring-primary'
+                      )}
                       key={tag._id}
                       onClick={() => setMergeTarget(tag._id)}
                       role="button"
                     >
                       <div
-                        className="h-6 w-6 rounded-full"
+                        className="h-5 w-5 rounded-full"
                         style={{ backgroundColor: tag.color }}
                       />
-                      <div className="font-medium">{tag.name}</div>
+                      <div className="font-medium text-sm">{tag.name}</div>
                     </div>
                   ))}
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setShowMergeDialog(false)} variant="outline">
+            <Button onClick={() => setShowMergeDialog(false)} variant="ghost">
               Cancel
             </Button>
             <Button
               disabled={!mergeTarget || mergeTag.isPending}
               onClick={handleMergeTags}
+              variant="secondary"
             >
-              Merge Tags
+              Merge
             </Button>
           </DialogFooter>
         </DialogContent>

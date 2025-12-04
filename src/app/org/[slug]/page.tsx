@@ -16,7 +16,6 @@ import { OrganizationOverview } from '@/components/organization/organization-ove
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { WithSkeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuthQuery } from '@/lib/convex/hooks';
@@ -85,14 +84,12 @@ export default function OrganizationPage() {
 
   if (!(organization || isLoading)) {
     return (
-      <div className="container mx-auto px-4 py-6">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              Organization not found or you don't have access
-            </p>
-          </CardContent>
-        </Card>
+      <div className="mx-auto max-w-5xl @3xl:px-8 px-6 @3xl:py-12 py-8">
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <p className="text-muted-foreground">
+            Organization not found or you don't have access
+          </p>
+        </div>
       </div>
     );
   }
@@ -100,77 +97,85 @@ export default function OrganizationPage() {
   const isOwner = organization?.role === 'owner';
 
   return (
-    <div className="container mx-auto px-4 py-6">
+    <div className="mx-auto max-w-5xl @3xl:px-8 px-6 @3xl:py-12 py-8">
       <WithSkeleton className="w-full" isLoading={isLoading}>
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-4">
-              <Avatar className="h-16 w-16">
-                <AvatarImage src={organization?.logo || ''} />
-                <AvatarFallback className="text-lg">
-                  <Building2 className="h-8 w-8" />
-                </AvatarFallback>
-              </Avatar>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="font-bold text-3xl">{organization?.name}</h1>
-                  {organization?.isPersonal && (
-                    <Badge variant="secondary">Personal</Badge>
-                  )}
-                  {organization?.isActive && (
-                    <Badge variant="default">Active</Badge>
-                  )}
-                </div>
-                <div className="mt-2 flex items-center gap-4 text-muted-foreground text-sm">
-                  <div className="flex items-center gap-1">
-                    <Users className="h-4 w-4" />
-                    <span>{organization?.membersCount} members</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Calendar className="h-4 w-4" />
-                    <span>
-                      Created{' '}
-                      {organization?.createdAt
-                        ? new Date(organization.createdAt).toLocaleDateString()
-                        : 'Unknown'}
-                    </span>
-                  </div>
-                  {organization?.role && (
-                    <div className="flex items-center gap-1">
-                      <Crown className="h-4 w-4" />
-                      <span className="capitalize">{organization.role}</span>
-                    </div>
-                  )}
-                </div>
+        <header className="mb-10">
+          <div className="flex items-start gap-4">
+            <Avatar className="h-14 w-14 rounded-lg">
+              <AvatarImage src={organization?.logo || ''} />
+              <AvatarFallback className="rounded-lg">
+                <Building2 className="h-6 w-6" />
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 space-y-2">
+              <div className="flex items-center gap-2">
+                <h1 className="font-semibold text-2xl tracking-tight">
+                  {organization?.name}
+                </h1>
+                {organization?.isPersonal && (
+                  <Badge className="text-xs" variant="secondary">
+                    Personal
+                  </Badge>
+                )}
+                {organization?.isActive && (
+                  <Badge className="text-xs" variant="secondary">
+                    Active
+                  </Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-sm">
+                <span className="inline-flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5" />
+                  {organization?.membersCount} members
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5" />
+                  Created{' '}
+                  {organization?.createdAt
+                    ? new Date(organization.createdAt).toLocaleDateString()
+                    : 'Unknown'}
+                </span>
+                {organization?.role && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Crown className="h-3.5 w-3.5" />
+                    <span className="capitalize">{organization.role}</span>
+                  </span>
+                )}
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex shrink-0 gap-2">
               {isOwner && (
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="ghost">
                   <Settings className="h-4 w-4" />
-                  Settings
                 </Button>
               )}
               {!(organization?.isPersonal || isOwner) && (
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="ghost">
                   <LogOut className="h-4 w-4" />
-                  Leave
                 </Button>
               )}
             </div>
           </div>
-        </div>
+        </header>
 
-        {/* Tabs */}
         <Tabs
-          className="space-y-4"
+          className="space-y-6"
           onValueChange={setActiveTab}
           value={activeTab}
         >
-          <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="members">Members</TabsTrigger>
+          <TabsList className="h-auto gap-1 bg-transparent p-0">
+            <TabsTrigger
+              className="rounded-md px-3 py-1.5 text-sm data-[state=active]:bg-secondary"
+              value="overview"
+            >
+              Overview
+            </TabsTrigger>
+            <TabsTrigger
+              className="rounded-md px-3 py-1.5 text-sm data-[state=active]:bg-secondary"
+              value="members"
+            >
+              Members
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent className="space-y-4" value="overview">

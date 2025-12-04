@@ -7,13 +7,6 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -33,6 +26,7 @@ import {
   useIsAuth,
   usePublicPaginatedQuery,
 } from '@/lib/convex/hooks';
+import { cn } from '@/lib/utils';
 
 export default function ProjectsPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -95,88 +89,96 @@ export default function ProjectsPage() {
   const projects = data || [];
 
   return (
-    <div className="container mx-auto px-4 py-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-bold text-3xl">Projects</h1>
-        {isAuth && (
-          <Dialog onOpenChange={setShowCreateDialog} open={showCreateDialog}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4" />
-                New Project
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create Project</DialogTitle>
-                <DialogDescription>
-                  Create a new project to organize your todos
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input
-                    id="name"
-                    onChange={(e) =>
-                      setNewProject({ ...newProject, name: e.target.value })
-                    }
-                    placeholder="My Awesome Project"
-                    value={newProject.name}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    onChange={(e) =>
-                      setNewProject({
-                        ...newProject,
-                        description: e.target.value,
-                      })
-                    }
-                    placeholder="Brief description of your project"
-                    rows={3}
-                    value={newProject.description}
-                  />
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    checked={newProject.isPublic}
-                    id="isPublic"
-                    onCheckedChange={(checked) =>
-                      setNewProject({
-                        ...newProject,
-                        isPublic: checked as boolean,
-                      })
-                    }
-                  />
-                  <Label className="font-normal text-sm" htmlFor="isPublic">
-                    Make this project public
-                  </Label>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  onClick={() => setShowCreateDialog(false)}
-                  variant="outline"
-                >
-                  Cancel
+    <div className="mx-auto max-w-5xl @3xl:px-8 px-6 @3xl:py-12 py-8">
+      <header className="mb-10">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="font-semibold text-2xl tracking-tight">Projects</h1>
+            <p className="text-muted-foreground text-sm">
+              Organize your work into projects
+            </p>
+          </div>
+          {isAuth && (
+            <Dialog onOpenChange={setShowCreateDialog} open={showCreateDialog}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="secondary">
+                  <Plus className="h-4 w-4" />
+                  New
                 </Button>
-                <Button
-                  disabled={createProject.isPending}
-                  onClick={handleCreateProject}
-                >
-                  Create
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
-      </div>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create Project</DialogTitle>
+                  <DialogDescription>
+                    Create a new project to organize your todos
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Name</Label>
+                    <Input
+                      id="name"
+                      onChange={(e) =>
+                        setNewProject({ ...newProject, name: e.target.value })
+                      }
+                      placeholder="My Awesome Project"
+                      value={newProject.name}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea
+                      id="description"
+                      onChange={(e) =>
+                        setNewProject({
+                          ...newProject,
+                          description: e.target.value,
+                        })
+                      }
+                      placeholder="Brief description of your project"
+                      rows={3}
+                      value={newProject.description}
+                    />
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      checked={newProject.isPublic}
+                      id="isPublic"
+                      onCheckedChange={(checked) =>
+                        setNewProject({
+                          ...newProject,
+                          isPublic: checked as boolean,
+                        })
+                      }
+                    />
+                    <Label className="font-normal text-sm" htmlFor="isPublic">
+                      Make this project public
+                    </Label>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button
+                    onClick={() => setShowCreateDialog(false)}
+                    variant="ghost"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={createProject.isPending}
+                    onClick={handleCreateProject}
+                    variant="secondary"
+                  >
+                    Create
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
+      </header>
 
       {isAuth && (
-        <div className="mb-4 flex items-center space-x-2">
+        <div className="mb-6 flex items-center gap-2">
           <Checkbox
             checked={includeArchived}
             id="includeArchived"
@@ -184,97 +186,114 @@ export default function ProjectsPage() {
               setIncludeArchived(checked as boolean)
             }
           />
-          <Label className="font-normal text-sm" htmlFor="includeArchived">
-            Show only archived projects
+          <Label
+            className="font-normal text-muted-foreground text-sm"
+            htmlFor="includeArchived"
+          >
+            Show archived only
           </Label>
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid @5xl:grid-cols-3 @xl:grid-cols-2 gap-3">
         {projects.map((project, index) => (
           <WithSkeleton
             className="w-full"
             isLoading={isLoading}
             key={project._id || index}
           >
-            <Card className={project.archived ? 'opacity-60' : ''}>
-              <CardHeader>
-                <Link href={`/projects/${project._id}`}>
-                  <CardTitle className="cursor-pointer hover:underline">
-                    {project.name}
-                  </CardTitle>
-                </Link>
-                <CardDescription>
-                  {project.description || 'No description'}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2 text-muted-foreground text-sm">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <Users className="h-4 w-4" />
-                      <span>{project.memberCount} members</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      {project.completedTodoCount > 0 ? (
-                        <CheckSquare className="h-4 w-4" />
-                      ) : (
-                        <Square className="h-4 w-4" />
-                      )}
-                      <span>
-                        {project.completedTodoCount}/{project.todoCount} todos
-                      </span>
-                    </div>
+            <Link className="block" href={`/projects/${project._id}`}>
+              <div
+                className={cn(
+                  'group rounded-lg bg-secondary/40 p-4 transition-colors hover:bg-secondary/60',
+                  project.archived && 'opacity-50'
+                )}
+              >
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <h3 className="font-medium group-hover:underline">
+                      {project.name}
+                    </h3>
+                    <p className="line-clamp-2 text-muted-foreground text-sm">
+                      {project.description || 'No description'}
+                    </p>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs">
-                      {project.isOwner ? 'Owner' : 'Member'}
+                  <div className="flex items-center justify-between text-muted-foreground text-xs">
+                    <span className="inline-flex items-center gap-1">
+                      <Users className="h-3 w-3" />
+                      {project.memberCount}
                     </span>
-                    {project.isOwner && (
+                    <span className="inline-flex items-center gap-1">
+                      {project.completedTodoCount > 0 ? (
+                        <CheckSquare className="h-3 w-3" />
+                      ) : (
+                        <Square className="h-3 w-3" />
+                      )}
+                      {project.completedTodoCount}/{project.todoCount}
+                    </span>
+                    <span>{project.isOwner ? 'Owner' : 'Member'}</span>
+                  </div>
+                  {project.isOwner && (
+                    <div className="border-border/50 border-t pt-2">
                       <Button
-                        className="h-7 px-2"
-                        onClick={() =>
-                          handleArchiveToggle(project._id, project.archived)
-                        }
+                        className="h-7 px-2 text-xs"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleArchiveToggle(project._id, project.archived);
+                        }}
                         size="sm"
                         variant="ghost"
                       >
-                        <Archive className="mr-1 h-3 w-3" />
+                        <Archive className="h-3 w-3" />
                         {project.archived ? 'Restore' : 'Archive'}
                       </Button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </Link>
           </WithSkeleton>
         ))}
       </div>
 
       {projects.length === 0 && !isLoading && (
-        <div className="py-12 text-center">
-          <p className="mb-4 text-muted-foreground">
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="mb-4 rounded-full bg-secondary p-3">
+            <Square className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <p className="font-medium">
             {isAuth
               ? includeArchived
-                ? 'No archived projects found'
-                : 'No active projects found'
-              : 'No public projects available'}
+                ? 'No archived projects'
+                : 'No projects yet'
+              : 'No public projects'}
+          </p>
+          <p className="mt-1 text-muted-foreground text-sm">
+            {isAuth
+              ? 'Create your first project to get started'
+              : 'Check back later'}
           </p>
           {isAuth && (
-            <Button onClick={() => setShowCreateDialog(true)}>
+            <Button
+              className="mt-4"
+              onClick={() => setShowCreateDialog(true)}
+              size="sm"
+              variant="secondary"
+            >
               <Plus className="h-4 w-4" />
-              Create your first project
+              Create project
             </Button>
           )}
         </div>
       )}
 
       {hasNextPage && (
-        <div className="mt-6 text-center">
+        <div className="mt-8 text-center">
           <Button
             disabled={isFetchingNextPage}
             onClick={() => fetchNextPage()}
-            variant="outline"
+            size="sm"
+            variant="ghost"
           >
             {isFetchingNextPage ? 'Loading...' : 'Load more'}
           </Button>

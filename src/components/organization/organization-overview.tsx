@@ -3,7 +3,6 @@
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
 import {
-  Building2,
   Calendar,
   Crown,
   Edit3,
@@ -17,13 +16,6 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -135,180 +127,142 @@ export function OrganizationOverview({
   const canEdit = isOwner && !organization.isPersonal;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Organization Info */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Building2 className="h-5 w-5" />
-                Organization Details
-              </CardTitle>
-              <CardDescription>
-                Basic information about this organization
-              </CardDescription>
-            </div>
-            {canEdit && (
-              <Button
-                onClick={handleEditOrganization}
-                size="sm"
-                variant="outline"
-              >
-                <Edit3 className="h-4 w-4" />
-                Edit
-              </Button>
-            )}
+      <section>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-medium text-muted-foreground text-sm uppercase tracking-wide">
+            Organization Details
+          </h2>
+          {canEdit && (
+            <Button onClick={handleEditOrganization} size="sm" variant="ghost">
+              <Edit3 className="h-4 w-4" />
+              Edit
+            </Button>
+          )}
+        </div>
+        <div className="grid @xl:grid-cols-2 gap-4 rounded-lg bg-secondary/30 p-4">
+          <div>
+            <p className="text-muted-foreground text-xs">Name</p>
+            <p className="font-medium text-sm">{organization.name}</p>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label className="font-medium text-muted-foreground text-sm">
-                Name
-              </Label>
-              <p className="text-sm">{organization.name}</p>
+          <div>
+            <p className="text-muted-foreground text-xs">Slug</p>
+            <p className="font-medium font-mono text-sm">{organization.slug}</p>
+          </div>
+          <div>
+            <p className="mb-1 text-muted-foreground text-xs">Type</p>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">
+                {organization.isPersonal ? 'Personal' : 'Team'}
+              </Badge>
+              {organization.isActive && (
+                <Badge variant="secondary">Active</Badge>
+              )}
+            </div>
+          </div>
+          <div>
+            <p className="text-muted-foreground text-xs">Created</p>
+            <p className="font-medium text-sm">
+              {new Date(organization.createdAt).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              })}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Organization Stats */}
+      <section>
+        <h2 className="mb-4 font-medium text-muted-foreground text-sm uppercase tracking-wide">
+          Stats
+        </h2>
+        <div className="grid @xl:grid-cols-3 gap-3">
+          <div className="flex items-center gap-3 rounded-lg bg-secondary/30 p-4">
+            <div className="rounded-full bg-primary/10 p-2">
+              <Users className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <Label className="font-medium text-muted-foreground text-sm">
-                Slug
-              </Label>
-              <p className="font-mono text-sm">{organization.slug}</p>
-            </div>
-            <div>
-              <Label className="font-medium text-muted-foreground text-sm">
-                Type
-              </Label>
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant={organization.isPersonal ? 'secondary' : 'default'}
-                >
-                  {organization.isPersonal ? 'Personal' : 'Team'}
-                </Badge>
-                {organization.isActive && (
-                  <Badge variant="outline">Active</Badge>
-                )}
-              </div>
-            </div>
-            <div>
-              <Label className="font-medium text-muted-foreground text-sm">
-                Created
-              </Label>
-              <p className="text-sm">
-                {new Date(organization.createdAt).toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
+              <p className="font-bold text-2xl">{organization.membersCount}</p>
+              <p className="text-muted-foreground text-sm">
+                Member{organization.membersCount !== 1 ? 's' : ''}
               </p>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Organization Stats */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Organization Stats
-          </CardTitle>
-          <CardDescription>
-            Overview of organization activity and membership
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="flex items-center gap-3 rounded-lg border p-4">
-              <div className="rounded-full bg-primary/10 p-2">
-                <Users className="h-4 w-4 text-primary" />
-              </div>
-              <div>
-                <p className="font-bold text-2xl">
-                  {organization.membersCount}
-                </p>
-                <p className="text-muted-foreground text-sm">
-                  Member{organization.membersCount !== 1 ? 's' : ''}
-                </p>
-              </div>
+          <div className="flex items-center gap-3 rounded-lg bg-secondary/30 p-4">
+            <div className="rounded-full bg-green-500/10 p-2">
+              <Crown className="h-4 w-4 text-green-600 dark:text-green-400" />
             </div>
-
-            <div className="flex items-center gap-3 rounded-lg border p-4">
-              <div className="rounded-full bg-green-100 p-2 dark:bg-green-900">
-                <Crown className="h-4 w-4 text-green-600 dark:text-green-400" />
-              </div>
-              <div>
-                <p className="font-bold text-2xl capitalize">
-                  {organization.role || 'Member'}
-                </p>
-                <p className="text-muted-foreground text-sm">Your Role</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 rounded-lg border p-4">
-              <div className="rounded-full bg-blue-100 p-2 dark:bg-blue-900">
-                <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div>
-                <p className="font-bold text-2xl">
-                  {Math.floor(
-                    (now - organization.createdAt) / (1000 * 60 * 60 * 24)
-                  )}
-                </p>
-                <p className="text-muted-foreground text-sm">Days Active</p>
-              </div>
+            <div>
+              <p className="font-bold text-2xl capitalize">
+                {organization.role || 'Member'}
+              </p>
+              <p className="text-muted-foreground text-sm">Your Role</p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+
+          <div className="flex items-center gap-3 rounded-lg bg-secondary/30 p-4">
+            <div className="rounded-full bg-blue-500/10 p-2">
+              <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="font-bold text-2xl">
+                {Math.floor(
+                  (now - organization.createdAt) / (1000 * 60 * 60 * 24)
+                )}
+              </p>
+              <p className="text-muted-foreground text-sm">Days Active</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>Common tasks for this organization</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <Button className="justify-start" variant="outline">
-              <ExternalLink className="h-4 w-4" />
-              View Public Profile
-            </Button>
-            {isOwner && (
-              <>
-                <Button className="justify-start" variant="outline">
-                  <UserCheck className="h-4 w-4" />
-                  Manage Members
-                </Button>
-                <Button className="justify-start" variant="outline">
-                  <Settings className="h-4 w-4" />
-                  Organization Settings
-                </Button>
-              </>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <section>
+        <h2 className="mb-4 font-medium text-muted-foreground text-sm uppercase tracking-wide">
+          Quick Actions
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          <Button className="justify-start" size="sm" variant="secondary">
+            <ExternalLink className="h-4 w-4" />
+            View Profile
+          </Button>
+          {isOwner && (
+            <>
+              <Button className="justify-start" size="sm" variant="secondary">
+                <UserCheck className="h-4 w-4" />
+                Manage Members
+              </Button>
+              <Button className="justify-start" size="sm" variant="secondary">
+                <Settings className="h-4 w-4" />
+                Settings
+              </Button>
+            </>
+          )}
+        </div>
+      </section>
 
       {/* Danger Zone */}
       {canEdit && (
-        <Card className="border-destructive/20">
-          <CardHeader>
-            <CardTitle className="text-destructive">Danger Zone</CardTitle>
-            <CardDescription>
-              Irreversible and destructive actions
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              onClick={() => setShowDeleteDialog(true)}
-              variant="destructive"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete Organization
-            </Button>
-          </CardContent>
-        </Card>
+        <section className="rounded-lg bg-destructive/5 p-4">
+          <h2 className="mb-2 font-medium text-destructive text-sm">
+            Danger Zone
+          </h2>
+          <p className="mb-4 text-muted-foreground text-sm">
+            Irreversible and destructive actions
+          </p>
+          <Button
+            onClick={() => setShowDeleteDialog(true)}
+            size="sm"
+            variant="destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete Organization
+          </Button>
+        </section>
       )}
 
       {/* Edit Organization Dialog */}
@@ -355,14 +309,15 @@ export function OrganizationOverview({
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setShowEditDialog(false)} variant="outline">
+            <Button onClick={() => setShowEditDialog(false)} variant="ghost">
               Cancel
             </Button>
             <Button
               disabled={updateOrganization.isPending}
               onClick={handleUpdateOrganization}
+              variant="secondary"
             >
-              Save Changes
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -379,10 +334,7 @@ export function OrganizationOverview({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              onClick={() => setShowDeleteDialog(false)}
-              variant="outline"
-            >
+            <Button onClick={() => setShowDeleteDialog(false)} variant="ghost">
               Cancel
             </Button>
             <Button
@@ -390,7 +342,7 @@ export function OrganizationOverview({
               onClick={handleDeleteOrganization}
               variant="destructive"
             >
-              Delete Organization
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -3,7 +3,6 @@
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
 import {
-  Clock,
   Crown,
   Mail,
   MoreHorizontal,
@@ -17,13 +16,6 @@ import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -219,25 +211,23 @@ export function OrganizationMembers({
           </p>
         </div>
         {canInvite && (
-          <Button onClick={() => setShowInviteDialog(true)}>
+          <Button
+            onClick={() => setShowInviteDialog(true)}
+            size="sm"
+            variant="secondary"
+          >
             <UserPlus className="h-4 w-4" />
-            Invite Member
+            Invite
           </Button>
         )}
       </div>
 
       {/* Members Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            Members ({members.members?.length || 0})
-          </CardTitle>
-          <CardDescription>
-            Current members of this organization
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <section>
+        <h2 className="mb-3 font-medium text-muted-foreground text-sm uppercase tracking-wide">
+          Members ({members.members?.length || 0})
+        </h2>
+        <div className="rounded-lg bg-secondary/30">
           <WithSkeleton className="w-full" isLoading={isLoading}>
             <Table>
               <TableHeader>
@@ -327,22 +317,16 @@ export function OrganizationMembers({
               </TableBody>
             </Table>
           </WithSkeleton>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {/* Pending Invitations */}
       {isOwner && pendingInvitations && pendingInvitations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Pending Invitations ({pendingInvitations.length})
-            </CardTitle>
-            <CardDescription>
-              Invitations that have been sent but not yet accepted
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <section>
+          <h2 className="mb-3 font-medium text-muted-foreground text-sm uppercase tracking-wide">
+            Pending Invitations ({pendingInvitations.length})
+          </h2>
+          <div className="rounded-lg bg-secondary/30">
             <WithSkeleton className="w-full" isLoading={invitationsLoading}>
               <Table>
                 <TableHeader>
@@ -380,8 +364,8 @@ export function OrganizationMembers({
                 </TableBody>
               </Table>
             </WithSkeleton>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       )}
 
       {/* Invite Member Dialog */}
@@ -425,15 +409,13 @@ export function OrganizationMembers({
             </div>
           </div>
           <DialogFooter>
-            <Button
-              onClick={() => setShowInviteDialog(false)}
-              variant="outline"
-            >
+            <Button onClick={() => setShowInviteDialog(false)} variant="ghost">
               Cancel
             </Button>
             <Button
               disabled={inviteMember.isPending}
               onClick={handleInviteMember}
+              variant="secondary"
             >
               Send Invitation
             </Button>

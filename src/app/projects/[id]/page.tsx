@@ -8,8 +8,8 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { ProjectMembers } from '@/components/projects/project-members';
 import { TodoList } from '@/components/todos/todo-list';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -95,14 +95,12 @@ export default function ProjectDetailPage() {
 
   if (!(project || isLoading)) {
     return (
-      <div className="container mx-auto px-4 py-6">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              Project not found or you don't have access
-            </p>
-          </CardContent>
-        </Card>
+      <div className="mx-auto max-w-5xl @3xl:px-8 px-6 @3xl:py-12 py-8">
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <p className="text-muted-foreground">
+            Project not found or you don't have access
+          </p>
+        </div>
       </div>
     );
   }
@@ -148,67 +146,65 @@ export default function ProjectDetailPage() {
       : 0;
 
   return (
-    <div className="container mx-auto px-4 py-6">
+    <div className="mx-auto max-w-5xl @3xl:px-8 px-6 @3xl:py-12 py-8">
       <WithSkeleton className="w-full" isLoading={isLoading}>
-        <div className="mb-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="mb-2 font-bold text-3xl">{project?.name}</h1>
+        <header className="mb-10">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-2">
+              <h1 className="font-semibold text-2xl tracking-tight">
+                {project?.name}
+              </h1>
               <p className="text-muted-foreground">
                 {project?.description || 'No description'}
               </p>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground text-sm">
+                <span className="inline-flex items-center gap-1.5">
+                  <Crown className="h-3.5 w-3.5" />
+                  {project?.owner.name || project?.owner.email}
+                </span>
+                <span>{project?.members.length || 0} members</span>
+                <span>{completionRate}% complete</span>
+                {project?.isPublic && (
+                  <Badge className="text-xs" variant="secondary">
+                    Public
+                  </Badge>
+                )}
+              </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex shrink-0 gap-2">
               {isOwner && (
                 <>
-                  <Button
-                    onClick={handleEditProject}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Settings className="mr-1 h-4 w-4" />
-                    Settings
+                  <Button onClick={handleEditProject} size="sm" variant="ghost">
+                    <Settings className="h-4 w-4" />
                   </Button>
-                  <Button onClick={handleArchive} size="sm" variant="outline">
-                    <Archive className="mr-1 h-4 w-4" />
-                    Archive
+                  <Button onClick={handleArchive} size="sm" variant="ghost">
+                    <Archive className="h-4 w-4" />
                   </Button>
                 </>
               )}
               {!isOwner && project && (
-                <Button onClick={handleLeave} size="sm" variant="outline">
-                  <UserMinus className="mr-1 h-4 w-4" />
-                  Leave Project
+                <Button onClick={handleLeave} size="sm" variant="ghost">
+                  <UserMinus className="h-4 w-4" />
                 </Button>
               )}
             </div>
           </div>
+        </header>
 
-          <div className="mt-4 flex items-center gap-6 text-muted-foreground text-sm">
-            <div className="flex items-center gap-2">
-              <Crown className="h-4 w-4" />
-              <span>Owner: {project?.owner.name || project?.owner.email}</span>
-            </div>
-            <div>
-              {project?.members.length || 0} member
-              {project?.members.length !== 1 ? 's' : ''}
-            </div>
-            <div>
-              {completionRate}% complete ({project?.completedTodoCount}/
-              {project?.todoCount} todos)
-            </div>
-            {project?.isPublic && (
-              <span className="rounded bg-primary/10 px-2 py-1 text-primary text-xs">
-                Public
-              </span>
-            )}
-          </div>
-        </div>
-
-        <Tabs className="space-y-4" defaultValue="todos">
-          <TabsList>
-            <TabsTrigger value="todos">Todos</TabsTrigger>
-            <TabsTrigger value="members">Members</TabsTrigger>
+        <Tabs className="space-y-6" defaultValue="todos">
+          <TabsList className="h-auto gap-1 bg-transparent p-0">
+            <TabsTrigger
+              className="rounded-md px-3 py-1.5 text-sm data-[state=active]:bg-secondary"
+              value="todos"
+            >
+              Todos
+            </TabsTrigger>
+            <TabsTrigger
+              className="rounded-md px-3 py-1.5 text-sm data-[state=active]:bg-secondary"
+              value="members"
+            >
+              Members
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent className="space-y-4" value="todos">
@@ -271,14 +267,15 @@ export default function ProjectDetailPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setShowEditDialog(false)} variant="outline">
+            <Button onClick={() => setShowEditDialog(false)} variant="ghost">
               Cancel
             </Button>
             <Button
               disabled={updateProject.isPending}
               onClick={handleUpdateProject}
+              variant="secondary"
             >
-              Save Changes
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

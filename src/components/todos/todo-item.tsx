@@ -77,7 +77,8 @@ export function TodoItem({ todo, onEdit }: TodoItemProps) {
   };
 
   const isOverdue =
-    todo.dueDate && todo.dueDate < Date.now() && !todo.completed;
+    !!todo.dueDate ||
+    (!!todo.dueDate && todo.dueDate < Date.now() && !todo.completed);
   const isDeleted = !!todo.deletionTime;
 
   const priorityColors = {
@@ -89,10 +90,10 @@ export function TodoItem({ todo, onEdit }: TodoItemProps) {
   return (
     <div
       className={cn(
-        'flex items-start gap-3 rounded-lg border p-4 transition-colors',
-        todo.completed && 'bg-muted/50',
-        isDeleted && 'border-destructive/20 bg-destructive/5',
-        isOverdue && !isDeleted && 'border-red-500/50'
+        'flex items-start gap-3 rounded-lg bg-secondary/30 p-4 transition-colors hover:bg-secondary/50',
+        todo.completed && 'bg-secondary/20',
+        isDeleted && 'bg-destructive/5',
+        isOverdue && !isDeleted && 'bg-red-500/5'
       )}
     >
       <Checkbox
