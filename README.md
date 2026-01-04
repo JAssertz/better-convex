@@ -222,6 +222,8 @@ const schema = defineEntSchema({
 // Generated via: cd convex && npx @better-auth/cli generate -y --output authSchema.ts
 // Includes: user, session, account, organization, member, invitation
 ```
+> [!IMPORTANT]
+> Do not modify the default model name or the table name, as we are using the default singular table name in the `better-auth-convex` package.
 
 ## Key Patterns from `.claude/rules/convex.mdc`
 
