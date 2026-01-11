@@ -1,0 +1,239 @@
+---
+title: Context
+description: Access database, auth, and custom data in your procedures
+---
+
+## Overview
+
+Context (`ctx`) is the first argument passed to every procedure handler. It provides access to Convex features and any data added by middleware.
+
+## Base Context
+
+Every procedure receives the base Convex context:
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts
+    export const list = publicQuery
+      .query(async ({ ctx }) => {
+        // ctx.db - Database access
+        // ctx.auth - Authentication info
+        // ctx.storage - File storage
+        return ctx.db.query('user').collect();
+      });
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts
+    export const list = publicQuery
+      .query(async ({ ctx }) => {
+        // ctx.table - Database access (Convex Ents)
+        // ctx.auth - Authentication info
+        // ctx.storage - File storage
+        return ctx.table('user');
+      });
+    ```
+  </Tab>
+</Tabs>
+
+### Database (`ctx.db` / `ctx.table`)
+
+Read and write to your Convex database:
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts
+    // Read
+    const user = await ctx.db.get(id);
+    const users = await ctx.db.query('user').collect();
+
+    // Write (mutations only)
+    const id = await ctx.db.insert('user', { name: 'John', email: 'john@example.com' });
+    await ctx.db.patch(id, { name: 'Updated' });
+    await ctx.db.delete(id);
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts
+    // Read
+    const user = await ctx.table('user').get(id);
+    const users = await ctx.table('user');
+
+    // Write (mutations only)
+    const id = await ctx.table('user').insert({ name: 'John', email: 'john@example.com' });
+    await ctx.table('user').getX(id).patch({ name: 'Updated' });
+    await ctx.table('user').getX(id).delete();
+    ```
+  </Tab>
+</Tabs>
+
+### Authentication (`ctx.auth`)
+
+Access the authenticated user's identity:
+
+```ts
+const identity = await ctx.auth.getUserIdentity();
+if (!identity) {
+  throw new CRPCError({ code: 'UNAUTHORIZED' });
+}
+// identity.subject - User ID
+// identity.email - Email (if available)
+// identity.name - Name (if available)
+```
+
+## Extending Context with Middleware
+
+Use middleware to add custom data to context. Call `next()` with the new context:
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts title="convex/lib/crpc.ts"
+    import { getSession } from 'better-convex/auth';
+
+    export const authQuery = c.query.use(async ({ ctx, next }) => {
+      const session = await getSession(ctx);
+      if (!session) {
+        throw new CRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
+      }
+
+      const user = (await ctx.db.get(session.userId))!;
+
+      return next({
+        ctx: { ...ctx, user: { id: user._id, session, ...user }, userId: user._id },
+      });
+    });
+
+    // Create mutation version with same pattern
+    export const authMutation = c.mutation.use(async ({ ctx, next }) => {
+      // ... same auth logic
+    });
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts title="convex/lib/crpc.ts"
+    import { getSession } from 'better-convex/auth';
+
+    export const authQuery = c.query.use(async ({ ctx, next }) => {
+      const session = await getSession(ctx);
+      if (!session) {
+        throw new CRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
+      }
+
+      const user = await ctx.table('user').getX(session.userId);
+
+      return next({
+        ctx: { ...ctx, user: { id: user._id, session, ...user.doc() }, userId: user._id },
+      });
+    });
+
+    // Create mutation version with same pattern
+    export const authMutation = c.mutation.use(async ({ ctx, next }) => {
+      // ... same auth logic
+    });
+    ```
+  </Tab>
+</Tabs>
+
+Use the extended procedure in your functions:
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts title="convex/functions/session.ts"
+    export const create = authMutation
+      .input(z.object({ token: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        // ctx.user and ctx.userId are now available
+        return ctx.db.insert('session', {
+          ...input,
+          userId: ctx.userId,
+          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+        });
+      });
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts title="convex/functions/session.ts"
+    export const create = authMutation
+      .input(z.object({ token: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        // ctx.user and ctx.userId are now available
+        return ctx.table('session').insert({
+          ...input,
+          userId: ctx.userId,
+          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+        });
+      });
+    ```
+  </Tab>
+</Tabs>
+
+## Context in Actions
+
+Actions have a different context with `runQuery` and `runMutation`:
+
+```ts
+import { internal } from './_generated/api';
+
+export const processAndSave = publicAction
+  .input(z.object({ data: z.string() }))
+  .action(async ({ ctx, input }) => {
+    // External API call
+    const result = await fetch('https://api.example.com/process', {
+      method: 'POST',
+      body: JSON.stringify({ data: input.data }),
+    });
+
+    // Call a mutation to save results
+    await ctx.runMutation(internal.user.updateProfile, {
+      data: await result.json()
+    });
+  });
+```
+
+## Migrate from Convex
+
+### What stays the same
+
+Base context properties work identically:
+- `ctx.db` - Database reader/writer
+- `ctx.auth` - Authentication
+- `ctx.storage` - File storage
+- `ctx.scheduler` - Scheduler (mutations only)
+
+### What's new
+
+cRPC's `.use()` middleware replaces convex-helpers' `customQuery`/`customMutation`:
+
+```ts
+// convex-helpers (before)
+import { customQuery, customCtx } from 'convex-helpers/server/customFunctions';
+
+const userQuery = customQuery(query,
+  customCtx(async (ctx) => {
+    const user = await getUser(ctx);
+    if (!user) throw new Error('Authentication required');
+    return { user };
+  })
+);
+```
+
+```ts
+// cRPC (after)
+const userQuery = c.query.use(async ({ ctx, next }) => {
+  const user = await getUser(ctx);
+  if (!user) throw new CRPCError({ code: 'UNAUTHORIZED' });
+  return next({ ctx: { ...ctx, user } });
+});
+```
+
+Key differences:
+- Call `next({ ctx })` instead of returning context directly
+- Use `CRPCError` for typed errors
+- Chain multiple `.use()` calls for composable middleware
+
+## Next steps
+
+<Cards>
+  <Card title="Middleware" href="/docs/server/middlewares" />
+  <Card title="Error Handling" href="/docs/server/error-handling" />
+</Cards>

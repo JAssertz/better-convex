@@ -1,0 +1,490 @@
+---
+title: Ents
+description: Ergonomic database access with relationships
+---
+
+## Overview
+
+[Convex Ents](https://labs.convex.dev/convex-ents) provides an ergonomic layer over Convex's database with:
+
+- **Relationships**: Define edges between tables with type-safe traversal
+- **Fluent API**: `ctx.table('user').get(id)` instead of `ctx.db.get(id)`
+- **Field helpers**: Default values, indexed fields, unique constraints
+- **Rules**: Collocate authorization logic with schema definitions
+- **Cascading deletes**: Soft and scheduled deletion with propagation
+
+## Installation
+
+```bash
+bun add convex-ents
+```
+
+## Setup
+
+Create the ents helper:
+
+```ts title="convex/lib/ents.ts"
+import type { GenericEnt, GenericEntWriter } from 'convex-ents';
+import { entsTableFactory, getEntDefinitions } from 'convex-ents';
+import type { TableNames } from '../functions/_generated/dataModel';
+import type { MutationCtx, QueryCtx } from '../functions/_generated/server';
+import schema from '../functions/schema';
+
+export const entDefinitions = getEntDefinitions(schema);
+
+export type Ent<TableName extends TableNames> = GenericEnt<
+  typeof entDefinitions,
+  TableName
+>;
+
+export type EntWriter<TableName extends TableNames> = GenericEntWriter<
+  typeof entDefinitions,
+  TableName
+>;
+
+export type CtxWithTable<Ctx extends MutationCtx | QueryCtx = QueryCtx> =
+  ReturnType<typeof getCtxWithTable<Ctx>>;
+
+export const getCtxWithTable = <Ctx extends MutationCtx | QueryCtx>(ctx: Ctx) => ({
+  ...ctx,
+  table: entsTableFactory(ctx, entDefinitions),
+});
+```
+
+Integrate with cRPC:
+
+```ts title="convex/lib/crpc.ts"
+import { getCtxWithTable } from './ents';
+
+const c = initCRPC
+  .dataModel<DataModel>()
+  .context({
+    query: (ctx) => getCtxWithTable(ctx),
+    mutation: (ctx) => getCtxWithTable(ctx),
+  })
+  .create({ ... });
+```
+
+## Schema Definition
+
+Use `defineEntSchema` and `defineEnt` instead of Convex's `defineSchema` and `defineTable`:
+
+```ts title="convex/functions/schema.ts"
+import { v } from 'convex/values';
+import { defineEnt, defineEntSchema, getEntDefinitions } from 'convex-ents';
+
+const schema = defineEntSchema({
+  user: defineEnt({
+    name: v.string(),
+    email: v.string(),
+    emailVerified: v.boolean(),
+  })
+    .field('username', v.string(), { unique: true })
+    .index('email', ['email'])
+    .edges('sessions', { to: 'session', ref: 'userId' })
+    .edges('accounts', { to: 'account', ref: 'userId' }),
+
+  session: defineEnt({
+    token: v.string(),
+    expiresAt: v.number(),
+  })
+    .index('token', ['token'])
+    .edge('user', { to: 'user', field: 'userId' }),
+
+  account: defineEnt({
+    accountId: v.string(),
+    providerId: v.string(),
+  })
+    .index('accountId', ['accountId'])
+    .edge('user', { to: 'user', field: 'userId' }),
+});
+
+export default schema;
+export const entDefinitions = getEntDefinitions(schema);
+```
+
+## Field Options
+
+### Indexed Fields
+
+Creates an index for efficient lookups:
+
+```ts
+defineEnt({}).field('email', v.string(), { index: true })
+// Equivalent to: .index('email', ['email'])
+```
+
+### Unique Fields
+
+Enforces uniqueness and creates an index:
+
+```ts
+defineEnt({}).field('username', v.string(), { unique: true })
+```
+
+### Field Defaults
+
+Simplify schema evolution without migrations:
+
+```ts
+defineEnt({}).field('contentType', v.union(v.literal('text'), v.literal('video')), {
+  default: 'text',
+})
+// Field is required in TypeScript, but defaults if missing in DB
+```
+
+## Relationships
+
+### 1:1 Edges
+
+```ts
+user: defineEnt({})
+  .edge('profile', { ref: true }), // profile stores userId
+
+profile: defineEnt({})
+  .edge('user', { field: 'userId' }),
+```
+
+Optional 1:1 edge:
+
+```ts
+profile: defineEnt({})
+  .edge('user', { field: 'userId', optional: true }),
+```
+
+### 1:many Edges
+
+```ts
+user: defineEnt({})
+  .edges('sessions', { to: 'session', ref: 'userId' }),
+
+session: defineEnt({})
+  .edge('user', { to: 'user', field: 'userId' }),
+```
+
+### many:many Edges
+
+```ts
+posts: defineEnt({})
+  .edges('tags', { to: 'tags', table: 'postTags', field: 'postId' }),
+
+tags: defineEnt({})
+  .edges('posts', { to: 'posts', table: 'postTags', field: 'tagId' }),
+```
+
+### Join Table Patterns
+
+**Auto-generated join tables** (pure many:many edges) do NOT support custom fields, indexes, or edges. Only use for simple relationships:
+
+```ts
+// Auto-generated join table - no custom fields possible
+posts: defineEnt({})
+  .edges('tags', { to: 'tags', table: 'postTags', field: 'postId' }),
+
+// If you need TypeScript types or aggregates, define the table explicitly:
+postTags: defineEnt({})
+  .field('postId', v.id('posts'), { index: true })
+  .field('tagId', v.id('tags'), { index: true })
+  .index('postId_tagId', ['postId', 'tagId']),
+```
+
+**Join tables with extended fields** require two 1:many edges instead:
+
+```ts
+// Join table WITH custom fields, indexes, edges
+messageVotes: defineEnt({})
+  .field('isDownvoted', v.optional(v.boolean()))  // Custom field
+  .edge('user', { to: 'user', field: 'userId' })  // 1:many edge
+  .edge('message')                                 // 1:many edge
+  .index('userId_messageId', ['userId', 'messageId']),
+
+// Access via edges
+messages: defineEnt({})
+  .edges('votedBy', { to: 'messageVotes', ref: 'messageId' }),
+
+user: defineEnt({})
+  .edges('votedMessages', { ref: true, to: 'messageVotes' }),
+```
+
+### Self-Referential Edges
+
+Asymmetrical (followers/following):
+
+```ts
+user: defineEnt({})
+  .edges('following', {
+    to: 'user',
+    inverse: 'followers',
+    table: 'follows',
+    field: 'followerId',
+    inverseField: 'followingId',
+  }),
+```
+
+Symmetrical (friends):
+
+```ts
+user: defineEnt({})
+  .edges('friends', { to: 'user' }), // No inverse = symmetrical
+```
+
+## Cascading Deletes
+
+### Default Behavior
+
+- 1:1/1:many edges: Deleting parent deletes children that store the edge
+- many:many edges: Deleting ent removes edge documents, not connected ents
+
+### Soft Deletion
+
+Adds `deletionTime` field instead of removing:
+
+```ts
+user: defineEnt({})
+  .deletion('soft')
+  .edges('sessions', { to: 'session', ref: 'userId', deletion: 'soft' }),
+```
+
+Filter soft-deleted ents:
+
+```ts
+const activeUsers = await ctx.table('user')
+  .filter((q) => q.eq(q.field('deletionTime'), undefined));
+```
+
+Undelete:
+
+```ts
+await ctx.table('user').getX(userId).patch({ deletionTime: undefined });
+```
+
+### Scheduled Deletion
+
+Soft delete immediately, hard delete after delay:
+
+```ts
+user: defineEnt({})
+  .deletion('scheduled', { delayMs: 24 * 60 * 60 * 1000 }), // 24 hours
+```
+
+Requires setup in functions file:
+
+```ts title="convex/lib/functions.ts"
+import { scheduledDeleteFactory } from 'convex-ents';
+export const scheduledDelete = scheduledDeleteFactory(entDefinitions);
+```
+
+## Reading Ents
+
+### By ID
+
+```ts
+// Returns null if not found
+const user = await ctx.table('user').get(userId);
+
+// Throws if not found
+const user = await ctx.table('user').getX(userId);
+
+// Multiple IDs
+const users = await ctx.table('user').getMany([id1, id2]);
+const users = await ctx.table('user').getManyX([id1, id2]); // Throws if any missing
+```
+
+### By Index
+
+```ts
+// Single field index
+const user = await ctx.table('user').get('email', email);
+const user = await ctx.table('user').getX('email', email);
+
+// Compound index
+const user = await ctx.table('user').get('nameAndRank', 'Steve', 10);
+```
+
+### Listing
+
+```ts
+// All ents
+const users = await ctx.table('user');
+
+// With index filter
+const sessions = await ctx.table('session', 'userId', (q) => q.eq('userId', userId));
+
+// Filter
+const sessions = await ctx.table('session')
+  .filter((q) => q.gt(q.field('expiresAt'), Date.now()));
+
+// Order (default: _creationTime asc)
+const sessions = await ctx.table('session').order('desc');
+
+// Limit
+const users = await ctx.table('user').take(5);
+
+// First/unique
+const latest = await ctx.table('user').order('desc').first();
+const latest = await ctx.table('user').order('desc').firstX(); // Throws if none
+const counter = await ctx.table('counters').unique(); // Throws if more than 1
+const counter = await ctx.table('counters').uniqueX(); // Throws if not exactly 1
+
+// Paginate
+const result = await ctx.table('session').paginate(paginationOpts);
+
+// Text search
+const users = await ctx.table('user')
+  .search('name', (q) => q.search('name', 'john'));
+```
+
+### Raw Documents
+
+Return plain documents without ent methods:
+
+```ts
+const messages = await ctx.table('messages').docs();
+const profile = await user.edgeX('profile').doc();
+```
+
+### System Tables
+
+```ts
+const files = await ctx.table.system('_storage');
+const scheduled = await ctx.table.system('_scheduled_functions');
+```
+
+Edge to scheduled functions with auto-cancel:
+
+```ts
+answers: defineEnt({})
+  .edge('action', { to: '_scheduled_functions', deletion: 'hard' }),
+```
+
+## Traversing Edges
+
+### 1:1 and 1:many
+
+```ts
+// 1:1 - returns single ent or null
+const profile = await ctx.table('user').getX(userId).edge('profile');
+const profile = await ctx.table('user').getX(userId).edgeX('profile'); // Throws
+
+// 1:many - returns list
+const sessions = await user.edge('sessions');
+const recentSessions = await user.edge('sessions').order('desc').take(5);
+```
+
+### many:many
+
+```ts
+const tags = await post.edge('tags');
+const posts = await tag.edge('posts');
+
+// Check edge exists
+const hasTag = await post.edge('tags').has(tagId);
+```
+
+### Map with Edges (Nested Reads)
+
+```ts
+// Include related ents in response
+const usersWithSessions = await ctx.table('user').map(async (user) => ({
+  name: user.name,
+  sessions: await user.edge('sessions').take(5),
+}));
+
+// Nested traversal
+const usersWithData = await ctx.table('user').map(async (user) => ({
+  ...user,
+  sessions: await user.edge('sessions').map(async (session) => ({
+    token: session.token,
+    expiresAt: session.expiresAt,
+  })),
+}));
+
+// Parallel edge loading
+const usersWithProfileAndSessions = await ctx.table('user').map(async (user) => {
+  const [profile, sessions] = await Promise.all([
+    user.edgeX('profile'),
+    user.edge('sessions').take(5),
+  ]);
+  return { name: user.name, profile, sessions };
+});
+```
+
+## Writing Ents
+
+### Insert
+
+```ts
+const userId = await ctx.table('user').insert({ name: 'Alice', email: 'alice@example.com' });
+
+// Insert and get the ent
+const user = await ctx.table('user').insert({ name: 'Alice', email: 'alice@example.com' }).get();
+
+// Insert many
+const ids = await ctx.table('session').insertMany([
+  { token: 'abc', userId, expiresAt: Date.now() + 86400000 },
+  { token: 'def', userId, expiresAt: Date.now() + 86400000 },
+]);
+```
+
+### Update
+
+```ts
+// Patch (merge)
+await ctx.table('user').getX(userId).patch({ name: 'New Name' });
+
+// Replace (overwrite all fields)
+await ctx.table('session').getX(sessionId).replace({
+  token: 'new-token',
+  expiresAt: Date.now() + 86400000,
+  userId,
+});
+
+// Update via edge
+await ctx.table('user').getX(userId).edgeX('profile').patch({ bio: 'Updated' });
+```
+
+### Delete
+
+```ts
+await ctx.table('session').getX(sessionId).delete();
+```
+
+### Edge Mutations (many:many)
+
+```ts
+// Add edges
+await post.patch({ tags: { add: [tagId] } });
+
+// Remove edges
+await post.patch({ tags: { remove: [tagId] } });
+
+// Replace all edges
+await post.replace({ title: 'New', tags: [tag1Id, tag2Id] });
+
+// Shorthand methods
+await post.edge('tags').add(tagId);
+await post.edge('tags').remove(tagId);
+await post.edge('tags').replace([tag1Id, tag2Id]);
+```
+
+## Triggers Integration
+
+When using [triggers](/docs/server/triggers), wrap the db before creating ents:
+
+```ts title="convex/lib/crpc.ts"
+const c = initCRPC
+  .dataModel<DataModel>()
+  .context({
+    query: (ctx) => getCtxWithTable(ctx),
+    mutation: (ctx) => getCtxWithTable(triggers.wrapDB(ctx)),
+  })
+  .create({ ... });
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Templates" href="/docs/templates#entsts" />
+  <Card title="Triggers" href="/docs/db/triggers" />
+  <Card title="Convex Ents Docs" href="https://labs.convex.dev/convex-ents" />
+</Cards>

@@ -1,0 +1,166 @@
+---
+title: Error Handling
+description: Handle errors from queries and mutations on the client
+---
+
+## Overview
+
+cRPC provides typed error handling on the client. There are two error sources:
+
+1. **Server errors** - `CRPCError` thrown in procedures, arrives as `ConvexError` with `error.data`
+2. **Client errors** - `CRPCClientError` generated client-side (e.g., unauthorized query skip)
+
+## Server Errors
+
+When a procedure throws `CRPCError`, it arrives on the client as a `ConvexError`. Access the message via `error.data`:
+
+```tsx
+// Server throws:
+throw new CRPCError({ code: 'NOT_FOUND', message: 'Post not found' });
+
+// Client receives:
+error.data?.message // 'Post not found'
+```
+
+### Query Errors
+
+```tsx
+const { data, error, isError } = useQuery(crpc.posts.get.queryOptions({ id }));
+
+if (isError) {
+  const message = error.data?.message ?? 'Something went wrong';
+}
+```
+
+### Mutation Errors
+
+With callbacks:
+
+```tsx
+const mutation = useMutation(
+  crpc.posts.create.mutationOptions({
+    onError: (error) => {
+      toast.error(error.data?.message ?? 'Failed to create post');
+    },
+  })
+);
+```
+
+With `toast.promise`:
+
+```tsx
+toast.promise(mutation.mutateAsync(data), {
+  loading: 'Creating...',
+  success: 'Created!',
+  error: (e) => e.data?.message ?? 'Failed',
+});
+```
+
+### Type-safe Error Access
+
+When using try/catch:
+
+```tsx
+try {
+  await mutation.mutateAsync(data);
+} catch (err) {
+  const error = err as Error & { data?: { message?: string } };
+  toast.error(error.data?.message ?? 'Operation failed');
+}
+```
+
+## Client Errors
+
+`CRPCClientError` is thrown client-side when queries are skipped due to auth requirements:
+
+```tsx
+import { CRPCClientError, isCRPCClientError } from 'better-convex/crpc';
+
+if (isCRPCClientError(error)) {
+  console.log(error.code);         // 'UNAUTHORIZED'
+  console.log(error.functionName); // 'user:getSettings'
+}
+```
+
+### Error Codes
+
+| Code | Description |
+|------|-------------|
+| `UNAUTHORIZED` | Missing authentication |
+| `FORBIDDEN` | Not authorized |
+| `NOT_FOUND` | Resource not found |
+| `BAD_REQUEST` | Invalid input |
+| `TOO_MANY_REQUESTS` | Rate limited |
+
+### Check Specific Codes
+
+```tsx
+import { isCRPCErrorCode } from 'better-convex/crpc';
+
+if (isCRPCErrorCode(error, 'UNAUTHORIZED')) {
+  router.push('/login');
+}
+```
+
+## Global Error Handling
+
+Handle errors globally in the QueryClient:
+
+```tsx
+import { QueryCache, QueryClient } from '@tanstack/react-query';
+import { isCRPCClientError } from 'better-convex/crpc';
+
+const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error) => {
+      if (isCRPCClientError(error)) {
+        console.log(`[CRPC] ${error.code}:`, error.functionName);
+      }
+    },
+  }),
+});
+```
+
+## Migrate from Convex
+
+### What stays the same
+
+- Errors propagate from server to client
+- ConvexError structure
+
+### What's new
+
+**Before (vanilla Convex):**
+```tsx
+try {
+  await mutation(args);
+} catch (error) {
+  if (error instanceof ConvexError) {
+    console.log(error.data); // unknown shape
+  }
+}
+```
+
+**After (cRPC):**
+```tsx
+mutation.mutate(args, {
+  onError: (error) => {
+    toast.error(error.data?.message ?? 'Failed');
+  },
+});
+```
+
+**Key differences:**
+- TanStack Query error states (`isError`, `error`)
+- Typed error callbacks in `mutationOptions`
+- `error.data?.message` pattern for server errors
+- `CRPCClientError` for client-side auth failures
+- Global error handling via `QueryCache`
+
+## Next Steps
+
+<Cards>
+  <Card title="Server Error Handling" href="/docs/server/error-handling" />
+  <Card title="Queries" href="/docs/react/queries" />
+  <Card title="Mutations" href="/docs/react/mutations" />
+</Cards>

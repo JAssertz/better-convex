@@ -1,0 +1,389 @@
+---
+title: Triggers
+description: Lifecycle hooks for user and session events
+---
+
+## Overview
+
+Triggers let you run custom logic when auth data changes. Use them to:
+
+- Create related records when users sign up
+- Clean up data when users are deleted
+- Validate or transform data before writes
+- Sync with external services
+
+## Available Triggers
+
+### Before Triggers
+
+Run **inside the same Convex transaction** before the database write. Can modify data, enforce invariants, or reject the operation.
+
+| Trigger | Description | Return |
+|---------|-------------|--------|
+| `beforeCreate` | Before inserting a new record | Modified data or `undefined` |
+| `beforeUpdate` | Before updating a record | Modified update or `undefined` |
+| `beforeDelete` | Before deleting a record | Modified doc or `undefined` |
+
+### After Triggers
+
+Run after the database write. Use for side effects.
+
+| Trigger | Description | Return |
+|---------|-------------|--------|
+| `onCreate` | After a record is created | `void` |
+| `onUpdate` | After a record is updated | `void` |
+| `onDelete` | After a record is deleted | `void` |
+
+## Setup
+
+Pass triggers to `createClient`:
+
+```ts title="convex/functions/auth.ts"
+import { createClient } from 'better-convex/auth';
+
+export const authClient = createClient({
+  authFunctions: internal.auth,
+  schema,
+  triggers: {
+    user: {
+      beforeCreate: async (ctx, data) => { /* ... */ },
+      onCreate: async (ctx, doc) => { /* ... */ },
+      beforeUpdate: async (ctx, doc, update) => { /* ... */ },
+      onUpdate: async (ctx, newDoc, oldDoc) => { /* ... */ },
+      beforeDelete: async (ctx, doc) => { /* ... */ },
+      onDelete: async (ctx, doc) => { /* ... */ },
+    },
+    session: {
+      onCreate: async (ctx, session) => { /* ... */ },
+    },
+  },
+});
+```
+
+## User Triggers
+
+### beforeCreate
+
+Transform user data before insertion:
+
+```ts
+triggers: {
+  user: {
+    beforeCreate: async (ctx, data) => {
+      // Generate unique username
+      const username = await generateUniqueUsername(ctx, data.name);
+
+      // Assign admin role based on email
+      const role = adminEmails.includes(data.email) ? 'admin' : 'user';
+
+      return {
+        ...data,
+        username,
+        role,
+      };
+    },
+  },
+}
+```
+
+### onCreate
+
+Create related records after user signup:
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts
+    triggers: {
+      user: {
+        onCreate: async (ctx, user) => {
+          // Create default profile
+          await ctx.db.insert('profiles', {
+            userId: user._id,
+            bio: '',
+            avatar: user.image,
+          });
+
+          // Create personal organization
+          await ctx.db.insert('organizations', {
+            name: `${user.name}'s Workspace`,
+            ownerId: user._id,
+            type: 'personal',
+          });
+
+          // Schedule welcome email
+          await ctx.scheduler.runAfter(0, internal.emails.sendWelcome, {
+            userId: user._id,
+            email: user.email,
+          });
+        },
+      },
+    }
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts
+    import { entsTableFactory } from 'convex-ents';
+    import { entDefinitions } from '../lib/ents';
+
+    triggers: {
+      user: {
+        onCreate: async (ctx, user) => {
+          const table = entsTableFactory(ctx, entDefinitions);
+
+          // Create default profile
+          await table('profiles').insert({
+            userId: user._id,
+            bio: '',
+            avatar: user.image,
+          });
+
+          // Create personal organization
+          await table('organizations').insert({
+            name: `${user.name}'s Workspace`,
+            ownerId: user._id,
+            type: 'personal',
+          });
+
+          // Schedule welcome email
+          await ctx.scheduler.runAfter(0, internal.emails.sendWelcome, {
+            userId: user._id,
+            email: user.email,
+          });
+        },
+      },
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### onUpdate
+
+Sync changes to related records:
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts
+    triggers: {
+      user: {
+        onUpdate: async (ctx, newDoc, oldDoc) => {
+          // Sync avatar change to profiles
+          if (newDoc.image !== oldDoc.image) {
+            const profile = await ctx.db
+              .query('profiles')
+              .withIndex('by_user', (q) => q.eq('userId', newDoc._id))
+              .first();
+
+            if (profile) {
+              await ctx.db.patch(profile._id, { avatar: newDoc.image });
+            }
+          }
+        },
+      },
+    }
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts
+    import { entsTableFactory } from 'convex-ents';
+    import { entDefinitions } from '../lib/ents';
+
+    triggers: {
+      user: {
+        onUpdate: async (ctx, newDoc, oldDoc) => {
+          const table = entsTableFactory(ctx, entDefinitions);
+
+          // Sync avatar change to profiles
+          if (newDoc.image !== oldDoc.image) {
+            const profile = await table('profiles').get('by_user', newDoc._id);
+
+            if (profile) {
+              await profile.patch({ avatar: newDoc.image });
+            }
+          }
+        },
+      },
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### onDelete
+
+Clean up related data:
+
+<Callout type="warn">
+Cascade deletes in triggers are permanent. Test thoroughly and consider soft deletes for critical data.
+</Callout>
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts
+    triggers: {
+      user: {
+        onDelete: async (ctx, user) => {
+          // Delete user's profiles
+          const profiles = await ctx.db
+            .query('profiles')
+            .withIndex('by_user', (q) => q.eq('userId', user._id))
+            .collect();
+
+          for (const profile of profiles) {
+            await ctx.db.delete(profile._id);
+          }
+
+          // Delete user's organizations
+          const orgs = await ctx.db
+            .query('organizations')
+            .withIndex('by_owner', (q) => q.eq('ownerId', user._id))
+            .collect();
+
+          for (const org of orgs) {
+            await ctx.db.delete(org._id);
+          }
+        },
+      },
+    }
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts
+    import { entsTableFactory } from 'convex-ents';
+    import { entDefinitions } from '../lib/ents';
+
+    triggers: {
+      user: {
+        onDelete: async (ctx, user) => {
+          const table = entsTableFactory(ctx, entDefinitions);
+
+          // Delete user's profiles
+          const profiles = await table('profiles', 'by_user', (q) =>
+            q.eq('userId', user._id)
+          );
+
+          for (const profile of profiles) {
+            await profile.delete();
+          }
+
+          // Delete user's organizations
+          const orgs = await table('organizations', 'by_owner', (q) =>
+            q.eq('ownerId', user._id)
+          );
+
+          for (const org of orgs) {
+            await org.delete();
+          }
+        },
+      },
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Session Triggers
+
+### onCreate
+
+Set default session state:
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts
+    triggers: {
+      session: {
+        onCreate: async (ctx, session) => {
+          // Set active organization from user's last active
+          if (!session.activeOrganizationId) {
+            const user = await ctx.db.get(session.userId);
+
+            if (user?.lastActiveOrganizationId) {
+              await ctx.db.patch(session._id, {
+                activeOrganizationId: user.lastActiveOrganizationId,
+              });
+            }
+          }
+        },
+      },
+    }
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts
+    import { entsTableFactory } from 'convex-ents';
+    import { entDefinitions } from '../lib/ents';
+
+    triggers: {
+      session: {
+        onCreate: async (ctx, session) => {
+          const table = entsTableFactory(ctx, entDefinitions);
+
+          // Set active organization from user's last active
+          if (!session.activeOrganizationId) {
+            const user = await table('user').get(session.userId);
+
+            if (user?.lastActiveOrganizationId) {
+              await table('session').getX(session._id).patch({
+                activeOrganizationId: user.lastActiveOrganizationId,
+              });
+            }
+          }
+        },
+      },
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Export Trigger Functions
+
+After configuring triggers, export them from your auth file:
+
+```ts title="convex/functions/auth.ts"
+// Export trigger functions for Better Auth adapter
+export const {
+  beforeCreate,
+  beforeDelete,
+  beforeUpdate,
+  onCreate,
+  onDelete,
+  onUpdate,
+} = authClient.triggersApi();
+```
+
+These functions are called by the Better Auth adapter during CRUD operations.
+
+## Type Safety
+
+Triggers are fully typed based on your schema:
+
+```ts
+triggers: {
+  user: {
+    // `data` is typed as Infer<Schema['tables']['user']['validator']>
+    beforeCreate: async (ctx, data) => {
+      data.email; // string
+      data.name;  // string | null
+      return data;
+    },
+
+    // `doc` includes _id and system fields
+    onCreate: async (ctx, doc) => {
+      doc._id;           // Id<'user'>
+      doc._creationTime; // number
+      doc.email;         // string
+    },
+
+    // `update` is Partial of the validator
+    beforeUpdate: async (ctx, doc, update) => {
+      update.name;  // string | null | undefined
+      update.email; // string | undefined
+      return update;
+    },
+  },
+}
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Helpers" href="/docs/auth/helpers" />
+</Cards>

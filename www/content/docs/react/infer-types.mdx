@@ -1,0 +1,113 @@
+---
+title: Type Inference
+description: Infer input and output types from your Convex API
+---
+
+## Overview
+
+cRPC provides type inference utilities similar to tRPC. Extract input and output types from your API for use in components, utilities, and type-safe operations.
+
+```ts title="convex/shared/types.ts"
+import type { inferApiInputs, inferApiOutputs } from 'better-convex/server';
+import { api } from './_generated/api';
+
+export type Api = typeof api;
+export type ApiInputs = inferApiInputs<Api>;
+export type ApiOutputs = inferApiOutputs<Api>;
+```
+
+## Usage
+
+Access nested procedure types using bracket notation:
+
+```tsx title="src/components/user-card.tsx"
+import type { ApiInputs, ApiOutputs } from '@convex/shared/types';
+
+// Output types
+type User = ApiOutputs['user']['get'];
+type UserList = ApiOutputs['user']['list'];
+type Post = ApiOutputs['post']['get'];
+
+// Input types
+type GetUserArgs = ApiInputs['user']['get'];
+type CreatePostArgs = ApiInputs['post']['create'];
+```
+
+### In Components
+
+```tsx title="src/components/user-profile.tsx"
+import type { ApiOutputs } from '@convex/shared/types';
+
+type User = ApiOutputs['user']['get'];
+
+function UserProfile({ user }: { user: User }) {
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+    </div>
+  );
+}
+```
+
+### In Utility Functions
+
+```tsx title="src/lib/utils/user.ts"
+import type { ApiInputs, ApiOutputs } from '@convex/shared/types';
+
+type User = ApiOutputs['user']['get'];
+type UpdateUserArgs = ApiInputs['user']['update'];
+
+function formatUserName(user: User): string {
+  return user.name ?? 'Anonymous';
+}
+
+function validateUpdateArgs(args: UpdateUserArgs): boolean {
+  return !!args.name || !!args.email;
+}
+```
+
+## Deep Nested Types
+
+For deeply nested APIs, chain bracket notation:
+
+```ts
+// api.organization.members.list
+type OrgMember = ApiOutputs['organization']['members']['list'][number];
+
+// api.project.settings.get
+type ProjectSettings = ApiOutputs['project']['settings']['get'];
+```
+
+## Comparison with Convex
+
+**Before (vanilla Convex):**
+```tsx
+import type { FunctionReturnType, FunctionArgs } from 'convex/server';
+import { api } from '@convex/_generated/api';
+
+type User = FunctionReturnType<typeof api.user.get>;
+type GetUserArgs = FunctionArgs<typeof api.user.get>;
+```
+
+**After (cRPC):**
+```tsx
+import type { ApiInputs, ApiOutputs } from '@convex/shared/types';
+
+type User = ApiOutputs['user']['get'];
+type GetUserArgs = ApiInputs['user']['get'];
+```
+
+**Key differences:**
+- Cleaner bracket notation instead of `typeof api.path`
+- Centralized type definitions in one file
+- Consistent pattern across all procedures
+- Works with nested namespaces
+
+## Next Steps
+
+<Cards>
+  <Card title="Queries" href="/docs/react/queries" />
+  <Card title="Mutations" href="/docs/react/mutations" />
+  <Card title="Server Procedures" href="/docs/server/procedures" />
+</Cards>

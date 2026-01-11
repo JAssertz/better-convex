@@ -1,0 +1,763 @@
+/**
+ * ConvexQueryClient - Real-time subscription bridge for TanStack Query + Convex
+ *
+ * ## Why This Exists
+ *
+ * TanStack Query is request-based (fetch once, cache, refetch on stale).
+ * Convex is subscription-based (WebSocket push updates in real-time).
+ *
+ * This client bridges the two by:
+ * 1. Listening to TanStack Query cache events (query added/removed)
+ * 2. Creating Convex WebSocket subscriptions for each active query
+ * 3. Pushing Convex updates into TanStack Query cache
+ *
+ * ## Architecture
+ *
+ * ```
+ * useConvexQuery (hook)
+ *       │
+ *       ▼
+ * TanStack Query Cache ◄──── ConvexQueryClient listens to cache events
+ *       │                           │
+ *       │                           ▼
+ *       │                    Convex WebSocket subscriptions
+ *       │                           │
+ *       │                           ▼
+ *       └──────────────────── Real-time updates pushed to cache
+ * ```
+ *
+ * ## Subscription Lifecycle
+ *
+ * WebSocket subscriptions are decoupled from cache retention:
+ * - Subscribe when query has observers (component mounted)
+ * - Unsubscribe immediately when last observer removed (component unmounted)
+ * - Cache data persists for gcTime (default 5 min) for instant back-navigation
+ * - On remount: show cached data instantly, re-subscribe for fresh updates
+ *
+ * ## Query Key Format
+ *
+ * Convex queries use this key format:
+ * ```ts
+ * ['convexQuery', 'functionName', { args }]
+ * ['convexAction', 'functionName', { args }]
+ * ['convexQuery', 'functionName', 'skip'] // skipped queries
+ * ```
+ *
+ * ## SSR Support
+ *
+ * On server: Uses ConvexHttpClient for one-shot queries (no WebSocket).
+ * On client: Uses ConvexReactClient with WebSocket subscriptions.
+ *
+ * @module
+ */
+
+import {
+  notifyManager,
+  type QueryCache,
+  type QueryClient,
+  type QueryFunction,
+  type QueryFunctionContext,
+  type QueryKey,
+} from '@tanstack/react-query';
+import { ConvexHttpClient } from 'convex/browser';
+import {
+  ConvexReactClient,
+  type ConvexReactClientOptions,
+  type Watch,
+} from 'convex/react';
+import type {
+  FunctionArgs,
+  FunctionReference,
+  FunctionReturnType,
+} from 'convex/server';
+import { CRPCClientError } from '../crpc/error';
+import type { ConvexQueryMeta } from '../crpc/types';
+import { createHashFn } from '../internal/hash';
+import { isConvexQuery } from '../internal/query-key';
+import type { AuthStore } from './auth-store';
+
+const isServer = typeof window === 'undefined';
+
+// ============================================================================
+// Type Guards for Query Key Format
+// ============================================================================
+
+/**
+ * Check if query is marked as skipped (used when auth required but not authenticated).
+ * Skipped queries have 'skip' as the third element instead of args.
+ */
+function isConvexSkipped(
+  queryKey: readonly unknown[]
+): queryKey is ['convexQuery' | 'convexAction', unknown, 'skip'] {
+  return (
+    queryKey.length >= 2 &&
+    ['convexQuery', 'convexAction'].includes(queryKey[0] as string) &&
+    queryKey[2] === 'skip'
+  );
+}
+
+/**
+ * Check if query key is for a Convex action function.
+ * Format: ['convexAction', 'namespace:functionName', { args }]
+ */
+function isConvexAction(
+  queryKey: readonly unknown[]
+): queryKey is ['convexAction', string, Record<string, unknown>] {
+  return queryKey.length >= 2 && queryKey[0] === 'convexAction';
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+export interface ConvexQueryClientOptions extends ConvexReactClientOptions {
+  /** Auth store for checking auth state in queryFn */
+  authStore?: AuthStore;
+
+  /** TanStack QueryClient. Can also be set later via .connect(queryClient) */
+  queryClient?: QueryClient;
+
+  /** Custom fetch for SSR. Avoid bundling on client. */
+  serverFetch?: typeof globalThis.fetch;
+
+  /**
+   * Opt out of consistent SSR queries for faster performance.
+   * Trade-off: queries may return results from different timestamps.
+   */
+  dangerouslyUseInconsistentQueriesDuringSSR?: boolean;
+
+  /**
+   * Delay in ms before unsubscribing when a query has no observers.
+   * Prevents wasteful unsubscribe/subscribe cycles from React StrictMode
+   * and quick back/forward navigation. Set to 0 to unsubscribe immediately.
+   * @default 3000
+   */
+  unsubscribeDelay?: number;
+}
+
+// ============================================================================
+// ConvexQueryClient
+// ============================================================================
+
+/**
+ * Bridges TanStack Query with Convex real-time subscriptions.
+ *
+ * ## Setup
+ *
+ * ```ts
+ * const convexQueryClient = new ConvexQueryClient(CONVEX_URL);
+ *
+ * const queryClient = new QueryClient({
+ *   defaultOptions: {
+ *     queries: {
+ *       queryFn: convexQueryClient.queryFn(),
+ *       queryKeyHashFn: convexQueryClient.hashFn(),
+ *     },
+ *   },
+ * });
+ *
+ * convexQueryClient.connect(queryClient);
+ * ```
+ *
+ * ## How It Works
+ *
+ * 1. **Query Added**: When TanStack adds a Convex query to cache,
+ *    ConvexQueryClient creates a WebSocket subscription via `watchQuery`.
+ *
+ * 2. **Real-time Updates**: When Convex pushes an update, the subscription
+ *    callback updates the TanStack cache via `setQueryData`.
+ *
+ * 3. **Query Removed**: When TanStack removes a query (no observers),
+ *    ConvexQueryClient unsubscribes from the WebSocket.
+ *
+ * ## Auth Integration
+ *
+ * Auth is handled via TanStack Query `meta`:
+ * - `convexQuery` includes `meta.authType` from generated Convex metadata
+ * - `queryFn` checks `meta.authType` via `getAuthState()` and throws `CRPCClientError` if unauthorized
+ * - `subscribeInner` respects `meta.subscribe === false` to skip WebSocket
+ */
+export class ConvexQueryClient {
+  /** Convex client for WebSocket subscriptions (client) and one-shot queries */
+  convexClient: ConvexReactClient;
+
+  /**
+   * Active WebSocket subscriptions, keyed by TanStack query hash.
+   * Each subscription has:
+   * - watch: Convex Watch object for the query
+   * - unsubscribe: Cleanup function to remove the subscription
+   * - queryKey: Original query key for cache updates
+   */
+  subscriptions: Record<
+    string,
+    {
+      watch: Watch<unknown>;
+      unsubscribe: () => void;
+      queryKey: ['convexQuery', string, Record<string, unknown>];
+    }
+  >;
+
+  /** Cleanup function for QueryCache subscription */
+  unsubscribe: (() => void) | undefined;
+
+  /**
+   * Pending unsubscribes with timeout IDs.
+   * Used to debounce unsubscribe/subscribe cycles from React StrictMode.
+   */
+  private pendingUnsubscribes: Map<string, ReturnType<typeof setTimeout>> =
+    new Map();
+
+  /** HTTP client for SSR queries (no WebSocket on server) */
+  serverHttpClient?: ConvexHttpClient;
+
+  /** TanStack QueryClient reference */
+  _queryClient: QueryClient | undefined;
+
+  /** SSR query mode: 'consistent' guarantees same timestamp, 'inconsistent' is faster */
+  ssrQueryMode: 'consistent' | 'inconsistent';
+
+  /** Auth store for checking auth state */
+  private authStore?: AuthStore;
+
+  /** Delay before unsubscribing when query has no observers */
+  private unsubscribeDelay: number;
+
+  /** Update auth store (for HMR where jotai store may reset) */
+  updateAuthStore(authStore?: AuthStore) {
+    this.authStore = authStore;
+  }
+
+  /** Get current auth state from store */
+  private getAuthState() {
+    if (!this.authStore) return;
+    return {
+      isAuthenticated: !!this.authStore.get('token'),
+      isLoading: this.authStore.get('isLoading'),
+      onUnauthorized: this.authStore.get('onQueryUnauthorized'),
+    };
+  }
+
+  /** Get QueryClient, throwing if not connected */
+  get queryClient() {
+    if (!this._queryClient) {
+      throw new Error(
+        'ConvexQueryClient not connected to TanStack QueryClient.'
+      );
+    }
+    return this._queryClient;
+  }
+
+  /**
+   * Create a ConvexQueryClient.
+   *
+   * @param client - Convex URL string or existing ConvexReactClient
+   * @param options - Configuration options
+   */
+  constructor(
+    client: ConvexReactClient | string,
+    options: ConvexQueryClientOptions = {}
+  ) {
+    if (typeof client === 'string') {
+      this.convexClient = new ConvexReactClient(client, options);
+    } else {
+      this.convexClient = client;
+    }
+
+    this.ssrQueryMode = options.dangerouslyUseInconsistentQueriesDuringSSR
+      ? 'inconsistent'
+      : 'consistent';
+    this.subscriptions = {};
+    this.authStore = options.authStore;
+    this.unsubscribeDelay = options.unsubscribeDelay ?? 3000;
+
+    // Auto-connect if queryClient provided in options
+    if (options.queryClient) {
+      this._queryClient = options.queryClient;
+      this.unsubscribe = this.subscribeInner(
+        options.queryClient.getQueryCache()
+      );
+    }
+
+    // Create HTTP client for SSR
+    if (isServer) {
+      this.serverHttpClient = new ConvexHttpClient(this.convexClient.url, {
+        fetch: options.serverFetch,
+      });
+    }
+  }
+
+  /**
+   * Connect to TanStack QueryClient.
+   * Starts listening to cache events for subscription management.
+   */
+  connect(queryClient: QueryClient) {
+    // Already connected to same client - no-op (idempotent for HMR)
+    if (this._queryClient === queryClient && this.unsubscribe) {
+      return;
+    }
+    // Different client - unsubscribe from old first
+    if (this.unsubscribe) {
+      this.unsubscribe();
+    }
+    this._queryClient = queryClient;
+    this.unsubscribe = this.subscribeInner(queryClient.getQueryCache());
+  }
+
+  /**
+   * Clean up all subscriptions.
+   * Call this when the client is no longer needed.
+   */
+  destroy() {
+    this.unsubscribe?.();
+    // Clear pending unsubscribe timeouts
+    for (const timeoutId of this.pendingUnsubscribes.values()) {
+      clearTimeout(timeoutId);
+    }
+    this.pendingUnsubscribes.clear();
+    // Unsubscribe all active subscriptions
+    for (const sub of Object.values(this.subscriptions)) {
+      sub.unsubscribe();
+    }
+    this.subscriptions = {};
+  }
+
+  /**
+   * Unsubscribe from all auth-required queries.
+   * Call before logout to prevent UNAUTHORIZED errors during session invalidation.
+   */
+  unsubscribeAuthQueries() {
+    for (const [queryHash, sub] of Object.entries(this.subscriptions)) {
+      const query = this.queryClient.getQueryCache().get(queryHash);
+      const meta = query?.meta as ConvexQueryMeta | undefined;
+
+      if (meta?.authType === 'required') {
+        sub.unsubscribe();
+        delete this.subscriptions[queryHash];
+      }
+    }
+  }
+
+  /**
+   * Batch update all subscriptions.
+   * Called internally when Convex client reconnects.
+   */
+  onUpdate = () => {
+    notifyManager.batch(() => {
+      for (const key of Object.keys(this.subscriptions)) {
+        this.onUpdateQueryKeyHash(key);
+      }
+    });
+  };
+
+  /**
+   * Handle Convex subscription update for a specific query.
+   * Reads latest value from Watch and updates TanStack cache.
+   *
+   * @param queryHash - TanStack query hash identifying the query
+   */
+  onUpdateQueryKeyHash(queryHash: string) {
+    const subscription = this.subscriptions[queryHash];
+    if (!subscription) {
+      throw new Error(
+        `Internal ConvexQueryClient error: onUpdateQueryKeyHash called for ${queryHash}`
+      );
+    }
+
+    const queryCache = this.queryClient.getQueryCache();
+    const query = queryCache.get(queryHash);
+    if (!query) {
+      return;
+    }
+
+    const { queryKey, watch } = subscription;
+
+    // Get latest value from Convex subscription
+    let result: { ok: true; value: unknown } | { ok: false; error: unknown };
+    try {
+      result = { ok: true, value: watch.localQueryResult() };
+    } catch (error) {
+      result = { ok: false, error };
+    }
+
+    if (result.ok) {
+      // Don't overwrite hydrated data with null/undefined from initial subscription
+      // localQueryResult() returns undefined before the server sends the first update
+      // Guard against both null and undefined - subscription sends null before server responds
+      const existingData = this.queryClient.getQueryData(queryKey);
+      const hasResultValue =
+        result.value !== null && result.value !== undefined;
+      const hasExistingData =
+        existingData !== null && existingData !== undefined;
+
+      if (hasResultValue || !hasExistingData) {
+        this.queryClient.setQueryData(queryKey, result.value);
+      }
+    } else {
+      // Push error state to TanStack cache
+      const { error } = result;
+      query.setState(
+        {
+          error: error as Error,
+          errorUpdateCount: query.state.errorUpdateCount + 1,
+          errorUpdatedAt: Date.now(),
+          fetchFailureCount: query.state.fetchFailureCount + 1,
+          fetchFailureReason: error as Error,
+          fetchStatus: 'idle',
+          status: 'error',
+        },
+        { meta: 'set by ConvexQueryClient' }
+      );
+    }
+  }
+
+  /**
+   * Subscribe to TanStack QueryCache events.
+   * Creates/removes Convex WebSocket subscriptions as queries are added/removed.
+   *
+   * @param queryCache - TanStack QueryCache to subscribe to
+   * @returns Cleanup function to unsubscribe
+   */
+  subscribeInner(queryCache: QueryCache): () => void {
+    // No subscriptions on server (use HTTP queries instead)
+    if (isServer) return () => {};
+
+    return queryCache.subscribe((event) => {
+      // Only handle Convex queries - actions are excluded intentionally.
+      // Actions are one-shot fetches (like HTTP requests) and don't support
+      // WebSocket subscriptions. They're handled by queryFn() as one-time calls.
+      if (!isConvexQuery(event.query.queryKey)) {
+        return;
+      }
+      // Ignore skipped queries (auth required but not authenticated)
+      if (isConvexSkipped(event.query.queryKey)) {
+        return;
+      }
+
+      switch (event.type) {
+        // Query removed from cache → unsubscribe from Convex (if still subscribed)
+        case 'removed': {
+          // Clear any pending unsubscribe timeout
+          const pendingTimeout = this.pendingUnsubscribes.get(
+            event.query.queryHash
+          );
+          if (pendingTimeout) {
+            clearTimeout(pendingTimeout);
+            this.pendingUnsubscribes.delete(event.query.queryHash);
+          }
+          // Unsubscribe immediately
+          const sub = this.subscriptions[event.query.queryHash];
+          if (sub) {
+            sub.unsubscribe();
+            delete this.subscriptions[event.query.queryHash];
+          }
+          break;
+        }
+
+        // Query added to cache → create Convex subscription
+        case 'added': {
+          // Skip subscription if meta.subscribe === false (one-off query mode)
+          const meta = event.query.meta as ConvexQueryMeta | undefined;
+          if (meta?.subscribe === false) {
+            break;
+          }
+
+          const [, funcName, args] = event.query.queryKey;
+
+          // Skip subscription if query has no observers
+          if (event.query.getObserversCount() === 0) {
+            break;
+          }
+
+          // Create WebSocket subscription via Convex watchQuery
+          const watch = this.convexClient.watchQuery(
+            funcName as unknown as FunctionReference<'query'>,
+            args as FunctionArgs<FunctionReference<'query'>>
+          );
+
+          // Update TanStack cache when Convex pushes new data
+          const unsubscribe = watch.onUpdate(() => {
+            this.onUpdateQueryKeyHash(event.query.queryHash);
+          });
+
+          this.subscriptions[event.query.queryHash] = {
+            queryKey: event.query.queryKey,
+            watch: watch as Watch<unknown>,
+            unsubscribe,
+          };
+          break;
+        }
+
+        // Create subscription when first observer is added (query enabled)
+        case 'observerAdded': {
+          // Cancel any pending unsubscribe (handles React StrictMode double-mount)
+          const pendingTimeout = this.pendingUnsubscribes.get(
+            event.query.queryHash
+          );
+          if (pendingTimeout) {
+            clearTimeout(pendingTimeout);
+            this.pendingUnsubscribes.delete(event.query.queryHash);
+          }
+
+          // Skip if already subscribed
+          if (this.subscriptions[event.query.queryHash]) {
+            break;
+          }
+
+          // Skip subscription if query is disabled
+          if ((event.query.options as any).enabled === false) {
+            break;
+          }
+
+          // Skip subscription if meta.subscribe === false
+          const meta = event.query.meta as ConvexQueryMeta | undefined;
+          if (meta?.subscribe === false) {
+            break;
+          }
+
+          const [, funcName, args] = event.query.queryKey;
+
+          // Create WebSocket subscription via Convex watchQuery
+          const watch = this.convexClient.watchQuery(
+            funcName as unknown as FunctionReference<'query'>,
+            args as FunctionArgs<FunctionReference<'query'>>
+          );
+
+          // Update TanStack cache when Convex pushes new data
+          const unsubscribe = watch.onUpdate(() => {
+            this.onUpdateQueryKeyHash(event.query.queryHash);
+          });
+
+          this.subscriptions[event.query.queryHash] = {
+            queryKey: event.query.queryKey,
+            watch: watch as Watch<unknown>,
+            unsubscribe,
+          };
+          break;
+        }
+
+        // Debounced unsubscribe when last observer removed (free server resources)
+        // Grace period prevents wasteful unsubscribe/subscribe from StrictMode
+        // Cache data persists for gcTime (default 5 min) for instant back-navigation
+        case 'observerRemoved': {
+          if (event.query.getObserversCount() === 0) {
+            const sub = this.subscriptions[event.query.queryHash];
+            if (sub) {
+              // Schedule unsubscribe after grace period
+              const timeoutId = setTimeout(() => {
+                this.pendingUnsubscribes.delete(event.query.queryHash);
+                // Verify still no observers before unsubscribing
+                if (event.query.getObserversCount() === 0) {
+                  sub.unsubscribe();
+                  delete this.subscriptions[event.query.queryHash];
+                }
+              }, this.unsubscribeDelay);
+              this.pendingUnsubscribes.set(event.query.queryHash, timeoutId);
+            }
+          }
+          break;
+        }
+
+        case 'observerResultsUpdated':
+          break;
+
+        // Ignore our own updates (marked with meta)
+        case 'updated': {
+          if (
+            event.action.type === 'setState' &&
+            event.action.setStateOptions?.meta === 'set by ConvexQueryClient'
+          ) {
+            break;
+          }
+          break;
+        }
+
+        // Handle when query options change (e.g., enabled: false ↔ true)
+        case 'observerOptionsUpdated': {
+          const isDisabled = (event.query.options as any).enabled === false;
+          const isSubscribed = !!this.subscriptions[event.query.queryHash];
+
+          // enabled: true → false: unsubscribe
+          if (isDisabled && isSubscribed) {
+            const sub = this.subscriptions[event.query.queryHash];
+            sub.unsubscribe();
+            delete this.subscriptions[event.query.queryHash];
+            break;
+          }
+
+          // enabled: false → true: subscribe (handled below)
+          if (isSubscribed || isDisabled) {
+            break;
+          }
+
+          // Skip subscription if meta.subscribe === false
+          const meta = event.query.meta as ConvexQueryMeta | undefined;
+          if (meta?.subscribe === false) {
+            break;
+          }
+
+          const [, funcName, args] = event.query.queryKey;
+
+          // Create WebSocket subscription via Convex watchQuery
+          const watch = this.convexClient.watchQuery(
+            funcName as unknown as FunctionReference<'query'>,
+            args as FunctionArgs<FunctionReference<'query'>>
+          );
+
+          // Update TanStack cache when Convex pushes new data
+          const unsubscribe = watch.onUpdate(() => {
+            this.onUpdateQueryKeyHash(event.query.queryHash);
+          });
+
+          this.subscriptions[event.query.queryHash] = {
+            queryKey: event.query.queryKey,
+            watch: watch as Watch<unknown>,
+            unsubscribe,
+          };
+          break;
+        }
+      }
+    });
+  }
+
+  /**
+   * Create default queryFn for TanStack QueryClient.
+   *
+   * Handles:
+   * - Convex queries and actions
+   * - Auth checking (throws CRPCClientError if unauthorized)
+   * - SSR via HTTP client
+   * - Client via WebSocket client
+   *
+   * ## Usage
+   *
+   * ```ts
+   * const queryClient = new QueryClient({
+   *   defaultOptions: {
+   *     queries: {
+   *       queryFn: convexQueryClient.queryFn(),
+   *     },
+   *   },
+   * });
+   * ```
+   *
+   * @param otherFetch - Fallback queryFn for non-Convex queries
+   * @returns QueryFunction compatible with TanStack Query
+   */
+  queryFn(
+    otherFetch: QueryFunction<unknown, QueryKey> = throwBecauseNotConvexQuery
+  ) {
+    return async <T extends FunctionReference<'query', 'public'>>(
+      context: QueryFunctionContext<readonly unknown[]>
+    ): Promise<FunctionReturnType<T>> => {
+      const { queryKey, meta: rawMeta } = context;
+      const meta = rawMeta as ConvexQueryMeta | undefined;
+
+      // Skipped queries should never run (enabled: false)
+      if (isConvexSkipped(queryKey)) {
+        throw new Error(
+          'Skipped query should not actually run, should { enabled: false }'
+        );
+      }
+
+      // Handle Convex queries
+      if (isConvexQuery(queryKey)) {
+        const [, funcName, args] = queryKey;
+
+        // Check auth via authStore if authType in meta
+        if (meta?.authType === 'required' && !isServer && this.authStore) {
+          const authState = this.getAuthState();
+          if (authState && !authState.isLoading && !authState.isAuthenticated) {
+            authState.onUnauthorized({ queryName: funcName });
+            throw new CRPCClientError({
+              code: 'UNAUTHORIZED',
+              functionName: funcName,
+            });
+          }
+        }
+
+        // Execute query: HTTP on server, WebSocket on client
+        if (isServer) {
+          if (this.ssrQueryMode === 'consistent') {
+            return (await this.serverHttpClient!.consistentQuery(
+              funcName as unknown as FunctionReference<'query'>,
+              args
+            )) as FunctionReturnType<T>;
+          }
+          return (await this.serverHttpClient!.query(
+            funcName as unknown as FunctionReference<'query'>,
+            args
+          )) as FunctionReturnType<T>;
+        }
+
+        return (await this.convexClient.query(
+          funcName as unknown as FunctionReference<'query'>,
+          args
+        )) as FunctionReturnType<T>;
+      }
+
+      // Handle Convex actions (same pattern as queries)
+      if (isConvexAction(queryKey)) {
+        const [, funcName, args] = queryKey;
+
+        // Check auth via authStore if authType in meta
+        if (meta?.authType === 'required' && !isServer && this.authStore) {
+          const authState = this.getAuthState();
+          if (authState && !authState.isLoading && !authState.isAuthenticated) {
+            authState.onUnauthorized({ queryName: funcName });
+            throw new CRPCClientError({
+              code: 'UNAUTHORIZED',
+              functionName: funcName,
+            });
+          }
+        }
+
+        if (isServer) {
+          return (await this.serverHttpClient!.action(
+            funcName as unknown as FunctionReference<'action'>,
+            args
+          )) as FunctionReturnType<T>;
+        }
+
+        return (await this.convexClient.action(
+          funcName as unknown as FunctionReference<'action'>,
+          args
+        )) as FunctionReturnType<T>;
+      }
+
+      // Fallback to other queryFn for non-Convex queries
+      return otherFetch(context) as Promise<FunctionReturnType<T>>;
+    };
+  }
+
+  /**
+   * Create hash function for TanStack QueryClient.
+   *
+   * Uses Convex-specific hashing for Convex queries to ensure
+   * consistent cache keys across serialization.
+   *
+   * ## Usage
+   *
+   * ```ts
+   * const queryClient = new QueryClient({
+   *   defaultOptions: {
+   *     queries: {
+   *       queryKeyHashFn: convexQueryClient.hashFn(),
+   *     },
+   *   },
+   * });
+   * ```
+   *
+   * @param otherHashKey - Fallback hash function for non-Convex queries
+   * @returns Hash function compatible with TanStack Query
+   */
+  hashFn(fallback?: (queryKey: readonly unknown[]) => string) {
+    return createHashFn(fallback);
+  }
+}
+
+/** Default fallback queryFn that throws for non-Convex queries */
+function throwBecauseNotConvexQuery(
+  context: QueryFunctionContext<readonly unknown[]>
+) {
+  throw new Error(`Query key is not for a Convex Query: ${context.queryKey}`);
+}

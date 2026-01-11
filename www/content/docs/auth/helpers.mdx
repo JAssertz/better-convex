@@ -1,0 +1,283 @@
+---
+title: Helpers
+description: Server and client utilities for authentication
+---
+
+## Overview
+
+Authentication helpers provide utilities for both server and client code. Server helpers extract user identity and session data from context. Client hooks manage auth state in React components.
+
+## Server Helpers
+
+### getAuthUserIdentity
+
+Get the full user identity from context:
+
+```ts
+import { getAuthUserIdentity } from 'better-convex/auth';
+
+const identity = await getAuthUserIdentity(ctx);
+
+if (identity) {
+  identity.userId;    // Id<'user'>
+  identity.sessionId; // Id<'session'>
+  identity.subject;   // string (user ID as string)
+}
+```
+
+### getAuthUserId
+
+Get just the user ID:
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts
+    import { getAuthUserId } from 'better-convex/auth';
+
+    const userId = await getAuthUserId(ctx);
+
+    if (!userId) {
+      throw new CRPCError({ code: 'UNAUTHORIZED' });
+    }
+
+    // userId is Id<'user'>
+    const user = await ctx.db.get(userId);
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts
+    import { getAuthUserId } from 'better-convex/auth';
+
+    const userId = await getAuthUserId(ctx);
+
+    if (!userId) {
+      throw new CRPCError({ code: 'UNAUTHORIZED' });
+    }
+
+    // userId is Id<'user'>
+    const user = await ctx.table('user').get(userId);
+    ```
+  </Tab>
+</Tabs>
+
+### getSession
+
+Get the current session document:
+
+```ts
+import { getSession } from 'better-convex/auth';
+
+const session = await getSession(ctx);
+
+if (session) {
+  session._id;                  // Id<'session'>
+  session.userId;               // Id<'user'>
+  session.activeOrganizationId; // Id<'organization'> | null
+  session.expiresAt;            // number
+}
+```
+
+### getHeaders
+
+Build headers from session for external API calls:
+
+```ts
+import { getHeaders } from 'better-convex/auth';
+
+const headers = await getHeaders(ctx);
+// Headers { authorization: 'Bearer ...', x-forwarded-for: '...' }
+
+// Use with fetch
+const response = await fetch('https://api.example.com', {
+  headers,
+});
+```
+
+## Client Hooks
+
+### useAuthStatus
+
+Get comprehensive auth state:
+
+```tsx title="src/components/auth-status.tsx"
+import { useAuthStatus } from 'better-convex/auth-client';
+
+function AuthStatus() {
+  const { hasSession, isAuthenticated, isLoading } = useAuthStatus();
+
+  if (isLoading) return <Spinner />;
+
+  return (
+    <div>
+      {isAuthenticated ? 'Logged in' : 'Logged out'}
+    </div>
+  );
+}
+```
+
+| Property | Description |
+|----------|-------------|
+| `hasSession` | Has a session token (may not be verified) |
+| `isAuthenticated` | Token exists AND Convex auth verified |
+| `isLoading` | Convex auth is still loading |
+
+### useIsAuth
+
+Simple boolean check:
+
+```tsx title="src/components/example.tsx"
+import { useIsAuth } from 'better-convex/auth-client';
+
+function Component() {
+  // Check if session exists
+  const hasSession = useIsAuth();
+
+  // Check if fully authenticated (verified)
+  const isVerified = useIsAuth(true);
+
+  return hasSession ? <LoggedInUI /> : <LoginButton />;
+}
+```
+
+### useAuthGuard
+
+Guard mutations that require authentication:
+
+```tsx title="src/components/create-user.tsx"
+import { useAuthGuard } from 'better-convex/auth-client';
+import { useMutation } from '@tanstack/react-query';
+
+function CreateUserButton() {
+  const guard = useAuthGuard();
+  const createUser = useMutation(crpc.user.create.mutationOptions());
+
+  const handleClick = () => {
+    // Returns true if blocked (not authenticated)
+    if (guard()) return;
+
+    // User is authenticated, safe to mutate
+    createUser.mutate({ name: 'New User', email: 'user@example.com' });
+  };
+
+  return <button onClick={handleClick}>Create User</button>;
+}
+```
+
+With callback:
+
+```tsx title="src/components/create-user.tsx"
+const handleClick = () => {
+  guard(async () => {
+    // Only runs if authenticated
+    await createUser.mutateAsync({ name: 'New User', email: 'user@example.com' });
+    toast.success('User created!');
+  });
+};
+```
+
+### useSyncSession
+
+Sync session token from your auth library to the store:
+
+```tsx title="src/components/auth-sync.tsx"
+import { useSyncSession } from 'better-convex/auth-client';
+import { useSession } from 'better-auth/react';
+
+function AuthSync() {
+  const session = useSession();
+  useSyncSession(session);
+  return null;
+}
+```
+
+## Conditional Rendering
+
+### Authenticated
+
+Render children only when authenticated:
+
+```tsx title="src/app.tsx"
+import { Authenticated } from 'better-convex/auth-client';
+
+function App() {
+  return (
+    <Authenticated>
+      <Dashboard />
+    </Authenticated>
+  );
+}
+```
+
+### Unauthenticated
+
+Render children only when not authenticated:
+
+```tsx title="src/app.tsx"
+import { Unauthenticated } from 'better-convex/auth-client';
+
+function App() {
+  return (
+    <>
+      <Authenticated>
+        <Dashboard />
+      </Authenticated>
+      <Unauthenticated>
+        <LoginPage />
+      </Unauthenticated>
+    </>
+  );
+}
+```
+
+With verification:
+
+```tsx title="src/app.tsx"
+// Wait for auth verification before showing login
+<Unauthenticated verified>
+  <LoginPage />
+</Unauthenticated>
+```
+
+## Provider Configuration
+
+Configure auth callbacks in the provider:
+
+```tsx title="src/app.tsx"
+import { ConvexAuthProvider } from 'better-convex/auth-client';
+
+function App() {
+  return (
+    <ConvexAuthProvider
+      client={convexClient}
+      authClient={authClient}
+      initialToken={serverToken}
+      onMutationUnauthorized={() => {
+        // Custom handler for unauthorized mutations
+        openLoginModal();
+      }}
+      onQueryUnauthorized={({ queryName }) => {
+        // Custom handler for unauthorized queries
+        console.log(`Unauthorized query: ${queryName}`);
+      }}
+    >
+      {children}
+    </ConvexAuthProvider>
+  );
+}
+```
+
+### Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `client` | `ConvexReactClient` | Convex client instance |
+| `authClient` | `AuthClient` | Better Auth client instance |
+| `initialToken` | `string?` | Initial session token (from SSR) |
+| `onMutationUnauthorized` | `() => void` | Called when mutation is blocked |
+| `onQueryUnauthorized` | `({ queryName }) => void` | Called when query is blocked |
+
+## Next Steps
+
+<Cards>
+  <Card title="Triggers" href="/docs/auth/triggers" />
+</Cards>

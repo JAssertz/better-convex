@@ -1,0 +1,121 @@
+---
+description: ALWAYS load when using dev-browser skill for browser automation testing. Handles dev server detection, port discovery, browser reuse, anonymous login, and timing considerations.
+alwaysApply: false
+---
+
+# Using Dev Browser
+
+**ALWAYS load this skill when using the dev-browser skill for browser automation.**
+
+## Pre-flight Checklist
+
+Before running any browser automation:
+
+### 1. Reuse Existing Browser Pages First
+
+**NEVER open a new browser page if one already exists.** Always check first:
+
+```typescript
+const client = await connect();
+const pages = await client.list();
+console.log("Existing pages:", pages);
+
+// Reuse existing page if available
+const page = await client.page("admin"); // Will reuse if exists
+console.log("Current URL:", page.url()); // Port is in the URL!
+```
+
+If pages exist, **skip port discovery** - the URL already tells you the port.
+
+### 2. Discover the Correct Port (only if no existing pages)
+
+Port should be 3005.
+
+### 3. Check Dev Server Status
+
+**DO NOT start the dev server yourself.** Instead:
+
+1. Check if already running by attempting to connect
+2. If connection fails, **ask the user** to start it:
+   ```
+   "The dev server doesn't appear to be running. Please start it with `bun dev` (or the appropriate command) and let me know when it's ready."
+   ```
+
+### 4. Handle Authentication
+
+**Check for anonymous login first:**
+
+1. Look for anonymous/dev login buttons (e.g., "Anonymous Sign In", "Dev Login")
+2. If anonymous login exists, use it
+3. If no anonymous login, **ask user to login manually**:
+   ```
+   "Please log in to the application in the browser. Let me know when you're ready to continue."
+   ```
+
+### 5. NEVER Close Browser
+
+**DO NOT call `client.close()` when done.** The user may want to continue testing.
+
+Only call:
+
+```typescript
+await client.disconnect(); // Disconnects but keeps pages open
+```
+
+## Timing Considerations
+
+**Tool call overhead**: Each script execution takes **10-20 seconds** to start (connection, setup).
+**Browser actions**: Actual page operations are fast (<100ms for most actions, <1s for API calls).
+
+### Implications
+
+If testing async behavior (loading states, API responses, transitions):
+
+- **Cannot split across tool calls** - by next script, async is already resolved
+- **Must capture in same script** - trigger action + wait + observe in one execution
+- **Add artificial delay in app code** - temporarily add `await new Promise(r => setTimeout(r, 2000))` in async handlers to slow them down for observation
+- Add `page.waitForTimeout()` to observe transient states:
+
+```typescript
+// Example: Testing a loading state
+await button.click();
+await page.waitForTimeout(100); // Catch loading spinner
+await page.screenshot({ path: "tmp/loading.png" });
+await page.waitForSelector('[data-loaded="true"]'); // Wait for completion
+await page.screenshot({ path: "tmp/loaded.png" });
+```
+
+### Best Practices
+
+- Use `waitForPageLoad()` after navigation
+- Use `page.waitForSelector()` for dynamic content
+- Use `page.waitForTimeout(100-500)` only to observe transient states
+- Batch related assertions in one script
+
+## Standard Workflow
+
+```typescript
+import { connect, waitForPageLoad } from "@/client.js";
+
+const client = await connect();
+
+// 1. Check existing pages
+const pages = await client.list();
+console.log("Existing pages:", pages);
+
+// 2. Get or create page (will reuse if exists)
+const page = await client.page("admin");
+
+// 3. Check current URL - might already be logged in
+console.log("Current URL:", page.url());
+
+// 4. Only navigate/login if needed
+if (page.url().includes("/login")) {
+  // Handle login...
+}
+
+// 5. Do your testing...
+
+// 6. Disconnect (NOT close)
+await client.disconnect();
+```

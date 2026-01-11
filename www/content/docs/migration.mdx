@@ -1,0 +1,580 @@
+---
+title: Migration
+description: Migrate from vanilla Convex to better-convex
+---
+
+## Overview
+
+Migrate incrementally—better-convex works alongside vanilla Convex. Convert functions one at a time while keeping existing code working.
+
+## Step 1: Install
+
+```bash
+bun add better-convex @tanstack/react-query zod
+```
+
+## Step 2: Server Setup
+
+### Create cRPC Builder
+
+```ts title="convex/lib/crpc.ts"
+import { initCRPC } from 'better-convex/server';
+import {
+  query,
+  mutation,
+  internalQuery,
+  internalMutation,
+  action,
+  internalAction,
+} from '../functions/_generated/server';
+import type { DataModel } from '../functions/_generated/dataModel';
+
+const c = initCRPC
+  .dataModel<DataModel>()
+  .create({
+    query,
+    internalQuery,
+    mutation,
+    internalMutation,
+    action,
+    internalAction,
+  });
+
+export const publicQuery = c.query;
+export const publicMutation = c.mutation;
+export const publicAction = c.action;
+```
+
+### Context - What Stays the Same
+
+Base context properties work identically:
+- `ctx.db` — Database reader/writer
+- `ctx.auth` — Authentication
+- `ctx.storage` — File storage
+- `ctx.scheduler` — Scheduler (mutations only)
+
+### Context - What's New
+
+- **Destructured params**: `{ ctx, input }` instead of `(ctx, args)`
+- **Ents support**: `ctx.table()` if configured with `.context()`
+
+## Step 3: Migrate Procedures
+
+### Queries
+
+**Before:**
+```ts
+import { query } from './_generated/server';
+import { v } from 'convex/values';
+
+export const get = query({
+  args: { id: v.id('user') },
+  handler: async (ctx, args) => {
+    return ctx.db.get(args.id);
+  },
+});
+```
+
+**After:**
+```ts
+import { z } from 'zod';
+import { zid } from 'convex-helpers/server/zod';
+import { publicQuery } from '../lib/crpc';
+
+export const get = publicQuery
+  .input(z.object({ id: zid('user') }))
+  .query(async ({ ctx, input }) => {
+    return ctx.db.get(input.id);
+  });
+```
+
+### Mutations
+
+**Before:**
+```ts
+export const create = mutation({
+  args: { name: v.string(), email: v.string() },
+  handler: async (ctx, args) => {
+    return ctx.db.insert('user', args);
+  },
+});
+```
+
+**After:**
+```ts
+export const create = publicMutation
+  .input(z.object({ name: z.string(), email: z.string() }))
+  .mutation(async ({ ctx, input }) => {
+    return ctx.db.insert('user', input);
+  });
+```
+
+### Actions
+
+**Before:**
+```ts
+export const sendEmail = action({
+  args: { to: v.string(), subject: v.string() },
+  handler: async (ctx, args) => {
+    await fetch('https://api.email.com/send', { ... });
+  },
+});
+```
+
+**After:**
+```ts
+export const sendEmail = publicAction
+  .input(z.object({ to: z.string(), subject: z.string() }))
+  .action(async ({ ctx, input }) => {
+    await fetch('https://api.email.com/send', { ... });
+  });
+```
+
+### Internal Procedures
+
+**Before:**
+```ts
+import { internalQuery } from './_generated/server';
+
+export const internal_get = internalQuery({
+  args: { id: v.id('user') },
+  handler: async (ctx, args) => ctx.db.get(args.id),
+});
+```
+
+**After:**
+```ts
+export const internal_get = publicQuery
+  .internal()
+  .input(z.object({ id: zid('user') }))
+  .query(async ({ ctx, input }) => ctx.db.get(input.id));
+```
+
+### Paginated Procedures
+
+**Before:**
+```ts
+import { query } from './_generated/server';
+import { paginationOptsValidator } from 'convex/server';
+
+export const list = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    return ctx.db.query('user').order('desc').paginate(args.paginationOpts);
+  },
+});
+```
+
+**After:**
+```ts
+const UserSchema = z.object({
+  _id: zid('user'),
+  name: z.string(),
+  email: z.string(),
+});
+
+export const list = publicQuery
+  .paginated({ limit: 20, item: UserSchema })
+  .query(async ({ ctx, input }) => {
+    return ctx.db.query('user').order('desc').paginate({ cursor: input.cursor, numItems: input.limit });
+  });
+```
+
+The output is automatically typed as `{ continueCursor, isDone, page: User[] }`.
+
+## Step 4: Add Middleware
+
+### Authentication
+
+**Before (inline in every function):**
+```ts
+export const me = query({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error('Unauthenticated');
+    return ctx.db.query('user').filter(q =>
+      q.eq(q.field('tokenIdentifier'), identity.tokenIdentifier)
+    ).first();
+  },
+});
+```
+
+**Before (convex-helpers customQuery):**
+```ts
+import { customQuery, customCtx } from 'convex-helpers/server/customFunctions';
+
+const authQuery = customQuery(query, customCtx(async (ctx) => {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error('Unauthenticated');
+  const user = await ctx.db.query('user')
+    .filter(q => q.eq(q.field('tokenIdentifier'), identity.tokenIdentifier))
+    .first();
+  return { user };
+}));
+
+// Usage
+export const me = authQuery({
+  args: {},
+  handler: async (ctx) => ctx.user,
+});
+```
+
+**After (cRPC middleware):**
+```ts title="convex/lib/crpc.ts"
+import { getSession } from 'better-convex/auth';
+import { CRPCError } from 'better-convex/server';
+
+export const authQuery = c.query.use(async ({ ctx, next }) => {
+  const session = await getSession(ctx);
+  if (!session) {
+    throw new CRPCError({ code: 'UNAUTHORIZED' });
+  }
+  const user = await ctx.db.get(session.userId);
+  return next({ ctx: { ...ctx, user, userId: user._id } });
+});
+
+// Use everywhere
+export const me = authQuery.query(async ({ ctx }) => ctx.user);
+```
+
+### Middleware Composition
+
+Chain multiple middleware with `.use()`:
+
+```ts
+const loggedQuery = c.query.use(async ({ ctx, next }) => {
+  console.log('Query started');
+  const result = await next({ ctx });
+  console.log('Query finished');
+  return result;
+});
+
+const authLoggedQuery = loggedQuery.use(async ({ ctx, next }) => {
+  // Auth check...
+  return next({ ctx: { ...ctx, userId } });
+});
+```
+
+Extend existing middleware with `.pipe()`:
+
+```ts
+const adminQuery = authQuery.pipe(async ({ ctx, next }) => {
+  if (!ctx.user.isAdmin) {
+    throw new CRPCError({ code: 'FORBIDDEN' });
+  }
+  return next({ ctx });
+});
+```
+
+### Typed Metadata
+
+**After (new feature):**
+```ts
+type Meta = { rateLimit?: number };
+
+const c = initCRPC.dataModel<DataModel>().create<Meta>({ ... });
+
+export const limited = c.query
+  .meta({ rateLimit: 100 })
+  .use(async ({ ctx, meta, next }) => {
+    if (meta.rateLimit) {
+      await checkRateLimit(ctx, meta.rateLimit);
+    }
+    return next({ ctx });
+  })
+  .query(async ({ ctx }) => { ... });
+```
+
+## Step 5: Error Handling
+
+### Server - CRPCError
+
+**Before:**
+```ts
+throw new ConvexError({ message: 'Not found' });
+```
+
+**After:**
+```ts
+import { CRPCError } from 'better-convex/server';
+
+throw new CRPCError({
+  code: 'NOT_FOUND',  // Maps to HTTP 404
+  message: 'User not found',
+  cause: originalError,
+});
+```
+
+Available codes: `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `BAD_REQUEST`, `CONFLICT`, `INTERNAL_SERVER_ERROR`, etc.
+
+### Client - Error States
+
+**Before:**
+```ts
+try {
+  await mutate(args);
+} catch (error) {
+  console.error(error.message);
+}
+```
+
+**After:**
+```tsx
+const { mutate, error, isError } = useMutation(
+  crpc.user.create.mutationOptions({
+    onError: (error) => {
+      toast.error(error.data?.message ?? 'Failed');
+    },
+  })
+);
+
+// Or check error type
+import { isCRPCErrorCode } from 'better-convex/react';
+
+if (isCRPCErrorCode(error, 'NOT_FOUND')) {
+  // Handle 404
+}
+```
+
+## Step 6: Client Setup
+
+### Provider Setup
+
+```tsx title="src/app/providers.tsx"
+'use client';
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  ConvexReactClient,
+  getQueryClientSingleton,
+  getConvexQueryClientSingleton,
+} from 'better-convex/react';
+import { CRPCProvider } from '@/lib/convex/crpc';
+
+const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity } },
+  });
+}
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  const queryClient = getQueryClientSingleton(createQueryClient);
+  const convexQueryClient = getConvexQueryClientSingleton({
+    convex,
+    queryClient,
+  });
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <CRPCProvider
+        convexClient={convex}
+        convexQueryClient={convexQueryClient}
+      >
+        {children}
+      </CRPCProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+### Create CRPC Context
+
+```tsx title="src/lib/convex/crpc.tsx"
+import { api } from '@convex/_generated/api';
+import { meta } from '@convex/meta';
+import { createCRPCContext } from 'better-convex/react';
+
+export const { CRPCProvider, useCRPC } = createCRPCContext(api, meta);
+```
+
+### Generate Metadata
+
+```bash
+bunx better-convex dev
+```
+
+## Step 7: Migrate Client Hooks
+
+### Queries
+
+**Before:**
+```tsx
+import { useQuery } from 'convex/react';
+
+const user = useQuery(api.user.get, { id });
+if (user === undefined) return <div>Loading...</div>;
+```
+
+**After:**
+```tsx
+import { useQuery } from '@tanstack/react-query';
+import { useCRPC } from '@/lib/convex/crpc';
+
+const crpc = useCRPC();
+const { data: user, isPending } = useQuery(crpc.user.get.queryOptions({ id }));
+
+if (isPending) return <div>Loading...</div>;
+```
+
+**New options:**
+```tsx
+// Skip when not authenticated
+const { data } = useQuery(crpc.user.me.queryOptions({}, { skipUnauth: true }));
+
+// One-time fetch (no WebSocket subscription)
+const { data } = useQuery(crpc.user.get.queryOptions({ id }, { subscribe: false }));
+
+// Placeholder data for skeletons
+const { data } = useQuery(crpc.user.get.queryOptions({ id }, {
+  placeholderData: { name: 'Loading...', email: '' },
+}));
+```
+
+### Mutations
+
+**Before:**
+```tsx
+const createUser = useMutation(api.user.create);
+await createUser({ name: 'John' });
+```
+
+**After:**
+```tsx
+const { mutate, mutateAsync, isPending } = useMutation(
+  crpc.user.create.mutationOptions({
+    onSuccess: () => toast.success('Created!'),
+    onError: (error) => toast.error(error.data?.message ?? 'Failed'),
+    onMutate: () => { /* optimistic update */ },
+    onSettled: () => { /* cleanup */ },
+  })
+);
+
+mutate({ name: 'John' });
+// or
+await mutateAsync({ name: 'John' });
+```
+
+### Infinite Queries
+
+**Before:**
+```tsx
+const { results, status, loadMore } = usePaginatedQuery(
+  api.user.list,
+  {},
+  { initialNumItems: 10 }
+);
+
+const isLoading = status === 'LoadingFirstPage';
+const canLoadMore = status === 'CanLoadMore';
+```
+
+**After:**
+```tsx
+import { skipToken } from '@tanstack/react-query';
+import { useInfiniteQuery } from 'better-convex/react';
+
+const {
+  data,           // Flattened array (was: results)
+  pages,          // Raw page arrays
+  isLoading,      // (was: status === 'LoadingFirstPage')
+  hasNextPage,    // (was: status === 'CanLoadMore')
+  isFetchingNextPage, // (was: status === 'LoadingMore')
+  fetchNextPage,  // (was: loadMore)
+} = useInfiniteQuery(
+  crpc.user.list.infiniteQueryOptions(enabled ? {} : skipToken)
+);
+```
+
+## Step 8: Next.js/RSC (Optional)
+
+### Three Server Patterns
+
+**1. `prefetch()` - Fire-and-forget, non-blocking (NEW):**
+```tsx
+import { prefetch, HydrateClient } from '@/lib/convex/server';
+
+export default async function Page() {
+  prefetch(crpc.user.list.queryOptions({}));
+
+  return (
+    <HydrateClient>
+      <UserList />
+    </HydrateClient>
+  );
+}
+
+// Client uses standard useQuery
+function UserList() {
+  const { data } = useQuery(crpc.user.list.queryOptions({}));
+}
+```
+
+**2. `caller` - Direct server calls:**
+```tsx
+import { caller } from '@/lib/convex/server';
+
+export default async function Page() {
+  const users = await caller.user.list({});
+  return <UserList users={users} />;
+}
+```
+
+**3. `preloadQuery()` - Awaited, data + hydration:**
+```tsx
+import { preloadQuery, HydrateClient } from '@/lib/convex/rsc';
+
+export default async function Page() {
+  const users = await preloadQuery(crpc.user.list.queryOptions({}));
+
+  return (
+    <HydrateClient>
+      <UserList initialData={users} />
+    </HydrateClient>
+  );
+}
+```
+
+### HydrateClient Setup
+
+```tsx title="src/lib/convex/server.ts"
+import { createCallerFactory, createHydrateClient, createPrefetch } from 'better-convex/rsc';
+import { api } from '@convex/_generated/api';
+import { meta } from '@convex/meta';
+
+export const createCaller = createCallerFactory(api, meta);
+export const caller = createCaller();
+export const { HydrateClient, prefetch } = createHydrateClient(api, meta);
+```
+
+## Quick Reference
+
+| Aspect | Vanilla Convex | better-convex |
+|--------|---------------|---------------|
+| **Validators** | `v.string()` | `z.string()` |
+| **Arguments** | `args: { ... }` | `.input(z.object({ ... }))` |
+| **Handler params** | `(ctx, args)` | `({ ctx, input })` |
+| **Internal** | `internalQuery()` | `.internal().query()` |
+| **Paginated** | `paginationOptsValidator` | `.paginated({ limit, item })` |
+| **Errors** | `ConvexError` | `CRPCError` with codes |
+| **Middleware** | `customQuery`/`customCtx` | `.use()` with `next()` |
+| **Client hooks** | `useQuery(api.x)` | `useQuery(crpc.x.queryOptions({}))` |
+| **Loading state** | `data === undefined` | `isPending` |
+| **Mutations** | `useMutation(api.x)` | `useMutation(crpc.x.mutationOptions())` |
+| **Infinite** | `usePaginatedQuery` | `useInfiniteQuery` |
+| **Server calls** | `preloadQuery` | `prefetch`, `caller` |
+
+## Incremental Migration Tips
+
+1. **Keep both patterns** — Vanilla and cRPC functions coexist
+2. **Migrate by module** — Convert one file at a time
+3. **Start with queries** — Lower risk than mutations
+4. **Add middleware last** — After basic migration works
+5. **Test as you go** — Each migration is isolated
+
+```ts
+// Both work in the same file
+export const legacyList = query({ handler: async (ctx) => { ... } });
+export const list = publicQuery.query(async ({ ctx }) => { ... });
+```

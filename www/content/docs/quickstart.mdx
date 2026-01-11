@@ -1,0 +1,385 @@
+---
+title: Quickstart
+description: Get Better Convex running in 5 minutes
+---
+
+## Create Next.js App
+
+```bash
+bunx create-next-app@latest my-app --typescript --tailwind --eslint --app --src-dir
+cd my-app
+```
+
+## Installation
+
+```bash
+bun add convex better-convex convex-helpers zod @tanstack/react-query
+```
+
+## Configure Folder Structure
+
+Better Convex uses a specific folder structure. Create `convex.json`:
+
+```json title="convex.json"
+{
+  "functions": "convex/functions",
+  "codegen": {
+    "staticApi": true,
+    "staticDataModel": true
+  }
+}
+```
+
+<Callout type="warn">
+The `codegen.staticApi` setting is required for TypeScript types to work correctly with cRPC.
+</Callout>
+
+This enables the recommended structure:
+
+```
+convex/
+├── functions/           # Convex functions (configured above)
+│   ├── _generated/      # api.ts, dataModel.ts
+│   ├── schema.ts        # Database schema
+│   └── *.ts             # Procedures
+├── lib/                 # Server helpers (NOT deployed)
+│   └── crpc.ts          # cRPC builder
+└── shared/              # Client-importable
+    └── meta.ts          # Generated procedure metadata
+```
+
+Update your tsconfig with required settings:
+
+```json title="tsconfig.json"
+{
+  "compilerOptions": {
+    "strict": true,
+    "strictFunctionTypes": false,
+    "paths": {
+      "@/*": ["./src/*"],
+      "@convex/*": ["./convex/functions/_generated/*", "./convex/shared/*"]
+    }
+  }
+}
+```
+
+<Callout type="info">
+`strictFunctionTypes: false` is required for middleware type inference to work correctly.
+</Callout>
+
+See [Concepts](/docs/concepts) for detailed folder structure explanation.
+
+## Initialize Convex
+
+Start the Better Convex dev server:
+
+```bash
+bunx better-convex dev
+```
+
+This wraps `convex dev` (handling project setup on first run) and generates `convex/shared/meta.ts` for cRPC.
+
+<Callout type="info">
+For one-time codegen without watch mode, use `bunx better-convex codegen`.
+</Callout>
+
+## 1. Define Schema
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts title="convex/functions/schema.ts"
+    import { defineSchema, defineTable } from 'convex/server';
+    import { v } from 'convex/values';
+
+    export default defineSchema({
+      user: defineTable({
+        name: v.string(),
+        email: v.string(),
+      }).index('email', ['email']),
+    });
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts title="convex/functions/schema.ts"
+    import { v } from 'convex/values';
+    import { defineEnt, defineEntSchema } from 'convex-ents';
+
+    const schema = defineEntSchema({
+      user: defineEnt({
+        name: v.string(),
+        email: v.string(),
+      }).index('email', ['email']),
+    });
+
+    export default schema;
+    ```
+  </Tab>
+</Tabs>
+
+## 2. Create cRPC Builder
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts title="convex/lib/crpc.ts"
+    import { initCRPC } from 'better-convex/server';
+    import {
+      query,
+      mutation,
+      internalQuery,
+      internalMutation,
+      action,
+      internalAction,
+    } from '../functions/_generated/server';
+    import type {
+      ActionCtx,
+      MutationCtx,
+      QueryCtx,
+    } from '../functions/_generated/server';
+    import type { DataModel } from '../functions/_generated/dataModel';
+
+    export type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
+
+    const c = initCRPC
+      .dataModel<DataModel>()
+      .create({
+        query,
+        internalQuery,
+        mutation,
+        internalMutation,
+        action,
+        internalAction,
+      });
+
+    export const publicQuery = c.query;
+    export const publicMutation = c.mutation;
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts title="convex/lib/crpc.ts"
+    import { initCRPC } from 'better-convex/server';
+    import {
+      query,
+      mutation,
+      internalQuery,
+      internalMutation,
+      action,
+      internalAction,
+    } from '../functions/_generated/server';
+    import type {
+      ActionCtx,
+      MutationCtx,
+      QueryCtx,
+    } from '../functions/_generated/server';
+    import type { DataModel } from '../functions/_generated/dataModel';
+    import { getCtxWithTable } from './ents';
+
+    export type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
+
+    const c = initCRPC
+      .dataModel<DataModel>()
+      .context({
+        query: (ctx) => getCtxWithTable(ctx),
+        mutation: (ctx) => getCtxWithTable(ctx),
+      })
+      .create({
+        query,
+        internalQuery,
+        mutation,
+        internalMutation,
+        action,
+        internalAction,
+      });
+
+    export const publicQuery = c.query;
+    export const publicMutation = c.mutation;
+    ```
+  </Tab>
+</Tabs>
+
+## 3. Define Procedures
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts title="convex/functions/user.ts"
+    import { z } from 'zod';
+    import { zid } from 'convex-helpers/server/zod4';
+    import { publicQuery, publicMutation } from '../lib/crpc';
+
+    export const list = publicQuery
+      .input(z.object({ limit: z.number().optional() }))
+      .output(z.array(z.object({
+        _id: zid('user'),
+        _creationTime: z.number(),
+        name: z.string(),
+        email: z.string(),
+      })))
+      .query(async ({ ctx, input }) => {
+        return ctx.db.query('user').take(input.limit ?? 10);
+      });
+
+    export const create = publicMutation
+      .input(z.object({ name: z.string(), email: z.string() }))
+      .output(zid('user'))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.db.insert('user', input);
+      });
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts title="convex/functions/user.ts"
+    import { z } from 'zod';
+    import { zid } from 'convex-helpers/server/zod4';
+    import { publicQuery, publicMutation } from '../lib/crpc';
+
+    export const list = publicQuery
+      .input(z.object({ limit: z.number().optional() }))
+      .output(z.array(z.object({
+        _id: zid('user'),
+        _creationTime: z.number(),
+        name: z.string(),
+        email: z.string(),
+      })))
+      .query(async ({ ctx, input }) => {
+        return ctx.table('user').take(input.limit ?? 10);
+      });
+
+    export const create = publicMutation
+      .input(z.object({ name: z.string(), email: z.string() }))
+      .output(zid('user'))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.table('user').insert(input);
+      });
+    ```
+  </Tab>
+</Tabs>
+
+<Callout type="info">
+The `.output()` schema is required for proper TypeScript inference when using `staticApi` codegen.
+</Callout>
+
+## 4. Set Up Client
+
+Create the cRPC context:
+
+```tsx title="src/lib/convex/crpc.tsx"
+import { api } from '@convex/api';
+import { meta } from '@convex/meta';
+import { createCRPCContext } from 'better-convex/react';
+
+export const { CRPCProvider, useCRPC } = createCRPCContext(api, meta);
+```
+
+Wrap your app:
+
+```tsx title="src/app/providers.tsx"
+'use client';
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  ConvexProvider,
+  ConvexReactClient,
+  getQueryClientSingleton,
+  getConvexQueryClientSingleton,
+} from 'better-convex/react';
+import { CRPCProvider } from '@/lib/convex/crpc';
+
+const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity } },
+  });
+}
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <ConvexProvider client={convex}>
+      <QueryProvider>{children}</QueryProvider>
+    </ConvexProvider>
+  );
+}
+
+function QueryProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = getQueryClientSingleton(createQueryClient);
+  const convexQueryClient = getConvexQueryClientSingleton({
+    convex,
+    queryClient,
+  });
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <CRPCProvider
+        convexClient={convex}
+        convexQueryClient={convexQueryClient}
+      >
+        {children}
+      </CRPCProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+Add the providers to your root layout:
+
+```tsx title="src/app/layout.tsx"
+import { Providers } from './providers';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}
+```
+
+## 5. Use It
+
+```tsx title="src/app/user/page.tsx"
+'use client';
+
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useCRPC } from '@/lib/convex/crpc';
+
+export default function UserPage() {
+  const crpc = useCRPC();
+
+  const { data: users, isPending } = useQuery(
+    crpc.user.list.queryOptions({ limit: 10 })
+  );
+
+  const createUser = useMutation(crpc.user.create.mutationOptions());
+
+  if (isPending) return <div>Loading...</div>;
+
+  return (
+    <div>
+      <button
+        onClick={() => createUser.mutate({ name: 'John', email: 'john@example.com' })}
+      >
+        Create User
+      </button>
+      {users?.map((user) => (
+        <div key={user._id}>{user.name}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+## What's Next
+
+You have a working Better Convex app. Add more features:
+
+<Cards>
+  <Card title="Add Auth" href="/docs/auth/setup" />
+  <Card title="Add Triggers" href="/docs/db/triggers" />
+  <Card title="Add Rate Limiting" href="/docs/server/rate-limiting" />
+  <Card title="Full Templates" href="/docs/templates" />
+</Cards>

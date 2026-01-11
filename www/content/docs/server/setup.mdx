@@ -1,0 +1,235 @@
+---
+title: Setup
+description: Initialize cRPC and create procedure builders
+---
+
+## Initialize cRPC
+
+Initialize cRPC **once** per backend in `convex/lib/crpc.ts`:
+
+```ts title="convex/lib/crpc.ts"
+import { initCRPC } from 'better-convex/server';
+import {
+  query,
+  mutation,
+  action,
+  internalQuery,
+  internalMutation,
+  internalAction,
+} from './_generated/server';
+import type { DataModel } from './_generated/dataModel';
+
+const c = initCRPC
+  .dataModel<DataModel>()
+  .create({
+    query,
+    mutation,
+    action,
+    internalQuery,
+    internalMutation,
+    internalAction,
+  });
+
+export const publicQuery = c.query;
+export const publicMutation = c.mutation;
+export const publicAction = c.action;
+export const privateMutation = c.mutation.internal();
+export const privateQuery = c.query.internal();
+export const privateAction = c.action.internal();
+```
+
+## Schema
+
+Define your database schema before creating procedures:
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts title="convex/functions/schema.ts"
+    import { defineSchema, defineTable } from 'convex/server';
+    import { v } from 'convex/values';
+
+    export default defineSchema({
+      user: defineTable({
+        name: v.string(),
+        email: v.string(),
+      }).index('email', ['email']),
+
+      session: defineTable({
+        token: v.string(),
+        userId: v.string(),
+        expiresAt: v.number(),
+      })
+        .index('token', ['token'])
+        .index('userId', ['userId']),
+    });
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts title="convex/functions/schema.ts"
+    import { v } from 'convex/values';
+    import { defineEnt, defineEntSchema } from 'convex-ents';
+
+    const schema = defineEntSchema({
+      user: defineEnt({
+        name: v.string(),
+        email: v.string(),
+      })
+        .index('email', ['email'])
+        .edges('sessions', { to: 'session', ref: 'userId' }),
+
+      session: defineEnt({
+        token: v.string(),
+        expiresAt: v.number(),
+      })
+        .index('token', ['token'])
+        .edge('user', { to: 'user', field: 'userId' }),
+    });
+
+    export default schema;
+    ```
+
+    See [Convex Ents](/docs/db/ents) for relationships, field defaults, cascading deletes, and more.
+  </Tab>
+</Tabs>
+
+## Procedure Types
+
+| Type | Builder | Description |
+|------|---------|-------------|
+| Query | `c.query` | Read-only, real-time, cached |
+| Mutation | `c.mutation` | Write operations, transactional |
+| Action | `c.action` | Side effects, external APIs |
+
+## Adding Metadata
+
+Define a meta type for procedure-level configuration:
+
+```ts title="convex/lib/crpc.ts"
+type Meta = {
+  auth?: 'optional' | 'required';
+  role?: 'admin';
+  rateLimit?: string;
+};
+
+const c = initCRPC
+  .dataModel<DataModel>()
+  .meta<Meta>()
+  .create({ ... });
+```
+
+Use in procedures:
+
+```ts
+export const adminQuery = c.query
+  .meta({ auth: 'required', role: 'admin' })
+  .use(authMiddleware)
+  .use(roleMiddleware);
+```
+
+## Customizing Context
+
+Add custom properties to the base context:
+
+```ts title="convex/lib/crpc.ts"
+const c = initCRPC
+  .dataModel<DataModel>()
+  .context({
+    query: (ctx) => ({ ...ctx, table: getTable(ctx) }),
+    mutation: (ctx) => ({ ...ctx, table: getTable(ctx) }),
+  })
+  .create({ ... });
+```
+
+## Creating Procedure Variants
+
+Build reusable procedure builders with middleware. Common patterns:
+
+| Variant | Description |
+|---------|-------------|
+| `publicQuery` | No auth required |
+| `optionalAuthQuery` | `ctx.user` may be null |
+| `authQuery` | `ctx.user` guaranteed |
+| `authMutation` | Auth + rate limiting |
+| `adminQuery` | Auth + role check |
+
+See [Templates](/docs/templates) for complete implementations.
+
+## File Organization
+
+cRPC uses file-based organization:
+
+```
+convex/
+├── functions/
+│   ├── user.ts       # → crpc.user.list, crpc.user.create
+│   ├── session.ts    # → crpc.session.getByToken
+│   └── account.ts    # → crpc.account.list
+├── lib/
+│   └── crpc.ts       # Setup + procedure variants
+└── shared/
+    └── types.ts      # Client-importable types
+```
+
+The client proxy mirrors the file structure:
+
+```ts
+crpc.user.list.queryOptions({})
+crpc.session.getByToken.queryOptions({ token: 'abc' })
+```
+
+## Migrate from Convex
+
+### What stays the same
+
+- Import `query`, `mutation`, `action` from `_generated/server`
+- File-based organization in `convex/functions/` directory
+- Export functions as named exports
+
+### What's new
+
+**Before (vanilla Convex):**
+```ts
+import { query } from './_generated/server';
+import { v } from 'convex/values';
+
+export const list = query({
+  args: { limit: v.number() },
+  handler: async (ctx, args) => {
+    return ctx.db.query('user').take(args.limit);
+  },
+});
+```
+
+**After (cRPC):**
+```ts
+import { publicQuery } from './lib/crpc';
+import { z } from 'zod';
+
+export const list = publicQuery
+  .input(z.object({ limit: z.number() }))
+  .query(async ({ ctx, input }) => {
+    return ctx.db.query('user').take(input.limit);
+  });
+```
+
+Key differences:
+- Fluent builder API instead of object config
+- Zod validation instead of `v` validators
+- `{ ctx, input }` destructured params
+- Reusable procedure variants with built-in middleware
+
+## Full Template
+
+For the complete `crpc.ts` setup file with auth middleware, rate limiting, and procedure variants:
+
+<Cards>
+  <Card title="Templates" href="/docs/templates#crpcts" />
+</Cards>
+
+## Next Steps
+
+<Cards>
+  <Card title="Procedures" href="/docs/server/procedures" />
+  <Card title="Context" href="/docs/server/context" />
+  <Card title="Middleware" href="/docs/server/middlewares" />
+</Cards>

@@ -1,0 +1,558 @@
+---
+title: Aggregates
+description: O(log n) counts and sums with TableAggregate
+---
+
+## Overview
+
+[@convex-dev/aggregate](https://www.convex.dev/components/aggregate) provides efficient O(log n) aggregations instead of O(n) queries:
+
+- **Counts**: Total users, likes per post, followers per user
+- **Sums**: Total revenue, points per user
+- **Rankings**: Leaderboards, sorted lists, percentiles
+- **Random access**: Get document at specific index
+
+## Always Use Triggers
+
+**NEVER manually update aggregates in mutations. ALWAYS use triggers for automatic maintenance.**
+
+```ts
+// ✅ CORRECT: Register trigger once, aggregates stay in sync automatically
+triggers.register('scores', scoresAggregate.trigger());
+
+// Just insert - trigger handles aggregate!
+await ctx.table('scores').insert({ score: 100 });
+
+// ❌ WRONG: Manual updates in every mutation (easy to forget!)
+await ctx.table('scores').insert({ score: 100 });
+await scoresAggregate.insert(ctx, doc); // Don't do this!
+```
+
+## Installation
+
+```bash
+bun add @convex-dev/aggregate
+```
+
+Add components to `convex/functions/convex.config.ts`:
+
+```ts title="convex/functions/convex.config.ts"
+import aggregate from '@convex-dev/aggregate/convex.config';
+import { defineApp } from 'convex/server';
+
+const app = defineApp();
+
+// Add one component per aggregate
+app.use(aggregate, { name: 'aggregatePostLikes' });
+app.use(aggregate, { name: 'aggregateTotalUsers' });
+app.use(aggregate, { name: 'aggregateFollowers' });
+
+export default app;
+```
+
+## Setup
+
+Create aggregates file:
+
+```ts title="convex/functions/aggregates.ts"
+import { TableAggregate } from '@convex-dev/aggregate';
+import { components } from './_generated/api';
+import type { DataModel } from './_generated/dataModel';
+
+// Count likes per post
+export const aggregatePostLikes = new TableAggregate<{
+  DataModel: DataModel;
+  Key: null;              // No sorting, just counting
+  Namespace: string;      // postId
+  TableName: 'postLikes';
+}>(components.aggregatePostLikes, {
+  namespace: (doc) => doc.postId,
+  sortKey: () => null,
+});
+```
+
+## Aggregate Types
+
+### Count by Namespace
+
+Count items grouped by a key:
+
+```ts
+// Likes per post
+export const aggregatePostLikes = new TableAggregate<{
+  DataModel: DataModel;
+  Key: null;
+  Namespace: string;      // postId
+  TableName: 'postLikes';
+}>(components.aggregatePostLikes, {
+  namespace: (doc) => doc.postId,
+  sortKey: () => null,
+});
+
+// Usage
+const likeCount = await aggregatePostLikes.count(ctx, {
+  namespace: postId,
+  bounds: {} as any, // Required for null keys
+});
+```
+
+### Global Count
+
+Count all rows in a table:
+
+```ts
+// Total users
+export const aggregateTotalUsers = new TableAggregate<{
+  DataModel: DataModel;
+  Key: null;
+  Namespace: string;      // Always "global"
+  TableName: 'user';
+}>(components.aggregateTotalUsers, {
+  namespace: () => 'global',
+  sortKey: () => null,
+});
+
+// Usage
+const totalUsers = await aggregateTotalUsers.count(ctx, {
+  namespace: 'global',
+  bounds: {} as any,
+});
+```
+
+### Multiple Aggregates on Same Table
+
+For bidirectional relationships:
+
+```ts
+// Followers (people following this user)
+export const aggregateFollowers = new TableAggregate<{
+  DataModel: DataModel;
+  Key: null;
+  Namespace: string;      // followingId (user being followed)
+  TableName: 'follows';
+}>(components.aggregateFollowers, {
+  namespace: (doc) => doc.followingId,
+  sortKey: () => null,
+});
+
+// Following (people this user follows)
+export const aggregateFollowing = new TableAggregate<{
+  DataModel: DataModel;
+  Key: null;
+  Namespace: string;      // followerId
+  TableName: 'follows';
+}>(components.aggregateFollowing, {
+  namespace: (doc) => doc.followerId,
+  sortKey: () => null,
+});
+```
+
+### Sorted Aggregates
+
+For rankings and top-N queries:
+
+```ts
+// Scores sorted by value
+export const aggregateScoresByValue = new TableAggregate<{
+  DataModel: DataModel;
+  Key: [number, string];  // [score desc, name asc]
+  Namespace: string;
+  TableName: 'scores';
+}>(components.aggregateScoresByValue, {
+  namespace: (doc) => doc.userId,
+  sortKey: (doc) => [
+    -doc.value, // Negative for descending
+    doc.name,
+  ],
+});
+
+// Get top 5 scores
+const topScores = await aggregateScoresByValue.paginate(ctx, {
+  namespace: userId,
+  limit: 5,
+});
+```
+
+## Key Selection Patterns
+
+### Simple Keys
+
+```ts
+// By number (scores, rankings)
+sortKey: (doc) => doc.score
+
+// By string (usernames, alphabetical)
+sortKey: (doc) => doc.username
+
+// By timestamp (chronological)
+sortKey: (doc) => doc._creationTime
+
+// No sorting (random access, counting only)
+sortKey: () => null
+```
+
+### Composite Keys
+
+Group and query with prefixes:
+
+```ts
+// Sort by game, then username, then score
+sortKey: (doc) => [doc.game, doc.username, doc.score]
+
+// Query with prefix
+const gameCount = await aggregate.count(ctx, {
+  bounds: { prefix: [game] },
+});
+const userGameCount = await aggregate.count(ctx, {
+  bounds: { prefix: [game, username] },
+});
+```
+
+### Key Ordering
+
+**Sort order matters for composite keys:**
+
+- `[game, username, score]` - query by game OR game+username
+- `[game, score]` - find highest score per game
+- `[username, score]` - find user's highest score
+
+### Bounds for Null Keys
+
+**IMPORTANT**: When using `sortKey: () => null`, you must provide `bounds`:
+
+```ts
+// ❌ WRONG: Missing bounds parameter
+const count = await aggregate.count(ctx, {
+  namespace: itemId,
+});
+
+// ✅ CORRECT: Include empty bounds
+const count = await aggregate.count(ctx, {
+  namespace: itemId,
+  bounds: {} as any,
+});
+```
+
+This also fixes the TypeScript "Type instantiation is excessively deep" error.
+
+## Trigger Integration
+
+Register aggregates with [triggers](/docs/db/triggers) for automatic maintenance:
+
+```ts title="convex/lib/triggers.ts"
+import { Triggers } from 'convex-helpers/server/triggers';
+import {
+  aggregatePostLikes,
+  aggregateFollowers,
+  aggregateFollowing,
+  aggregateTotalUsers,
+} from '../aggregates';
+
+export const registerTriggers = () => {
+  const triggers = new Triggers<DataModel>();
+
+  // Auto-maintain counts on insert/delete
+  triggers.register('postLikes', aggregatePostLikes.trigger());
+  triggers.register('user', aggregateTotalUsers.trigger());
+
+  // Multiple triggers for same table
+  triggers.register('follows', aggregateFollowers.trigger());
+  triggers.register('follows', aggregateFollowing.trigger());
+
+  return triggers;
+};
+```
+
+## Usage
+
+### Get Count
+
+```ts
+const likeCount = await aggregatePostLikes.count(ctx, {
+  namespace: postId,
+  bounds: {} as any,
+});
+```
+
+### Get Sum
+
+```ts
+// For aggregates with sumValue configured
+const totalPoints = await aggregatePoints.sum(ctx, {
+  namespace: userId,
+});
+```
+
+### Statistical Operations
+
+```ts
+// Average score
+const sum = await aggregate.sum(ctx, { namespace: gameId });
+const count = await aggregate.count(ctx, { namespace: gameId, bounds: {} as any });
+const average = count > 0 ? sum / count : 0;
+
+// 95th percentile
+const p95Index = Math.floor(count * 0.95);
+const p95Result = await aggregate.at(ctx, p95Index, { namespace: gameId });
+const p95Score = p95Result?.key ?? null;
+
+// User ranking (position for a given score)
+const rank = await aggregate.indexOf(ctx, userScore, { namespace: gameId });
+```
+
+### Random Access
+
+Get a random document from a table:
+
+```ts
+const randomAggregate = new TableAggregate<{
+  Key: null;
+  DataModel: DataModel;
+  TableName: 'songs';
+}>(components.randomAggregate, {
+  sortKey: () => null, // No sorting = random by _id
+});
+
+// Get random song
+const count = await randomAggregate.count(ctx, { bounds: {} as any });
+if (count === 0) return null;
+
+const randomIndex = Math.floor(Math.random() * count);
+const result = await randomAggregate.at(ctx, randomIndex);
+const song = result ? await ctx.table('songs').get(result.doc._id) : null;
+```
+
+### Paginate
+
+```ts
+const results = await aggregateSkillsByLevel.paginate(ctx, {
+  namespace: characterId,
+  limit: 10,
+  cursor: paginationCursor, // Optional
+});
+```
+
+### Bounded Queries
+
+```ts
+// Count scores in range
+const highScoreCount = await aggregate.count(ctx, {
+  namespace: gameId,
+  bounds: {
+    lower: { key: 100, inclusive: true },
+    upper: { key: 1000, inclusive: true },
+  },
+});
+
+// Get max/min
+const topScore = await aggregate.max(ctx, { namespace: gameId });
+const lowestScore = await aggregate.min(ctx, { namespace: gameId });
+```
+
+## Backfill and Repair
+
+### Initial Backfill
+
+For existing data when adding a new aggregate:
+
+```ts
+export const backfillAggregate = privateMutation
+  .input(z.object({
+    cursor: z.string().nullable(),
+    batchSize: z.number().default(100),
+  }))
+  .mutation(async ({ ctx, input }) => {
+    const results = await ctx.db
+      .query('scores')
+      .paginate({ numItems: input.batchSize, cursor: input.cursor });
+
+    // Idempotent - won't duplicate if already exists
+    for (const doc of results.page) {
+      await aggregate.insertIfDoesNotExist(ctx, doc);
+    }
+
+    if (!results.isDone) {
+      await ctx.scheduler.runAfter(0, internal.aggregates.backfillAggregate, {
+        cursor: results.continueCursor,
+        batchSize: input.batchSize,
+      });
+    }
+  });
+```
+
+### Repair Aggregate
+
+If aggregate gets out of sync:
+
+```ts
+export const repairAggregate = privateMutation
+  .mutation(async ({ ctx }) => {
+    // Clear and rebuild from source of truth
+    await aggregate.clear(ctx);
+
+    const docs = await ctx.db.query('scores').collect();
+    for (const doc of docs) {
+      await aggregate.insert(ctx, doc);
+    }
+  });
+```
+
+## Common Use Cases
+
+### Star/Like Counts
+
+```ts
+// Define aggregate
+export const aggregatePostLikes = new TableAggregate<{
+  DataModel: DataModel;
+  Key: null;
+  Namespace: string;
+  TableName: 'postLikes';
+}>(components.aggregatePostLikes, {
+  namespace: (doc) => doc.postId,
+  sortKey: () => null,
+});
+
+// Register trigger
+triggers.register('postLikes', aggregatePostLikes.trigger());
+
+// Query count
+const likeCount = await aggregatePostLikes.count(ctx, {
+  namespace: postId,
+  bounds: {} as any,
+});
+```
+
+### Admin Dashboard Stats
+
+```ts
+const stats = {
+  totalUsers: await aggregateTotalUsers.count(ctx, {
+    namespace: 'global',
+    bounds: {} as any,
+  }),
+  totalPosts: await aggregateTotalPosts.count(ctx, {
+    namespace: 'global',
+    bounds: {} as any,
+  }),
+};
+```
+
+### Follower/Following Counts
+
+```ts
+const followerCount = await aggregateFollowers.count(ctx, {
+  namespace: userId,
+  bounds: {} as any,
+});
+const followingCount = await aggregateFollowing.count(ctx, {
+  namespace: userId,
+  bounds: {} as any,
+});
+```
+
+## Best Practices
+
+### Always Use Triggers
+
+```ts
+// ✅ BEST: Triggers handle everything
+triggers.register('scores', scoresAggregate.trigger());
+await ctx.table('scores').insert(data); // Done!
+
+// ❌ AVOID: Manual updates are error-prone
+const id = await ctx.table('scores').insert(data);
+const doc = await ctx.table('scores').get(id);
+await aggregate.insert(ctx, doc!); // Easy to forget!
+```
+
+### Choose Keys for Query Patterns
+
+```ts
+// ✅ GOOD: Keys match how you query
+sortKey: (doc) => [doc.category, doc.priority, doc.createdAt]
+// Allows: by category, category+priority, full ordering
+
+// ❌ BAD: Keys don't match access patterns
+sortKey: (doc) => doc.internalId
+// Can't query by meaningful attributes
+```
+
+### Use Namespaces for Isolation
+
+```ts
+// ✅ GOOD: Namespace prevents interference between tenants
+namespace: (doc) => doc.tenantId,
+sortKey: (doc) => doc.score
+
+// ❌ BAD: No namespace causes contention
+sortKey: (doc) => [doc.tenantId, doc.score]
+```
+
+### Handle Edge Cases
+
+```ts
+// Always handle division by zero
+const average = count > 0 ? sum / count : 0;
+```
+
+### Bounded Queries Reduce Conflicts
+
+```ts
+// ✅ GOOD: Bounded query has fewer dependencies
+const recentCount = await aggregate.count(ctx, {
+  bounds: {
+    lower: { key: Date.now() - 86400000, inclusive: true },
+  },
+});
+
+// ❌ AVOID: Unbounded queries cause more conflicts
+const allCount = await aggregate.count(ctx);
+```
+
+## Limitations
+
+| Consideration | Guideline |
+|--------------|-----------|
+| Document count | Works best with large tables (thousands+) |
+| Update frequency | High-frequency updates to nearby keys cause contention |
+| Key size | Keep composite keys reasonable (3-4 components max) |
+| Namespace count | Each namespace has overhead |
+| Query patterns | Design keys for actual needs, not hypothetical |
+
+## When to Use Aggregates
+
+| Scenario | Standard Query | Aggregate |
+|----------|---------------|-----------|
+| Small tables (under 1000 rows) | O(n) is fine | Not needed |
+| Large tables, frequent reads | O(n) per read | O(log n) |
+| Real-time counts | Slow, blocks UI | Fast |
+| Dashboard metrics | Very slow | Essential |
+
+## Configuration Reference
+
+Each aggregate needs a component in `convex.config.ts`:
+
+```ts title="convex/functions/convex.config.ts"
+import aggregate from '@convex-dev/aggregate/convex.config';
+import { defineApp } from 'convex/server';
+
+const app = defineApp();
+
+// One per aggregate
+app.use(aggregate, { name: 'aggregatePostLikes' });
+app.use(aggregate, { name: 'aggregateFollowers' });
+app.use(aggregate, { name: 'aggregateFollowing' });
+app.use(aggregate, { name: 'aggregateTotalUsers' });
+app.use(aggregate, { name: 'aggregateTotalPosts' });
+
+export default app;
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Triggers" href="/docs/db/triggers" />
+  <Card title="Rate Limiting" href="/docs/server/rate-limiting" />
+  <Card title="@convex-dev/aggregate" href="https://www.convex.dev/components/aggregate" />
+</Cards>

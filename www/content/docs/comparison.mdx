@@ -1,0 +1,274 @@
+---
+title: Comparison
+description: How better-convex extends vanilla Convex
+---
+
+## Overview
+
+better-convex extends vanilla Convex with tRPC-style APIs and deep TanStack Query integration. It's not a replacement—it builds on Convex's real-time database.
+
+## What Vanilla Convex Provides
+
+- **Real-time subscriptions** — WebSocket-based, automatic updates
+- **TanStack Query adapter** — `@convex-dev/react-query` with `convexQuery()`
+- **Type-safe functions** — `query`, `mutation`, `action` with Convex validators
+- **SSR support** — `preloadQuery()` for server-side data fetching
+- **React hooks** — `useQuery`, `useMutation` for reactive UI
+
+## What better-convex Adds
+
+### Server
+
+| Feature | Description |
+|---------|-------------|
+| **Fluent Builder** | `.input().use().query()` chained API |
+| **Zod Validation** | Schema reuse, refinements, transforms |
+| **Destructured Params** | `{ ctx, input }` instead of `(ctx, args)` |
+| **Middleware** | `.use()` chains with `next({ ctx })` |
+| **Middleware Composition** | `.pipe()` for extending middleware |
+| **Typed Metadata** | `.meta()` accessible in middleware |
+| **Internal Procedures** | `.internal()` method |
+| **Paginated Procedures** | `.paginated({ limit, item })` method |
+| **CRPCError** | Typed codes with HTTP status mapping |
+| **Server Caller** | Unified `caller.x.y({})` proxy |
+
+### Client
+
+| Feature | Description |
+|---------|-------------|
+| **TanStack Query** | Full API: `isPending`, `isError`, `refetch()`, DevTools |
+| **Query Keys** | `queryKey()`, `queryFilter()` for cache manipulation |
+| **Subscription Control** | `subscribe: false` for one-time fetch |
+| **Auth-aware** | `skipUnauth: true` auto-skips when unauthenticated |
+| **Placeholder Data** | Skeleton UI support |
+| **Type Inference** | `inferApiInputs`, `inferApiOutputs` helpers |
+| **Mutation Callbacks** | `onSuccess`, `onError`, `onMutate`, `onSettled` |
+| **Error Handling** | Typed errors with `error.data?.message` |
+
+### Next.js
+
+| Feature | Description |
+|---------|-------------|
+| **`prefetch()`** | Fire-and-forget, non-blocking, hydrated to client |
+| **`HydrateClient`** | Automatic hydration, no prop drilling |
+| **`caller`** | Direct server calls for RSC/API routes |
+
+### Infinite Queries
+
+| Convex | better-convex |
+|--------|---------------|
+| `results` | `data` (flattened array), `pages` (raw page arrays) |
+| `status === 'LoadingFirstPage'` | `isLoading` |
+| `status === 'CanLoadMore'` | `hasNextPage` |
+| `status === 'LoadingMore'` | `isFetchingNextPage` |
+| `loadMore(n)` | `fetchNextPage(n)` |
+
+## Syntax Comparison
+
+### Defining Queries
+
+**Vanilla Convex:**
+```ts
+import { query } from './_generated/server';
+import { v } from 'convex/values';
+
+export const get = query({
+  args: { id: v.id('user') },
+  handler: async (ctx, args) => {
+    return ctx.db.get(args.id);
+  },
+});
+```
+
+**better-convex:**
+```ts
+import { z } from 'zod';
+import { zid } from 'convex-helpers/server/zod';
+import { publicQuery } from '../lib/crpc';
+
+export const get = publicQuery
+  .input(z.object({ id: zid('user') }))
+  .query(async ({ ctx, input }) => {
+    return ctx.db.get(input.id);
+  });
+```
+
+### Using Queries
+
+**Vanilla Convex with TanStack Query:**
+```tsx
+import { useQuery } from '@tanstack/react-query';
+import { convexQuery } from '@convex-dev/react-query';
+
+const { data, isPending } = useQuery(convexQuery(api.user.get, { id }));
+```
+
+**better-convex:**
+```tsx
+import { useQuery } from '@tanstack/react-query';
+import { useCRPC } from '@/lib/convex/crpc';
+
+const crpc = useCRPC();
+const { data, isPending } = useQuery(crpc.user.get.queryOptions({ id }));
+
+// Auth-aware (skips when logged out)
+const { data: me } = useQuery(crpc.user.me.queryOptions({}, { skipUnauth: true }));
+
+// One-time fetch (no WebSocket subscription)
+const { data } = useQuery(crpc.user.get.queryOptions({ id }, { subscribe: false }));
+```
+
+### Mutations
+
+**Vanilla Convex:**
+```tsx
+const mutate = useMutation(api.user.create);
+await mutate({ name: 'John' });
+```
+
+**better-convex:**
+```tsx
+const crpc = useCRPC();
+const { mutate, isPending } = useMutation(
+  crpc.user.create.mutationOptions({
+    onSuccess: () => toast.success('Created!'),
+    onError: (error) => toast.error(error.data?.message ?? 'Failed'),
+  })
+);
+```
+
+### Authentication Middleware
+
+**Vanilla Convex (repeated in every function):**
+```ts
+export const me = query({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error('Unauthenticated');
+    return ctx.db.query('user').filter(q =>
+      q.eq(q.field('tokenIdentifier'), identity.tokenIdentifier)
+    ).first();
+  },
+});
+```
+
+**better-convex (reusable middleware):**
+```ts
+// Define once in crpc.ts
+export const authQuery = c.query.use(async ({ ctx, next }) => {
+  const session = await getSession(ctx);
+  if (!session) throw new CRPCError({ code: 'UNAUTHORIZED' });
+  const user = await ctx.db.get(session.userId);
+  return next({ ctx: { ...ctx, user, userId: user._id } });
+});
+
+// Use everywhere
+export const me = authQuery.query(async ({ ctx }) => ctx.user);
+```
+
+### Server-Side Calls (Next.js)
+
+**Vanilla Convex:**
+```tsx
+import { preloadQuery } from 'convex/nextjs';
+
+export default async function Page() {
+  const preloaded = await preloadQuery(api.user.list);
+  return <UserList preloadedUsers={preloaded} />;
+}
+
+// Client component must use usePreloadedQuery
+function UserList({ preloadedUsers }) {
+  const users = usePreloadedQuery(preloadedUsers);
+}
+```
+
+**better-convex:**
+```tsx
+import { prefetch, HydrateClient } from '@/lib/convex/server';
+
+export default async function Page() {
+  // Non-blocking prefetch, hydrated to client
+  prefetch(crpc.user.list.queryOptions({}));
+
+  return (
+    <HydrateClient>
+      <UserList />
+    </HydrateClient>
+  );
+}
+
+// Client component uses standard useQuery
+function UserList() {
+  const { data: users } = useQuery(crpc.user.list.queryOptions({}));
+}
+```
+
+### Error Handling
+
+**Vanilla Convex:**
+```ts
+throw new ConvexError({ message: 'Not found' });
+```
+
+**better-convex:**
+```ts
+// Server - typed codes with HTTP mapping
+throw new CRPCError({
+  code: 'NOT_FOUND',  // Maps to HTTP 404
+  message: 'User not found',
+  cause: originalError,
+});
+
+// Client - error checking
+import { isCRPCError, isCRPCErrorCode } from 'better-convex/react';
+
+if (isCRPCErrorCode(error, 'NOT_FOUND')) {
+  // Handle 404
+}
+```
+
+### Infinite Queries
+
+**Vanilla Convex:**
+```tsx
+const { results, status, loadMore } = usePaginatedQuery(
+  api.user.list,
+  {},
+  { initialNumItems: 10 }
+);
+
+const canLoadMore = status === 'CanLoadMore';
+```
+
+**better-convex:**
+```tsx
+import { skipToken } from '@tanstack/react-query';
+
+const crpc = useCRPC();
+const {
+  data,           // Flattened array
+  pages,          // Raw page arrays
+  hasNextPage,
+  fetchNextPage,
+  isFetchingNextPage,
+} = useInfiniteQuery(
+  crpc.user.list.infiniteQueryOptions(enabled ? {} : skipToken)
+);
+```
+
+## When to Use better-convex
+
+**Use better-convex when you need:**
+
+- Middleware chains for auth, validation, rate limiting
+- Server-side calls without prop drilling (`prefetch`, `caller`)
+- Auth-aware query skipping (`skipUnauth`)
+- TanStack Query features (DevTools, cache manipulation, callbacks)
+- Zod schemas shared between client and server
+- tRPC-style fluent builder API
+
+**Stick with vanilla Convex when:**
+
+- Building a simple prototype
+- Don't need middleware or server-side calls or real-time infinite queries

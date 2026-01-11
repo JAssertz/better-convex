@@ -1,0 +1,210 @@
+---
+title: Mutations
+description: Execute mutations with TanStack Query
+---
+
+## Overview
+
+cRPC mutations provide a tRPC-like interface for executing mutations with TanStack Query. The `mutationOptions` factory returns options compatible with `useMutation`.
+
+```tsx
+import { useMutation } from '@tanstack/react-query';
+import { useCRPC } from '@/lib/convex/crpc';
+
+function CreateUser() {
+  const crpc = useCRPC();
+  const createUser = useMutation(crpc.user.create.mutationOptions());
+
+  return (
+    <button
+      disabled={createUser.isPending}
+      onClick={() => createUser.mutate({ name: 'John', email: 'john@example.com' })}
+    >
+      {createUser.isPending ? 'Creating...' : 'Create User'}
+    </button>
+  );
+}
+```
+
+## mutationOptions
+
+The `mutationOptions` method creates options for TanStack Query's `useMutation` hook.
+
+```tsx
+const crpc = useCRPC();
+
+// Basic usage
+const createUser = useMutation(crpc.user.create.mutationOptions());
+
+// With callbacks
+const updateUser = useMutation(
+  crpc.user.update.mutationOptions({
+    onSuccess: (data) => {
+      toast.success('Updated successfully');
+    },
+    onError: (error) => {
+      toast.error(error.data?.message ?? 'Update failed');
+    },
+  })
+);
+```
+
+### Signature
+
+```ts
+crpc.path.to.mutation.mutationOptions(
+  options?   // TanStack Query mutation options (except mutationFn)
+)
+```
+
+### Options
+
+All standard [TanStack Query mutation options](https://tanstack.com/query/latest/docs/framework/react/reference/useMutation) are supported except `mutationFn` (reserved):
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `onSuccess` | `(data, variables, context) => void` | Called on successful mutation |
+| `onError` | `(error, variables, context) => void` | Called on error |
+| `onMutate` | `(variables) => context` | Called before mutation (for optimistic updates) |
+| `onSettled` | `(data, error, variables, context) => void` | Called on completion |
+| `retry` | `number \| boolean` | Retry failed mutations |
+
+## Mutation Keys
+
+Get type-safe mutation keys for cache operations:
+
+```tsx
+const crpc = useCRPC();
+
+// Get mutation key
+const mutationKey = crpc.user.create.mutationKey();
+// => ['convexMutation', 'user:create']
+```
+
+## Common Patterns
+
+### Toast Promise
+
+Use `toast.promise` for loading/success/error states:
+
+```tsx
+const createProject = useMutation(crpc.project.create.mutationOptions());
+
+const onSubmit = (data: FormData) => {
+  toast.promise(createProject.mutateAsync({ title: data.title }), {
+    loading: 'Creating project...',
+    success: 'Project created!',
+    error: (e) => e.data?.message ?? 'Failed to create project',
+  });
+};
+```
+
+### Form Submission
+
+Handle form submission with cleanup:
+
+```tsx
+const updateUser = useMutation(
+  crpc.user.update.mutationOptions({
+    onSuccess: () => {
+      form.reset();
+      closeModal();
+      toast.success('Profile updated');
+    },
+    onError: () => {
+      toast.error('Update failed');
+    },
+  })
+);
+
+const onSubmit = (data: FormData) => {
+  updateUser.mutate(data);
+};
+```
+
+### Inline Callbacks
+
+Pass callbacks directly to `mutate`:
+
+```tsx
+const deleteSession = useMutation(crpc.session.delete.mutationOptions());
+
+deleteSession.mutate(
+  { id: sessionId },
+  {
+    onSuccess: () => router.push('/sessions'),
+    onError: () => toast.error('Delete failed'),
+  }
+);
+```
+
+## Actions as Mutations
+
+Convex actions can be used as mutations for external API calls:
+
+```tsx
+// Actions work with mutationOptions
+const scrapeLink = useMutation(crpc.scraper.scrapeLink.mutationOptions());
+
+useEffect(() => {
+  if (url) {
+    scrapeLink.mutate({ url });
+  }
+}, [url]);
+
+// Access mutation state
+if (scrapeLink.isPending) return <Spinner />;
+if (scrapeLink.data) return <LinkPreview data={scrapeLink.data} />;
+```
+
+<Callout type="info">
+Actions don't have real-time subscriptions. Use `mutationOptions` for one-shot calls to external APIs, or `queryOptions` if you need query caching.
+</Callout>
+
+## Migrate from Convex
+
+### What stays the same
+
+- Mutations execute against Convex backend
+- Automatic transaction handling
+- Type-safe arguments and returns
+
+### What's new
+
+**Before (vanilla Convex):**
+```tsx
+import { useMutation } from 'convex/react';
+import { api } from '@convex/_generated/api';
+
+const createUser = useMutation(api.user.create);
+
+// Execute mutation
+await createUser({ name: 'John', email: 'john@example.com' });
+```
+
+**After (cRPC):**
+```tsx
+import { useMutation } from '@tanstack/react-query';
+import { useCRPC } from '@/lib/convex/crpc';
+
+const crpc = useCRPC();
+const createUser = useMutation(crpc.user.create.mutationOptions());
+
+// Execute mutation
+await createUser.mutateAsync({ name: 'John', email: 'john@example.com' });
+```
+
+**Key differences:**
+- TanStack Query state (`isPending`, `isError`, `isSuccess`, `data`, `error`)
+- Built-in callbacks (`onSuccess`, `onError`, `onMutate`, `onSettled`)
+- Retry configuration
+- Mutation keys for cache operations
+
+## Next Steps
+
+<Cards>
+  <Card title="Queries" href="/docs/react/queries" />
+  <Card title="Infinite Queries" href="/docs/react/infinite-queries" />
+  <Card title="Type Inference" href="/docs/react/infer-types" />
+  <Card title="Error Handling" href="/docs/react/error-handling" />
+</Cards>

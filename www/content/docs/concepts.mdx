@@ -1,0 +1,187 @@
+---
+title: Concepts
+description: Architecture and vocabulary for Better Convex
+---
+
+## Architecture
+
+Better Convex organizes your application into layers:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Client                               │
+│  ┌─────────────────┐     ┌──────────────────────────────┐   │
+│  │  TanStack Query │────▶│    ConvexQueryClient         │   │
+│  │     Cache       │◀────│  (WebSocket subscriptions)   │   │
+│  └─────────────────┘     └──────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                        Server                               │
+│  ┌─────────────────┐     ┌──────────────────────────────┐   │
+│  │  cRPC Builder   │────▶│     Convex Functions         │   │
+│  │  (procedures)   │     │  (queries/mutations/actions) │   │
+│  └─────────────────┘     └──────────────────────────────┘   │
+│           │                         │                       │
+│           ▼                         ▼                       │
+│  ┌─────────────────┐     ┌──────────────────────────────┐   │
+│  │   Middleware    │     │    Database (Ents)           │   │
+│  │  (auth, rate)   │     │  Triggers → Aggregates       │   │
+│  └─────────────────┘     └──────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Server
+
+### Procedures
+
+Functions exposed to the client. Three types:
+
+| Type | Description | Use case |
+|------|-------------|----------|
+| **query** | Read-only, cached, real-time | Fetching data |
+| **mutation** | Write operations | Creating, updating, deleting |
+| **action** | Side effects, external APIs | Emails, third-party services |
+
+```ts
+export const list = publicQuery
+  .input(z.object({ limit: z.number().optional() }))
+  .query(async ({ ctx, input }) => {
+    return ctx.table('user').take(input.limit ?? 10);
+  });
+```
+
+### Middleware
+
+Runs before procedures. Chain with `.use()`:
+
+```ts
+const authQuery = c.query
+  .use(async ({ ctx, next }) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) throw new CRPCError({ code: 'UNAUTHORIZED' });
+    return next({ ctx: { user, userId: user._id } });
+  });
+```
+
+### Context
+
+Passed to every handler. Contains database access and custom data from middleware:
+
+- `ctx.db` — Native Convex database
+- `ctx.table` — Ents fluent API (if configured)
+- `ctx.user`, `ctx.userId` — Added by auth middleware
+
+## Database
+
+### Ents
+
+Convex Ents adds relationships and a fluent API:
+
+```ts
+// Define relationships
+const schema = defineEntSchema({
+  user: defineEnt({ name: v.string() }).edges('sessions', { to: 'session', ref: 'userId' }),
+  session: defineEnt({ token: v.string() }).edge('user', { to: 'user', field: 'userId' }),
+});
+
+// Query with relationships
+const sessions = await ctx.table('session').edge('user');
+```
+
+### Triggers
+
+Automatic side effects when data changes using [convex-helpers](https://github.com/get-convex/convex-helpers):
+
+```ts
+import { Triggers } from 'convex-helpers/server/triggers';
+
+const triggers = new Triggers<DataModel>();
+
+triggers.register('user', async (ctx, change) => {
+  if (change.operation === 'insert') {
+    console.log('User created:', change.newDoc?.name);
+  }
+});
+```
+
+Use cases: maintain counts, cascade deletes, sync denormalized data. See [Triggers](/docs/db/triggers) for full API.
+
+### Aggregates
+
+O(log n) operations for counts, sums, rankings:
+
+```ts
+// Instead of counting all rows (O(n))
+const count = await ctx.table('user').count(); // slow
+
+// Use aggregates (O(log n))
+const count = await userAggregate.count(ctx); // fast
+```
+
+## Client
+
+### TanStack Query Integration
+
+Native hooks with Convex real-time:
+
+```tsx
+// Queries auto-subscribe to WebSocket updates
+const { data } = useQuery(crpc.user.list.queryOptions({}));
+
+// Full TanStack Query API
+const mutation = useMutation(crpc.user.create.mutationOptions({
+  onSuccess: () => toast.success('Created!'),
+}));
+```
+
+### Auth-Aware Queries
+
+Queries skip automatically when user is not authenticated:
+
+```tsx
+// Won't error if logged out — just returns undefined
+const { data } = useQuery(crpc.user.me.queryOptions({}, { skipUnauth: true }));
+```
+
+## File Structure
+
+```
+convex/
+├── functions/           # Convex functions
+│   ├── _generated/      # api.ts, dataModel.ts
+│   ├── schema.ts        # Database schema
+│   └── *.ts             # Procedures
+├── lib/                 # Helpers
+│   ├── crpc.ts          # cRPC builder
+│   ├── ents.ts          # Ents setup
+│   ├── triggers.ts      # Database triggers
+│   └── rate-limiter.ts  # Rate limiting
+└── shared/              # Client-importable
+    └── meta.ts          # Generated procedure metadata
+```
+
+## Configuration
+
+```json title="convex.json"
+{
+  "functions": "convex/functions",
+  "codegen": { "staticApi": true, "staticDataModel": true },
+  "typescriptCompiler": "tsgo"
+}
+```
+
+| Option | Purpose |
+|--------|---------|
+| `functions` | Codegen from `convex/functions/` |
+| `codegen.staticApi` | Static API types |
+| `typescriptCompiler` | `"tsgo"` for TypeScript 7 native |
+
+## Next steps
+
+<Cards>
+  <Card title="Server Setup" href="/docs/server/setup" />
+  <Card title="React Setup" href="/docs/react/setup" />
+  <Card title="Auth Setup" href="/docs/auth/setup" />
+</Cards>

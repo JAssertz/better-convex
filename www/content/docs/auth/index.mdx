@@ -1,0 +1,167 @@
+---
+title: Overview
+description: Better Auth integration with Convex for type-safe authentication
+---
+
+## Overview
+
+better-convex provides a seamless integration between [Better Auth](https://better-auth.com) and Convex, giving you:
+
+- **Convex as database adapter** - Store auth data in Convex tables
+- **Type-safe triggers** - Hooks for user/session lifecycle events
+- **React hooks** - `useAuthStatus`, `useAuthGuard`, and conditional rendering
+- **Next.js integration** - Server-side caller with JWT caching
+
+## Key Concepts
+
+### Local vs Component Installation
+
+| Approach | Schema Location | Database Access |
+|----------|-----------------|-----------------|
+| Component (`@convex-dev/better-auth`) | Component schema | Via `ctx.runQuery`/`ctx.runMutation` |
+| **Local** (`better-convex/auth`) | Your app schema | Direct `ctx.db` access |
+
+better-convex uses the **local approach**:
+- Auth tables live in your app schema
+- Triggers can directly access and modify your app tables
+- Single transaction for complex operations
+
+### Two Adapters
+
+| Adapter | Used In | Access |
+|---------|---------|--------|
+| `adapter` via `getAuth(ctx)` | Queries, mutations | Direct DB access |
+| `httpAdapter` via `createAuth(ctx)` | HTTP routes, actions | HTTP context |
+
+```ts
+// Queries/mutations: direct DB access
+const auth = getAuth(ctx);
+
+// HTTP routes/actions: HTTP adapter
+const auth = createAuth(ctx);
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      Your App                           │
+├─────────────────────────────────────────────────────────┤
+│  ConvexAuthProvider                                     │
+│    └─ Better Auth Client (token management)             │
+│       └─ AuthProvider (auth state store)                │
+├─────────────────────────────────────────────────────────┤
+│  Better Auth                                            │
+│    └─ Convex Adapter (httpAdapter / adapter)            │
+├─────────────────────────────────────────────────────────┤
+│  Convex Database                                        │
+│    └─ user, session, account tables (in app schema)     │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Key Components
+
+### Server
+
+- **`createClient`** - Create auth client with Convex adapter and triggers
+- **`createApi`** - Generate Convex functions for Better Auth CRUD operations
+- **`convexBetterAuth`** - Next.js integration with caller factory
+
+### Client
+
+- **`ConvexAuthProvider`** - Combined provider for auth state
+- **`useAuthStatus`** - Get auth loading/authenticated state
+- **`useAuthGuard`** - Guard mutations requiring auth
+- **`Authenticated`** / **`Unauthenticated`** - Conditional rendering
+
+## Quick Example
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```tsx title="convex/functions/auth.ts"
+    import { createClient, createApi, type AuthFunctions } from 'better-convex/auth';
+    import type { DataModel } from './_generated/dataModel';
+    import { internal } from './_generated/api';
+    import schema from './schema';
+
+    const authFunctions: AuthFunctions = internal.auth;
+
+    // Create client with triggers
+    export const authClient = createClient<DataModel, typeof schema>({
+      authFunctions,
+      schema,
+      triggers: {
+        user: {
+          onCreate: async (ctx, user) => {
+            // Create default profile for new users
+            await ctx.db.insert('profiles', { userId: user._id });
+          },
+        },
+      },
+    });
+
+    // Export CRUD functions (see Setup for full createAuth definition)
+    export const { create, findOne, findMany, updateOne, deleteOne } =
+      createApi(schema, createAuth, {});
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```tsx title="convex/functions/auth.ts"
+    import { createClient, createApi, type AuthFunctions } from 'better-convex/auth';
+    import type { DataModel } from './_generated/dataModel';
+    import { internal } from './_generated/api';
+    import schema from './schema';
+
+    const authFunctions: AuthFunctions = internal.auth;
+
+    // Create client with triggers
+    export const authClient = createClient<DataModel, typeof schema>({
+      authFunctions,
+      schema,
+      triggers: {
+        user: {
+          onCreate: async (ctx, user) => {
+            // Create default profile for new users
+            await ctx.table('profiles').insert({ userId: user._id });
+          },
+        },
+      },
+    });
+
+    // Export CRUD functions (see Setup for full createAuth definition)
+    export const { create, findOne, findMany, updateOne, deleteOne } =
+      createApi(schema, createAuth, {});
+    ```
+  </Tab>
+</Tabs>
+
+```tsx title="src/components/app.tsx"
+'use client';
+
+import { useAuthStatus, Authenticated, Unauthenticated } from 'better-convex/auth-client';
+
+function App() {
+  const { isAuthenticated, isLoading } = useAuthStatus();
+
+  if (isLoading) return <div>Loading...</div>;
+
+  return (
+    <>
+      <Authenticated>
+        <Dashboard />
+      </Authenticated>
+      <Unauthenticated>
+        <LoginPage />
+      </Unauthenticated>
+    </>
+  );
+}
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Setup" href="/docs/auth/setup" />
+  <Card title="Triggers" href="/docs/auth/triggers" />
+  <Card title="Helpers" href="/docs/auth/helpers" />
+</Cards>

@@ -1,0 +1,215 @@
+---
+title: Error Handling
+description: Throw typed errors with error codes and HTTP status mapping
+---
+
+## Overview
+
+cRPC provides `CRPCError`, a typed error class that extends Convex's `ConvexError` with tRPC-style error codes and HTTP status mapping.
+
+## Throwing Errors
+
+```ts
+import { CRPCError } from 'better-convex/server';
+
+throw new CRPCError({
+  code: 'NOT_FOUND',
+  message: 'Post not found',
+});
+```
+
+### Constructor
+
+```ts
+new CRPCError({
+  code: CRPCErrorCode;  // Required
+  message?: string;     // Optional, defaults to code
+  cause?: unknown;      // Optional, original error
+});
+```
+
+### With Cause
+
+Preserve the original error stack trace:
+
+```ts
+try {
+  await externalApi.call();
+} catch (error) {
+  throw new CRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: 'External API failed',
+    cause: error,
+  });
+}
+```
+
+## Error Codes
+
+| Code | Description | HTTP |
+|------|-------------|------|
+| `BAD_REQUEST` | Invalid request or input validation failed | 400 |
+| `UNAUTHORIZED` | Missing or invalid authentication | 401 |
+| `PAYMENT_REQUIRED` | Payment required to access resource | 402 |
+| `FORBIDDEN` | Authenticated but not authorized | 403 |
+| `NOT_FOUND` | Resource not found | 404 |
+| `METHOD_NOT_SUPPORTED` | Method not supported | 405 |
+| `TIMEOUT` | Request timeout | 408 |
+| `CONFLICT` | Resource conflict | 409 |
+| `PRECONDITION_FAILED` | Precondition failed | 412 |
+| `PAYLOAD_TOO_LARGE` | Request too large | 413 |
+| `UNPROCESSABLE_CONTENT` | Valid syntax but cannot process | 422 |
+| `TOO_MANY_REQUESTS` | Rate limit exceeded | 429 |
+| `INTERNAL_SERVER_ERROR` | Unexpected server error | 500 |
+
+## Helpers
+
+### getCRPCErrorFromUnknown
+
+Wrap unknown errors in `CRPCError`:
+
+```ts
+import { getCRPCErrorFromUnknown } from 'better-convex/crpc';
+
+try {
+  await riskyOperation();
+} catch (error) {
+  throw getCRPCErrorFromUnknown(error);
+}
+```
+
+### getHTTPStatusCodeFromError
+
+Get HTTP status code from error:
+
+```ts
+import { getHTTPStatusCodeFromError } from 'better-convex/crpc';
+
+const httpStatus = getHTTPStatusCodeFromError(error); // 404
+```
+
+### isCRPCError
+
+Type guard for `CRPCError`:
+
+```ts
+import { isCRPCError } from 'better-convex/crpc';
+
+if (isCRPCError(error)) {
+  console.log(error.code); // 'NOT_FOUND'
+}
+```
+
+## Common Patterns
+
+### Authorization
+
+```ts
+const authMiddleware = c.middleware(async ({ ctx, next }) => {
+  const user = await getSessionUser(ctx);
+  if (!user) {
+    throw new CRPCError({ code: 'UNAUTHORIZED' });
+  }
+  return next({ ctx: { ...ctx, user } });
+});
+```
+
+### Not Found
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts
+    export const getById = authQuery
+      .input(z.object({ id: zid('posts') }))
+      .query(async ({ ctx, input }) => {
+        const post = await ctx.db.get(input.id);
+        if (!post) {
+          throw new CRPCError({
+            code: 'NOT_FOUND',
+            message: 'Post not found',
+          });
+        }
+        return post;
+      });
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts
+    export const getById = authQuery
+      .input(z.object({ id: zid('posts') }))
+      .query(async ({ ctx, input }) => {
+        const post = await ctx.table('posts').get(input.id);
+        if (!post) {
+          throw new CRPCError({
+            code: 'NOT_FOUND',
+            message: 'Post not found',
+          });
+        }
+        return post;
+      });
+    ```
+  </Tab>
+</Tabs>
+
+### Rate Limiting
+
+```ts
+if (isRateLimited) {
+  throw new CRPCError({
+    code: 'TOO_MANY_REQUESTS',
+    message: 'Rate limit exceeded. Try again later.',
+  });
+}
+```
+
+### Permission Check
+
+```ts
+if (post.authorId !== ctx.userId) {
+  throw new CRPCError({
+    code: 'FORBIDDEN',
+    message: 'You can only edit your own posts',
+  });
+}
+```
+
+## Migrate from Convex
+
+### What stays the same
+
+- Errors are thrown in procedures
+- Errors propagate to the client
+
+### What's new
+
+**Before (vanilla Convex):**
+```ts
+import { ConvexError } from 'convex/values';
+
+throw new ConvexError('Post not found');
+// or
+throw new ConvexError({ message: 'Post not found' });
+```
+
+**After (cRPC):**
+```ts
+import { CRPCError } from 'better-convex/server';
+
+throw new CRPCError({
+  code: 'NOT_FOUND',
+  message: 'Post not found',
+});
+```
+
+Key differences:
+- Typed error codes instead of free-form messages
+- HTTP status code mapping for API responses
+- `cause` parameter for error chaining
+- Helper functions for error handling
+
+## Next steps
+
+<Cards>
+  <Card title="Server Side Calls" href="/docs/server/server-side-calls" />
+  <Card title="Client Error Handling" href="/docs/react/error-handling" />
+</Cards>

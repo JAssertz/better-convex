@@ -1,0 +1,3 @@
+[install.peer]
+# Don't auto-install peer dependencies - use root node_modules
+optional = true

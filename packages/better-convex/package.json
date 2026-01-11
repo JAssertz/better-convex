@@ -1,0 +1,82 @@
+{
+  "name": "better-convex",
+  "version": "0.0.3",
+  "description": "Better Convex - React Query integration and CLI tools for Convex",
+  "keywords": [
+    "convex",
+    "react-query",
+    "tanstack-query",
+    "codegen",
+    "cli"
+  ],
+  "license": "MIT",
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    "./auth": "./dist/auth/index.js",
+    "./auth-client": "./dist/auth-client/index.js",
+    "./auth-nextjs": "./dist/auth-nextjs/index.js",
+    "./crpc": "./dist/crpc/index.js",
+    "./react": "./dist/react/index.js",
+    "./rsc": "./dist/rsc/index.js",
+    "./server": "./dist/server/index.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "better-convex": "./dist/cli.cjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "build:watch": "tsdown --watch",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": {
+    "chokidar": "^5.0.0",
+    "common-tags": "^1.8.2",
+    "execa": "^9.6.1",
+    "jiti": "^2.6.1",
+    "jotai-x": "^2.3.3",
+    "picocolors": "^1.1.1",
+    "remeda": "^2.21.0",
+    "type-fest": "^5.3.1"
+  },
+  "devDependencies": {
+    "@rollup/plugin-babel": "^6.1.0",
+    "@types/node": "^25.0.3",
+    "@types/react": "^19.2.7",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "next": "^16.1.1",
+    "tsdown": "^0.19.0-beta.1",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@convex-dev/better-auth": ">=0.10.4",
+    "@tanstack/react-query": ">=5",
+    "better-auth": ">=1.4.9",
+    "convex": ">=1.31",
+    "convex-helpers": ">=0.1",
+    "next": ">=14",
+    "react": ">=18",
+    "zod": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "@convex-dev/better-auth": {
+      "optional": true
+    },
+    "better-auth": {
+      "optional": true
+    },
+    "next": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

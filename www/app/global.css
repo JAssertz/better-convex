@@ -1,0 +1,32 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* Twoslash-style hover tooltips */
+.twoslash-hover {
+  position: relative;
+  border-bottom: 1px dotted transparent;
+  cursor: pointer;
+}
+
+.twoslash-hover:hover {
+  border-bottom-color: currentColor;
+}
+
+.twoslash-hover:hover::before {
+  content: attr(data-lsp);
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 8px;
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}

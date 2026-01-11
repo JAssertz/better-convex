@@ -1,0 +1,365 @@
+---
+title: Middlewares
+description: Add authorization, logging, and context transformations to procedures
+---
+
+## Overview
+
+Middleware wraps procedure invocation. Use it to:
+
+- Check authentication/authorization
+- Transform context (add user, userId)
+- Log requests
+- Apply rate limiting
+
+Middleware must call `next()` and return its result.
+
+## Authorization
+
+The most common use case. Check if a user is authorized before the procedure runs:
+
+```ts title="convex/lib/crpc.ts"
+export const authQuery = c.query.use(async ({ ctx, next }) => {
+  const user = await getSessionUser(ctx);
+  if (!user) {
+    throw new CRPCError({ code: 'UNAUTHORIZED' });
+  }
+  return next({
+    ctx: { ...ctx, user, userId: user.id },
+  });
+});
+```
+
+<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
+  <Tab value="ctx.db">
+    ```ts title="convex/functions/posts.ts"
+    export const myPosts = authQuery
+      .query(async ({ ctx }) => {
+        // ctx.user and ctx.userId are guaranteed
+        return ctx.db.query('posts')
+          .withIndex('by_author', q => q.eq('authorId', ctx.userId))
+          .collect();
+      });
+    ```
+  </Tab>
+  <Tab value="ctx.table">
+    ```ts title="convex/functions/posts.ts"
+    export const myPosts = authQuery
+      .query(async ({ ctx }) => {
+        // ctx.user and ctx.userId are guaranteed
+        return ctx.table('posts', 'by_author', q =>
+          q.eq('authorId', ctx.userId)
+        );
+      });
+    ```
+  </Tab>
+</Tabs>
+
+## Middleware Signature
+
+Middleware receives an object with:
+
+| Property | Description |
+|----------|-------------|
+| `ctx` | Current context |
+| `meta` | Procedure metadata |
+| `next` | Function to call next middleware/handler |
+| `input` | Validated input (if `.input()` was called before `.use()`) |
+
+```ts
+.use(async ({ ctx, meta, next, input }) => {
+  // Do something before
+  const result = await next({ ctx });
+  // Do something after (optional)
+  return result;
+})
+```
+
+## Context Extension
+
+Middleware can add or transform context properties. The new context is type-safe:
+
+```ts title="convex/lib/crpc.ts"
+export const authQuery = c.query.use(async ({ ctx, next }) => {
+  const user = await getSessionUser(ctx);
+  if (!user) throw new CRPCError({ code: 'UNAUTHORIZED' });
+
+  // Add user and userId to context
+  return next({
+    ctx: {
+      ...ctx,
+      user,
+      userId: user.id,
+    },
+  });
+});
+
+// In procedures, ctx.user is non-null
+export const profile = authQuery
+  .query(async ({ ctx }) => {
+    return ctx.user; // Type: User, not User | null
+  });
+```
+
+## Using Meta
+
+Access procedure metadata to customize middleware behavior:
+
+```ts title="convex/lib/crpc.ts"
+type Meta = {
+  auth?: 'optional' | 'required';
+  role?: 'admin';
+  rateLimit?: string;
+};
+
+const c = initCRPC
+  .dataModel<DataModel>()
+  .meta<Meta>()
+  .create({ ... });
+
+// Role-based middleware
+const roleMiddleware = c.middleware<{ user: { isAdmin: boolean } }>(
+  ({ ctx, meta, next }) => {
+    if (meta.role === 'admin' && !ctx.user.isAdmin) {
+      throw new CRPCError({ code: 'FORBIDDEN' });
+    }
+    return next({ ctx });
+  }
+);
+
+// Usage
+export const adminQuery = authQuery
+  .meta({ role: 'admin' })
+  .use(roleMiddleware);
+```
+
+## Chaining Middleware
+
+Chain multiple `.use()` calls. They execute in order:
+
+```ts title="convex/lib/crpc.ts"
+export const authMutation = c.mutation
+  .meta({ auth: 'required' })
+  .use(authMiddleware)      // 1. Check auth, add user to ctx
+  .use(roleMiddleware)      // 2. Check role if meta.role set
+  .use(rateLimitMiddleware); // 3. Apply rate limiting
+```
+
+Order matters - later middleware can access context from earlier middleware.
+
+## Sharing Middleware
+
+Queries and mutations have different context types. To share middleware between them:
+
+```ts
+// ✅ Use loose type constraint for shared middleware
+const roleMiddleware = c.middleware<object>(({ ctx, meta, next }) => {
+  // Access user via type assertion
+  const user = (ctx as { user?: { isAdmin?: boolean } }).user;
+  if (meta.role === 'admin' && !user?.isAdmin) {
+    throw new CRPCError({ code: 'FORBIDDEN' });
+  }
+  return next({ ctx });
+});
+
+// Apply to both query and mutation chains
+export const authQuery = c.query
+  .use(authMiddleware)
+  .use(roleMiddleware);
+
+export const authMutation = c.mutation
+  .use(authMiddleware)
+  .use(roleMiddleware);
+```
+
+For middleware that needs `ctx.db` write methods, use `.use()` directly on `c.mutation`:
+
+```ts
+// ❌ Shared middleware loses mutation-specific methods
+const dbMiddleware = c.middleware(async ({ ctx, next }) => {
+  await ctx.db.insert('logs', { ... }); // Error: insert doesn't exist
+  return next({ ctx });
+});
+
+// ✅ Apply directly to mutation chain
+export const authMutation = c.mutation.use(async ({ ctx, next }) => {
+  await ctx.db.insert('logs', { ... }); // Works
+  return next({ ctx });
+});
+```
+
+## Reusable Middleware
+
+Create standalone middleware with `c.middleware()`:
+
+```ts title="convex/lib/crpc.ts"
+// Standalone middleware
+const logMiddleware = c.middleware(async ({ ctx, next }) => {
+  const start = Date.now();
+  const result = await next({ ctx });
+  console.log(`Request took ${Date.now() - start}ms`);
+  return result;
+});
+
+// Type-constrained middleware
+const rateLimitMiddleware = c.middleware<
+  MutationCtx & { user?: { id: string; plan: string } | null }
+>(async ({ ctx, meta, next }) => {
+  await rateLimitGuard({
+    ...ctx,
+    rateLimitKey: meta.rateLimit ?? 'default',
+    user: ctx.user ?? null,
+  });
+  return next({ ctx });
+});
+```
+
+### Extending with `.pipe()`
+
+Extend existing middleware with `.pipe()`:
+
+```ts
+const authMiddleware = c.middleware(async ({ ctx, next }) => {
+  const user = await getSessionUser(ctx);
+  if (!user) throw new CRPCError({ code: 'UNAUTHORIZED' });
+  return next({ ctx: { ...ctx, user } });
+});
+
+// Extend auth with admin check
+const adminMiddleware = authMiddleware.pipe(({ ctx, next }) => {
+  if (!ctx.user.isAdmin) {
+    throw new CRPCError({ code: 'FORBIDDEN' });
+  }
+  return next({ ctx });
+});
+```
+
+## Common Patterns
+
+### Auth Required
+
+With Better Auth, use `getSession()` to retrieve the session and fetch the user:
+
+```ts
+import { getHeaders, getSession } from 'better-convex/auth';
+import { CRPCError } from 'better-convex/server';
+
+export const authQuery = c.query.use(async ({ ctx, next }) => {
+  const session = await getSession(ctx);
+  if (!session) {
+    throw new CRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
+  }
+
+  const user = await ctx.db.get(session.userId);
+  if (!user) {
+    throw new CRPCError({ code: 'UNAUTHORIZED', message: 'User not found' });
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+      user: { id: user._id, ...user },
+      userId: user._id,
+    },
+  });
+});
+```
+
+### Auth Optional
+
+For queries that work with or without authentication:
+
+```ts
+export const optionalAuthQuery = c.query.use(async ({ ctx, next }) => {
+  const session = await getSession(ctx);
+  if (!session) {
+    return next({ ctx: { ...ctx, user: null, userId: null } });
+  }
+
+  const user = await ctx.db.get(session.userId);
+  if (!user) {
+    return next({ ctx: { ...ctx, user: null, userId: null } });
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+      user: { id: user._id, ...user },
+      userId: user._id,
+    },
+  });
+});
+```
+
+### Rate Limiting
+
+```ts
+const rateLimitMiddleware = c.middleware<MutationCtx>(
+  async ({ ctx, meta, next }) => {
+    await rateLimitGuard({
+      ...ctx,
+      rateLimitKey: meta.rateLimit ?? 'default',
+    });
+    return next({ ctx });
+  }
+);
+
+export const publicMutation = c.mutation
+  .use(rateLimitMiddleware);
+```
+
+### Logging
+
+```ts
+const logMiddleware = c.middleware(async ({ ctx, next }) => {
+  const start = Date.now();
+  const result = await next({ ctx });
+  console.log(`Duration: ${Date.now() - start}ms`);
+  return result;
+});
+```
+
+## Migrate from Convex
+
+### What stays the same
+
+- Middleware runs before the handler
+- Can transform context and add properties
+
+### What's new
+
+**Before (convex-helpers):**
+```ts
+import { customQuery, customCtx } from 'convex-helpers/server/customFunctions';
+
+const authQuery = customQuery(query,
+  customCtx(async (ctx) => {
+    const user = await getUser(ctx);
+    if (!user) throw new Error('Unauthorized');
+    return { user };
+  })
+);
+```
+
+**After (cRPC):**
+```ts
+const authQuery = c.query.use(async ({ ctx, next }) => {
+  const user = await getUser(ctx);
+  if (!user) throw new CRPCError({ code: 'UNAUTHORIZED' });
+  return next({ ctx: { ...ctx, user } });
+});
+```
+
+Key differences:
+- Call `next({ ctx })` instead of returning context directly
+- Use `CRPCError` for typed errors with codes
+- Chain multiple `.use()` calls for composable middleware
+- Access `meta` for procedure-level configuration
+- Use `c.middleware()` for standalone, reusable middleware
+
+## Next steps
+
+<Cards>
+  <Card title="Error Handling" href="/docs/server/error-handling" />
+  <Card title="Context" href="/docs/server/context" />
+</Cards>
