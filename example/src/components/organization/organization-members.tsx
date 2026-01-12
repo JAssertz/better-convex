@@ -2,6 +2,8 @@
 
 import { api } from '@convex/api';
 import type { Id } from '@convex/dataModel';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation as useConvexMutation } from 'convex/react';
 import {
   Crown,
   Mail,
@@ -49,7 +51,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useAuthMutation, useAuthQuery } from '@/lib/convex/hooks';
+import { useCRPC } from '@/lib/convex/crpc';
 
 type Member = {
   id: Id<'member'>;
@@ -91,13 +93,19 @@ export function OrganizationMembers({
     role: 'member',
   });
 
-  const _a = api;
+  const crpc = useCRPC();
 
-  const { data: pendingInvitations, isLoading: invitationsLoading } =
-    useAuthQuery(
-      api.organization.listPendingInvitations,
-      organization ? { slug: organization.slug } : 'skip',
+  const inviteMemberFn = useConvexMutation(api.organization.inviteMember);
+  const removeMemberFn = useConvexMutation(api.organization.removeMember);
+  const updateMemberRoleFn = useConvexMutation(api.organization.updateMemberRole);
+  const cancelInvitationFn = useConvexMutation(api.organization.cancelInvitation);
+
+  const { data: pendingInvitations, isLoading: invitationsLoading } = useQuery(
+    crpc.organization.listPendingInvitations.queryOptions(
+      organization ? { slug: organization.slug } : ({} as any),
       {
+        skipUnauth: true,
+        enabled: !!organization,
         placeholderData: [
           {
             id: '1' as any,
@@ -111,9 +119,11 @@ export function OrganizationMembers({
           },
         ],
       }
-    );
+    )
+  ) as { data: Array<{ id: Id<'invitation'>; createdAt: number; email: string; expiresAt: number; organizationId: Id<'organization'>; role: string; status: string }> | undefined; isLoading: boolean };
 
-  const inviteMember = useAuthMutation(api.organization.inviteMember, {
+  const inviteMember = useMutation({
+    mutationFn: (args: any) => inviteMemberFn(args),
     onSuccess: () => {
       setShowInviteDialog(false);
       setInviteData({ email: '', role: 'member' });
@@ -124,7 +134,8 @@ export function OrganizationMembers({
     },
   });
 
-  const removeMember = useAuthMutation(api.organization.removeMember, {
+  const removeMember = useMutation({
+    mutationFn: (args: any) => removeMemberFn(args),
     onSuccess: () => {
       toast.success('Member removed successfully');
     },
@@ -133,7 +144,8 @@ export function OrganizationMembers({
     },
   });
 
-  const updateMemberRole = useAuthMutation(api.organization.updateMemberRole, {
+  const updateMemberRole = useMutation({
+    mutationFn: (args: any) => updateMemberRoleFn(args),
     onSuccess: () => {
       toast.success('Member role updated successfully');
     },
@@ -142,7 +154,8 @@ export function OrganizationMembers({
     },
   });
 
-  const cancelInvitation = useAuthMutation(api.organization.cancelInvitation, {
+  const cancelInvitation = useMutation({
+    mutationFn: (args: any) => cancelInvitationFn(args),
     onSuccess: () => {
       toast.success('Invitation cancelled successfully');
     },

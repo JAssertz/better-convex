@@ -1,5 +1,5 @@
 import { HOUR, MINUTE, RateLimiter, SECOND } from '@convex-dev/rate-limiter';
-import { ConvexError } from 'convex/values';
+import { CRPCError } from 'better-convex/server';
 import { components } from '../functions/_generated/api';
 import type { ActionCtx, MutationCtx } from '../functions/_generated/server';
 import type { SessionUser } from './auth/auth-helpers';
@@ -124,14 +124,10 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     rate: 30,
   },
 
-  // Scraper limits (admin only)
-  scraper: { kind: 'fixed window', period: MINUTE, rate: 10 },
-
   // General rate limits
   free: { kind: 'token bucket', period: 10 * SECOND, rate: 40 },
   premium: { kind: 'token bucket', period: 10 * SECOND, rate: 100 },
   public: { kind: 'token bucket', period: 10 * SECOND, rate: 20 },
-  vercel: { kind: 'token bucket', period: 10 * SECOND, rate: 3 },
 });
 
 // Helper function to get rate limit key based on user tier
@@ -140,7 +136,7 @@ export function getRateLimitKey(
   tier: 'free' | 'premium' | 'public'
 ): string {
   // For general limits without tiers and admin-only limits
-  if (['free', 'premium', 'public', 'scraper', 'vercel'].includes(baseKey)) {
+  if (['free', 'premium', 'public'].includes(baseKey)) {
     return baseKey;
   }
 
@@ -173,7 +169,7 @@ export async function rateLimitGuard(
   }
 ) {
   const tier = getUserTier(ctx.user);
-  const limitKey = getRateLimitKey(ctx.rateLimitKey, tier) as any;
+  const limitKey = getRateLimitKey(ctx.rateLimitKey, tier);
   const identifier = ctx.user?.id ?? 'anonymous';
 
   const status = await rateLimiter.limit(ctx, limitKey, {
@@ -181,10 +177,9 @@ export async function rateLimitGuard(
   });
 
   if (!status.ok) {
-    throw new ConvexError({
+    throw new CRPCError({
       code: 'TOO_MANY_REQUESTS',
       message: 'Rate limit exceeded. Please try again later.',
-      retryAfter: status.retryAfter,
     });
   }
 }

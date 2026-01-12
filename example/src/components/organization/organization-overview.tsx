@@ -2,6 +2,8 @@
 
 import { api } from '@convex/api';
 import type { Id } from '@convex/dataModel';
+import { useMutation } from '@tanstack/react-query';
+import { useMutation as useConvexMutation } from 'convex/react';
 import {
   Calendar,
   Crown,
@@ -26,7 +28,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuthMutation } from '@/lib/convex/hooks';
 
 type OrganizationOverviewProps = {
   organization?: {
@@ -54,32 +55,31 @@ export function OrganizationOverview({
     logo: '',
   });
 
-  const updateOrganization = useAuthMutation(
-    api.organization.updateOrganization,
-    {
-      onSuccess: () => {
-        setShowEditDialog(false);
-        toast.success('Organization updated successfully');
-      },
-      onError: (error: any) => {
-        toast.error(error.data?.message ?? 'Failed to update organization');
-      },
-    }
-  );
+  const updateOrgFn = useConvexMutation(api.organization.updateOrganization);
+  const deleteOrgFn = useConvexMutation(api.organization.deleteOrganization);
 
-  const deleteOrganization = useAuthMutation(
-    api.organization.deleteOrganization,
-    {
-      onSuccess: () => {
-        setShowDeleteDialog(false);
-        toast.success('Organization deleted successfully');
-        // Redirect handled by the mutation
-      },
-      onError: (error: any) => {
-        toast.error(error.data?.message ?? 'Failed to delete organization');
-      },
-    }
-  );
+  const updateOrganization = useMutation({
+    mutationFn: (args: any) => updateOrgFn(args),
+    onSuccess: () => {
+      setShowEditDialog(false);
+      toast.success('Organization updated successfully');
+    },
+    onError: (error: any) => {
+      toast.error(error.data?.message ?? 'Failed to update organization');
+    },
+  });
+
+  const deleteOrganization = useMutation({
+    mutationFn: () => deleteOrgFn({}),
+    onSuccess: () => {
+      setShowDeleteDialog(false);
+      toast.success('Organization deleted successfully');
+      // Redirect handled by the mutation
+    },
+    onError: (error: any) => {
+      toast.error(error.data?.message ?? 'Failed to delete organization');
+    },
+  });
 
   if (!organization) {
     return null;
@@ -120,7 +120,7 @@ export function OrganizationOverview({
   };
 
   const handleDeleteOrganization = () => {
-    deleteOrganization.mutate({});
+    deleteOrganization.mutate();
   };
 
   const isOwner = organization.role === 'owner';

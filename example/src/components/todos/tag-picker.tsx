@@ -1,7 +1,7 @@
 'use client';
 
-import { api } from '@convex/api';
 import type { Id } from '@convex/dataModel';
+import { useQuery } from '@tanstack/react-query';
 import { Check, Tags, X } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +19,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { useAuthQuery } from '@/lib/convex/hooks';
+import { useCRPC } from '@/lib/convex/crpc';
 import { cn } from '@/lib/utils';
 
 type TagPickerProps = {
@@ -34,7 +34,10 @@ export function TagPicker({
   disabled,
 }: TagPickerProps) {
   const [open, setOpen] = useState(false);
-  const { data: tags = [] } = useAuthQuery(api.tags.list, {});
+  const crpc = useCRPC();
+  const { data: tags = [] } = useQuery(
+    crpc.tags.list.queryOptions({}, { skipUnauth: true })
+  ) as { data: Array<{ _id: Id<'tags'>; name: string; color: string; usageCount: number }> };
 
   const selectedTags = tags.filter((tag) => selectedTagIds.includes(tag._id));
 

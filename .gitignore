@@ -11,8 +11,8 @@ node_modules
 /coverage
 
 # next.js
-/.next/
-/out/
+**/.next/
+**/out/
 
 # production
 dist
@@ -31,8 +31,8 @@ pids
 *.pem
 
 # local env files
-.env*.local
-convex/.env
+**/.env*.local
+**/convex/.env
 
 # vercel
 .vercel

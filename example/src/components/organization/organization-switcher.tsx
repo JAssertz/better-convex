@@ -2,6 +2,8 @@
 
 import { api } from '@convex/api';
 import type { Id } from '@convex/dataModel';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation as useConvexMutation } from 'convex/react';
 import { Building2, Check, ChevronsUpDown, Plus, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -33,11 +35,8 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { WithSkeleton } from '@/components/ui/skeleton';
-import {
-  useAuthMutation,
-  useAuthQuery,
-  useCurrentUser,
-} from '@/lib/convex/hooks';
+import { useCRPC } from '@/lib/convex/crpc';
+import { useCurrentUser } from '@/lib/convex/hooks';
 import { cn } from '@/lib/utils';
 
 export function OrganizationSwitcher() {
@@ -48,69 +47,72 @@ export function OrganizationSwitcher() {
   const router = useRouter();
   const user = useCurrentUser();
 
-  const { data: orgsData, isLoading } = useAuthQuery(
-    api.organization.listOrganizations,
-    {},
-    {
-      placeholderData: {
-        canCreateOrganization: true,
-        organizations: [
-          {
-            id: '1' as any,
-            createdAt: new Date('2025-11-04').getTime(),
-            isPersonal: true,
-            logo: null,
-            name: 'Personal',
-            slug: 'personal',
-          },
-          {
-            id: '2' as any,
-            createdAt: new Date('2025-11-04').getTime(),
-            isPersonal: false,
-            logo: null,
-            name: 'Team Organization',
-            slug: 'team-org',
-          },
-        ],
-      },
-    }
+  const crpc = useCRPC();
+
+  const setActiveOrgFn = useConvexMutation(api.organization.setActiveOrganization);
+  const createOrgFn = useConvexMutation(api.organization.createOrganization);
+
+  const { data: orgsData, isLoading } = useQuery(
+    crpc.organization.listOrganizations.queryOptions(
+      {},
+      {
+        skipUnauth: true,
+        placeholderData: {
+          canCreateOrganization: true,
+          organizations: [
+            {
+              id: '1' as Id<'organization'>,
+              createdAt: new Date('2025-11-04').getTime(),
+              isPersonal: true,
+              logo: null,
+              name: 'Personal',
+              slug: 'personal',
+            },
+            {
+              id: '2' as Id<'organization'>,
+              createdAt: new Date('2025-11-04').getTime(),
+              isPersonal: false,
+              logo: null,
+              name: 'Team Organization',
+              slug: 'team-org',
+            },
+          ],
+        },
+      }
+    )
   );
 
-  const setActiveOrganization = useAuthMutation(
-    api.organization.setActiveOrganization,
-    {
-      onSuccess: () => {
-        toast.success('Switched organization successfully');
-        setOpen(false);
-        // Navigate to the organization page after switching
-        if (selectedOrgSlug) {
-          router.push(`/org/${selectedOrgSlug}`);
-          setSelectedOrgSlug(null);
-        } else {
-          router.refresh();
-        }
-      },
-      onError: (error: any) => {
-        toast.error(error.data?.message ?? 'Failed to switch organization');
-      },
-    }
-  );
+  const setActiveOrganization = useMutation({
+    mutationFn: (args: any) => setActiveOrgFn(args),
+    onSuccess: () => {
+      toast.success('Switched organization successfully');
+      setOpen(false);
+      // Navigate to the organization page after switching
+      if (selectedOrgSlug) {
+        router.push(`/org/${selectedOrgSlug}`);
+        setSelectedOrgSlug(null);
+      } else {
+        router.refresh();
+      }
+    },
+    onError: (error: any) => {
+      toast.error(error.data?.message ?? 'Failed to switch organization');
+    },
+  });
 
-  const createOrganization = useAuthMutation(
-    api.organization.createOrganization,
-    {
-      onSuccess: (result) => {
-        toast.success('Organization created successfully');
-        setShowCreateDialog(false);
-        setOrgName('');
-        // Navigate to the new organization
-        router.push(`/org/${result.slug}`);
-      },
-      onError: (error: any) => {
-        toast.error(error.data?.message ?? 'Failed to create organization');
-      },
-    }
-  );
+  const createOrganization = useMutation({
+    mutationFn: (args: any) => createOrgFn(args),
+    onSuccess: (result: any) => {
+      toast.success('Organization created successfully');
+      setShowCreateDialog(false);
+      setOrgName('');
+      // Navigate to the new organization
+      router.push(`/org/${result.slug}`);
+    },
+    onError: (error: any) => {
+      toast.error(error.data?.message ?? 'Failed to create organization');
+    },
+  });
 
   if (!user) {
     return null;

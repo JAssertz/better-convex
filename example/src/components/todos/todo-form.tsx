@@ -2,6 +2,8 @@
 
 import { api } from '@convex/api';
 import type { Id } from '@convex/dataModel';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation as useConvexMutation } from 'convex/react';
 import { format } from 'date-fns';
 import { CalendarIcon, Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -23,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useAuthMutation, useAuthQuery } from '@/lib/convex/hooks';
+import { useCRPC } from '@/lib/convex/crpc';
 import { cn } from '@/lib/utils';
 import { TagPicker } from './tag-picker';
 
@@ -46,8 +48,12 @@ export function TodoForm({
   const [selectedTagIds, setSelectedTagIds] = useState<Id<'tags'>[]>([]);
   const [isOpen, setIsOpen] = useState(false);
 
-  const createTodo = useAuthMutation(api.todos.create);
-  const { data: projects } = useAuthQuery(api.projects.listForDropdown, {});
+  const crpc = useCRPC();
+  const createTodoFn = useConvexMutation(api.todos.create);
+  const createTodo = useMutation({ mutationFn: (args: any) => createTodoFn(args) });
+  const { data: projects } = useQuery(
+    crpc.projects.listForDropdown.queryOptions({}, { skipUnauth: true })
+  ) as { data: Array<{ _id: Id<'projects'>; name: string; isOwner: boolean }> | undefined };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

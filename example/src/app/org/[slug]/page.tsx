@@ -1,6 +1,7 @@
 'use client';
 
-import { api } from '@convex/api';
+import type { Id } from '@convex/dataModel';
+import { useQuery } from '@tanstack/react-query';
 import {
   Building2,
   Calendar,
@@ -18,68 +19,74 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { WithSkeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useAuthQuery } from '@/lib/convex/hooks';
+import { useCRPC } from '@/lib/convex/crpc';
 
 export default function OrganizationPage() {
   const params = useParams();
   const slug = params.slug as string;
   const [activeTab, setActiveTab] = useState('overview');
 
-  const { data: organization, isLoading } = useAuthQuery(
-    api.organization.getOrganization,
-    { slug },
-    {
-      placeholderData: {
-        id: '1' as any,
-        createdAt: new Date('2025-11-04').getTime(),
-        isActive: false,
-        isPersonal: false,
-        logo: null,
-        membersCount: 3,
-        name: 'Loading Organization',
-        role: 'member',
-        slug,
-      },
-    }
+  const crpc = useCRPC();
+
+  const { data: organization, isLoading } = useQuery(
+    crpc.organization.getOrganization.queryOptions(
+      { slug },
+      {
+        skipUnauth: true,
+        placeholderData: {
+          id: '1' as Id<'organization'>,
+          createdAt: new Date('2025-11-04').getTime(),
+          isActive: false,
+          isPersonal: false,
+          logo: null,
+          membersCount: 3,
+          name: 'Loading Organization',
+          role: 'member',
+          slug,
+        },
+      }
+    )
   );
 
-  const { data: members, isLoading: membersLoading } = useAuthQuery(
-    api.organization.listMembers,
-    { slug },
-    {
-      placeholderData: {
-        currentUserRole: 'member',
-        isPersonal: false,
-        members: [
-          {
-            id: '1' as any,
-            createdAt: new Date('2025-11-04').getTime(),
-            organizationId: '1' as any,
-            role: 'owner',
-            user: {
-              id: '1' as any,
-              email: 'owner@example.com',
-              image: null,
-              name: 'Organization Owner',
+  const { data: members, isLoading: membersLoading } = useQuery(
+    crpc.organization.listMembers.queryOptions(
+      { slug },
+      {
+        skipUnauth: true,
+        placeholderData: {
+          currentUserRole: 'member',
+          isPersonal: false,
+          members: [
+            {
+              id: '1' as Id<'member'>,
+              createdAt: new Date('2025-11-04').getTime(),
+              organizationId: '1' as Id<'organization'>,
+              role: 'owner',
+              user: {
+                id: '1' as Id<'user'>,
+                email: 'owner@example.com',
+                image: null,
+                name: 'Organization Owner',
+              },
+              userId: '1' as Id<'user'>,
             },
-            userId: '1' as any,
-          },
-          {
-            id: '2' as any,
-            createdAt: new Date('2025-11-04').getTime(),
-            organizationId: '1' as any,
-            role: 'member',
-            user: {
-              id: '2' as any,
-              email: 'member@example.com',
-              image: null,
-              name: 'Team Member',
+            {
+              id: '2' as Id<'member'>,
+              createdAt: new Date('2025-11-04').getTime(),
+              organizationId: '1' as Id<'organization'>,
+              role: 'member',
+              user: {
+                id: '2' as Id<'user'>,
+                email: 'member@example.com',
+                image: null,
+                name: 'Team Member',
+              },
+              userId: '2' as Id<'user'>,
             },
-            userId: '2' as any,
-          },
-        ],
-      },
-    }
+          ],
+        },
+      }
+    )
   );
 
   if (!(organization || isLoading)) {

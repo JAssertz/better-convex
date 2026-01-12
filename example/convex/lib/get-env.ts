@@ -4,7 +4,7 @@ import { z } from 'zod';
 const envSchema = z.object({
   // Public environment variables
   DEPLOY_ENV: z.string().default('production'),
-  NEXT_PUBLIC_SITE_URL: z.string().default('http://localhost:3005'),
+  SITE_URL: z.string().default('http://localhost:3000'),
 
   // Auth
   BETTER_AUTH_SECRET: z.string(),

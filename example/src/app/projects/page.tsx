@@ -2,7 +2,9 @@
 
 import { api } from '@convex/api';
 import type { Id } from '@convex/dataModel';
-import { useInfiniteQuery } from 'better-convex/react';
+import { useMutation } from '@tanstack/react-query';
+import { useInfiniteQuery, useIsAuth } from 'better-convex/react';
+import { useMutation as useConvexMutation } from 'convex/react';
 import { Archive, CheckSquare, Plus, Square, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -23,7 +25,6 @@ import { Label } from '@/components/ui/label';
 import { WithSkeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useCRPC } from '@/lib/convex/crpc';
-import { useAuthMutation, useIsAuth } from '@/lib/convex/hooks';
 import { cn } from '@/lib/utils';
 
 type ProjectListItem = {
@@ -52,10 +53,15 @@ export default function ProjectsPage() {
   const isAuth = useIsAuth();
   const crpc = useCRPC();
 
+  const createProjectFn = useConvexMutation(api.projects.create);
+  const archiveProjectFn = useConvexMutation(api.projects.archive);
+  const restoreProjectFn = useConvexMutation(api.projects.restore);
+
   const { data, hasNextPage, isLoading, isFetchingNextPage, fetchNextPage } =
     useInfiniteQuery(crpc.projects.list.infiniteQueryOptions({ includeArchived }));
 
-  const createProject = useAuthMutation(api.projects.create, {
+  const createProject = useMutation({
+    mutationFn: (args: any) => createProjectFn(args),
     onSuccess: () => {
       setShowCreateDialog(false);
       setNewProject({ name: '', description: '', isPublic: false });
@@ -66,8 +72,12 @@ export default function ProjectsPage() {
     },
   });
 
-  const archiveProject = useAuthMutation(api.projects.archive);
-  const restoreProject = useAuthMutation(api.projects.restore);
+  const archiveProject = useMutation({
+    mutationFn: (args: any) => archiveProjectFn(args),
+  });
+  const restoreProject = useMutation({
+    mutationFn: (args: any) => restoreProjectFn(args),
+  });
 
   const handleCreateProject = async () => {
     if (!newProject.name.trim()) {

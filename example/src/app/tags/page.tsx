@@ -2,6 +2,8 @@
 
 import { api } from '@convex/api';
 import type { Id } from '@convex/dataModel';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation as useConvexMutation } from 'convex/react';
 import {
   Edit2,
   GitMerge,
@@ -33,8 +35,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { WithSkeleton } from '@/components/ui/skeleton';
-import { useAuthMutation, useAuthQuery } from '@/lib/convex/hooks';
+import { useCRPC } from '@/lib/convex/crpc';
 import { cn } from '@/lib/utils';
+
+type Tag = {
+  _id: Id<'tags'>;
+  _creationTime: number;
+  name: string;
+  color: string;
+  usageCount: number;
+};
 
 export default function TagsPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -49,39 +59,51 @@ export default function TagsPage() {
   const [editTag, setEditTag] = useState({ name: '', color: '' });
   const [mergeTarget, setMergeTarget] = useState<Id<'tags'> | null>(null);
 
-  const { data: tags, isLoading } = useAuthQuery(
-    api.tags.list,
-    {},
-    {
-      placeholderData: [
-        {
-          _id: '1' as any,
-          _creationTime: new Date('2025-11-04').getTime(),
-          name: 'Work',
-          color: '#3B82F6',
-          usageCount: 5,
-        },
-        {
-          _id: '2' as any,
-          _creationTime: new Date('2025-11-04').getTime(),
-          name: 'Personal',
-          color: '#10B981',
-          usageCount: 3,
-        },
-        {
-          _id: '3' as any,
-          _creationTime: new Date('2025-11-04').getTime(),
-          name: 'Urgent',
-          color: '#EF4444',
-          usageCount: 2,
-        },
-      ],
-    }
+  const crpc = useCRPC();
+
+  const createTagFn = useConvexMutation(api.tags.create);
+  const updateTagFn = useConvexMutation(api.tags.update);
+  const deleteTagFn = useConvexMutation(api.tags.deleteTag);
+  const mergeTagFn = useConvexMutation(api.tags.merge);
+
+  const { data: tags, isLoading } = useQuery(
+    crpc.tags.list.queryOptions(
+      {},
+      {
+        skipUnauth: true,
+        placeholderData: [
+          {
+            _id: '1' as Id<'tags'>,
+            _creationTime: new Date('2025-11-04').getTime(),
+            name: 'Work',
+            color: '#3B82F6',
+            usageCount: 5,
+          },
+          {
+            _id: '2' as Id<'tags'>,
+            _creationTime: new Date('2025-11-04').getTime(),
+            name: 'Personal',
+            color: '#10B981',
+            usageCount: 3,
+          },
+          {
+            _id: '3' as Id<'tags'>,
+            _creationTime: new Date('2025-11-04').getTime(),
+            name: 'Urgent',
+            color: '#EF4444',
+            usageCount: 2,
+          },
+        ],
+      }
+    )
   );
 
-  const { data: popularTags } = useAuthQuery(api.tags.popular, { limit: 5 });
+  const { data: popularTags } = useQuery(
+    crpc.tags.popular.queryOptions({ limit: 5 }, { skipUnauth: true })
+  );
 
-  const createTag = useAuthMutation(api.tags.create, {
+  const createTag = useMutation({
+    mutationFn: (args: any) => createTagFn(args),
     onSuccess: () => {
       setShowCreateDialog(false);
       setNewTag({ name: '', color: '' });
@@ -92,7 +114,8 @@ export default function TagsPage() {
     },
   });
 
-  const updateTag = useAuthMutation(api.tags.update, {
+  const updateTag = useMutation({
+    mutationFn: (args: any) => updateTagFn(args),
     onSuccess: () => {
       setShowEditDialog(false);
       setSelectedTag(null);
@@ -103,7 +126,8 @@ export default function TagsPage() {
     },
   });
 
-  const deleteTag = useAuthMutation(api.tags.deleteTag, {
+  const deleteTag = useMutation({
+    mutationFn: (args: any) => deleteTagFn(args),
     onSuccess: () => {
       toast.success('Tag deleted successfully');
     },
@@ -112,7 +136,8 @@ export default function TagsPage() {
     },
   });
 
-  const mergeTag = useAuthMutation(api.tags.merge, {
+  const mergeTag = useMutation({
+    mutationFn: (args: any) => mergeTagFn(args),
     onSuccess: () => {
       setShowMergeDialog(false);
       setSelectedTag(null);
@@ -277,7 +302,7 @@ export default function TagsPage() {
             Popular Tags
           </h2>
           <div className="flex flex-wrap gap-2">
-            {popularTags.map((tag) => (
+            {popularTags.map((tag: Tag) => (
               <Badge
                 className="px-3 py-1"
                 key={tag._id}
@@ -308,7 +333,7 @@ export default function TagsPage() {
 
         {tags && tags.length > 0 && (
           <div className="rounded-lg bg-secondary/30">
-            {tags.map((tag, index) => (
+            {tags.map((tag: Tag, index: number) => (
               <WithSkeleton
                 className="w-full"
                 isLoading={isLoading}
@@ -449,8 +474,8 @@ export default function TagsPage() {
               <Label>Select target tag</Label>
               <div className="grid gap-1">
                 {tags
-                  ?.filter((t) => t._id !== selectedTag?._id)
-                  .map((tag) => (
+                  ?.filter((t: Tag) => t._id !== selectedTag?._id)
+                  .map((tag: Tag) => (
                     <div
                       className={cn(
                         'flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-secondary/50',

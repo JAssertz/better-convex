@@ -22,7 +22,7 @@ type OrganizationInviteEmailProps = {
 };
 
 export default function OrganizationInviteEmail({
-  acceptUrl = 'http://localhost:3005/invite?id=example',
+  acceptUrl = 'http://localhost:3000/invite?id=example',
   invitationId = 'inv_example',
   inviterEmail = 'inviter@example.com',
   inviterName = 'Example User',
@@ -30,7 +30,7 @@ export default function OrganizationInviteEmail({
   role = 'member',
   to = 'user@example.com',
 }: OrganizationInviteEmailProps) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3005';
+  const siteUrl = process.env.SITE_URL ?? 'http://localhost:3000';
   const appName = process.env.NEXT_PUBLIC_APP_NAME ?? 'App';
 
   const previewText = `${inviterName} has invited you to join ${organizationName}`;

@@ -89,7 +89,7 @@ bun sync
 
 6. **Open the app:**
 
-Navigate to [http://localhost:3005](http://localhost:3005)
+Navigate to [http://localhost:3000](http://localhost:3000)
 
 ### Database Management
 
@@ -222,6 +222,7 @@ const schema = defineEntSchema({
 // Generated via: cd convex && npx @better-auth/cli generate -y --output authSchema.ts
 // Includes: user, session, account, organization, member, invitation
 ```
+
 > [!IMPORTANT]
 > Do not modify the default model name or the table name, as we are using the default singular table name in the `better-auth-convex` package.
 

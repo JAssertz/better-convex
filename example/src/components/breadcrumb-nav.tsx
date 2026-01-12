@@ -1,6 +1,8 @@
 'use client';
 
 import { api } from '@convex/api';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation as useConvexMutation } from 'convex/react';
 import {
   Building2,
   CheckSquare,
@@ -26,11 +28,8 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { signOut } from '@/lib/convex/auth-client';
-import {
-  useAuthAction,
-  useCurrentUser,
-  usePublicQuery,
-} from '@/lib/convex/hooks';
+import { useCRPC } from '@/lib/convex/crpc';
+import { useCurrentUser } from '@/lib/convex/hooks';
 
 // Top-level regex for performance
 const SEGMENT_ID_PATTERN = /^[a-zA-Z0-9]+$/;
@@ -38,15 +37,21 @@ const SEGMENT_ID_PATTERN = /^[a-zA-Z0-9]+$/;
 export function BreadcrumbNav() {
   const pathname = usePathname();
   const user = useCurrentUser();
-  const generateSamplesAction = useAuthAction(api.seed.generateSamples);
+
+  const crpc = useCRPC();
+  const generateSamplesFn = useConvexMutation(api.seed.generateSamples);
+  const generateSamplesAction = useMutation({
+    mutationFn: (args: any) => generateSamplesFn(args),
+  });
 
   // Check if there's any data (projects)
-  const { data: projectsData } = usePublicQuery(
-    api.projects.list,
-    { limit: 1, cursor: null },
-    {
-      placeholderData: { page: [], isDone: true, continueCursor: '' },
-    }
+  const { data: projectsData } = useQuery(
+    crpc.projects.list.queryOptions(
+      { limit: 1, cursor: null },
+      {
+        placeholderData: { page: [], isDone: true, continueCursor: '' },
+      }
+    )
   );
   const hasData = projectsData && projectsData.page.length > 0;
 

@@ -2,6 +2,8 @@
 
 import { api } from '@convex/api';
 import type { Id } from '@convex/dataModel';
+import { useMutation } from '@tanstack/react-query';
+import { useMutation as useConvexMutation } from 'convex/react';
 import {
   Crown,
   MoreVertical,
@@ -37,7 +39,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuthMutation } from '@/lib/convex/hooks';
 
 type ProjectMembersProps = {
   projectId: Id<'projects'>;
@@ -64,7 +65,12 @@ export function ProjectMembers({
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [email, setEmail] = useState('');
 
-  const addMember = useAuthMutation(api.projects.addMember, {
+  const addMemberFn = useConvexMutation(api.projects.addMember);
+  const removeMemberFn = useConvexMutation(api.projects.removeMember);
+  const transferFn = useConvexMutation(api.projects.transfer);
+
+  const addMember = useMutation({
+    mutationFn: (args: any) => addMemberFn(args),
     onSuccess: () => {
       setShowAddDialog(false);
       setEmail('');
@@ -75,7 +81,8 @@ export function ProjectMembers({
     },
   });
 
-  const removeMember = useAuthMutation(api.projects.removeMember, {
+  const removeMember = useMutation({
+    mutationFn: (args: any) => removeMemberFn(args),
     onSuccess: () => {
       toast.success('Member removed');
     },
@@ -84,7 +91,8 @@ export function ProjectMembers({
     },
   });
 
-  const transferOwnership = useAuthMutation(api.projects.transfer, {
+  const transferOwnership = useMutation({
+    mutationFn: (args: any) => transferFn(args),
     onSuccess: () => {
       toast.success('Ownership transferred');
     },

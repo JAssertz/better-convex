@@ -29,7 +29,7 @@ If pages exist, **skip port discovery** - the URL already tells you the port.
 
 ### 2. Discover the Correct Port (only if no existing pages)
 
-Port should be 3005.
+Port should be 3000.
 
 ### 3. Check Dev Server Status
 

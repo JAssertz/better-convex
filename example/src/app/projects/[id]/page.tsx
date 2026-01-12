@@ -2,6 +2,8 @@
 
 import { api } from '@convex/api';
 import type { Id } from '@convex/dataModel';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation as useConvexMutation } from 'convex/react';
 import { Archive, Crown, Settings, UserMinus } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -24,7 +26,7 @@ import { Label } from '@/components/ui/label';
 import { WithSkeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { useAuthMutation, usePublicQuery } from '@/lib/convex/hooks';
+import { useCRPC } from '@/lib/convex/crpc';
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -39,31 +41,39 @@ export default function ProjectDetailPage() {
     isPublic: false,
   });
 
-  const { data: project, isLoading } = usePublicQuery(
-    api.projects.get,
-    { projectId },
-    {
-      placeholderData: {
-        _id: '1' as any,
-        _creationTime: new Date('2025-11-04').getTime(),
-        name: 'Loading Project',
-        description: 'Loading description...',
-        ownerId: '1' as any,
-        isPublic: false,
-        archived: false,
-        owner: {
-          _id: '1' as any,
-          name: 'Loading',
-          email: 'loading@example.com',
+  const crpc = useCRPC();
+
+  const updateProjectFn = useConvexMutation(api.projects.update);
+  const archiveProjectFn = useConvexMutation(api.projects.archive);
+  const leaveProjectFn = useConvexMutation(api.projects.leave);
+
+  const { data: project, isLoading } = useQuery(
+    crpc.projects.get.queryOptions(
+      { projectId },
+      {
+        placeholderData: {
+          _id: '1' as Id<'projects'>,
+          _creationTime: new Date('2025-11-04').getTime(),
+          name: 'Loading Project',
+          description: 'Loading description...',
+          ownerId: '1' as Id<'user'>,
+          isPublic: false,
+          archived: false,
+          owner: {
+            _id: '1' as Id<'user'>,
+            name: 'Loading',
+            email: 'loading@example.com',
+          },
+          members: [],
+          todoCount: 0,
+          completedTodoCount: 0,
         },
-        members: [],
-        todoCount: 0,
-        completedTodoCount: 0,
-      },
-    }
+      }
+    )
   );
 
-  const updateProject = useAuthMutation(api.projects.update, {
+  const updateProject = useMutation({
+    mutationFn: (args: any) => updateProjectFn(args),
     onSuccess: () => {
       setShowEditDialog(false);
       toast.success('Project updated successfully');
@@ -73,7 +83,8 @@ export default function ProjectDetailPage() {
     },
   });
 
-  const archiveProject = useAuthMutation(api.projects.archive, {
+  const archiveProject = useMutation({
+    mutationFn: (args: any) => archiveProjectFn(args),
     onSuccess: () => {
       toast.success('Project archived');
       router.push('/projects');
@@ -83,7 +94,8 @@ export default function ProjectDetailPage() {
     },
   });
 
-  const leaveProject = useAuthMutation(api.projects.leave, {
+  const leaveProject = useMutation({
+    mutationFn: (args: any) => leaveProjectFn(args),
     onSuccess: () => {
       toast.success('Left project successfully');
       router.push('/projects');
