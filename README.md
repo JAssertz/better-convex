@@ -2,9 +2,7 @@
 
 A complete framework for building type-safe, real-time applications with Convex.
 
-## Documentation
-
-**https://better-convex.com**
+### <a href="https://better-convex.com">Read the docs →</b></a>
 
 ## What's Included
 
