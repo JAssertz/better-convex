@@ -8,8 +8,7 @@ const features = [
   {
     icon: Code2,
     title: 'cRPC',
-    description:
-      'Procedure builders you already know. No Convex quirks to learn.',
+    description: 'tRPC, ported to Convex. AI-ready.',
     color: 'bg-indigo-500/10 text-indigo-500',
   },
   {
@@ -206,7 +205,7 @@ function Hero() {
         </span>
       </h1>
       <h2 className="mt-4 max-w-xl text-balance font-bold text-2xl [letter-spacing:-0.03em] md:text-4xl">
-        We didn't reinvent the wheel
+        Best-in-class stack
       </h2>
       <p className="mt-6 max-w-2xl text-fd-muted-foreground text-lg md:text-xl">
         <a
@@ -272,10 +271,7 @@ function Features() {
   return (
     <section className="px-6 pt-8 pb-16 md:pt-12 md:pb-24">
       <div className="mx-auto max-w-5xl">
-        <SectionTitle
-          description="A complete toolkit for building production Convex applications"
-          title="Everything you need"
-        />
+        <SectionTitle title="What's included" />
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {features.map((feature) => (
             <div key={feature.title}>
