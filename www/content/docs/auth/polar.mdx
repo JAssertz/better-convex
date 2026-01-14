@@ -713,7 +713,7 @@ const createAuthOptions = (ctx: GenericCtx) =>
 
 ## Environment Variables
 
-```bash title=".env.local"
+```bash title="convex/.env"
 # Polar API Configuration
 POLAR_SERVER="sandbox"                 # 'production' | 'sandbox'
 POLAR_ACCESS_TOKEN="polar_at_..."      # Organization access token
@@ -721,9 +721,6 @@ POLAR_WEBHOOK_SECRET="whsec_..."       # Webhook signature secret
 
 # Polar Product IDs (from Polar dashboard)
 POLAR_PRODUCT_PREMIUM="uuid-here"      # Premium subscription product
-
-# Site Configuration
-SITE_URL="https://your-site.com"       # For redirects
 ```
 
 ## Local Development with Ngrok
