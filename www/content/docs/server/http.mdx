@@ -484,12 +484,16 @@ Access HTTP endpoints on the client via `crpc.http.*`. The proxy provides `query
 The HTTP proxy is automatically available when you set up cRPC.
 
 ```tsx title="lib/convex/crpc.tsx"
-'use client';
-
+import { api } from '@convex/api';
+import { meta } from '@convex/meta';
 import type { Api } from '@convex/types';
-import { createCRPCReact } from 'better-convex/react';
+import { createCRPCContext } from 'better-convex/react';
 
-export const { CRPCProvider, useCRPC } = createCRPCReact<Api>();
+export const { CRPCProvider, useCRPC } = createCRPCContext<Api>({
+  api,
+  meta,
+  convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!, // Required for HTTP
+});
 ```
 
 ### GET Requests
@@ -684,7 +688,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 | `preloadQuery()` | Yes | Yes | Yes |
 
 <Callout icon={<InfoIcon />}>
-  **Note:** For complete RSC setup including QueryClient configuration and HydrateClient, see [Next.js RSC](/docs/nextjs/rsc).
+  **Note:** RSC HTTP prefetching requires `convexSiteUrl` in `getServerQueryClientOptions`. For complete setup including QueryClient configuration, see [Next.js RSC](/docs/nextjs/rsc).
 </Callout>
 
 ## Traditional HTTP
