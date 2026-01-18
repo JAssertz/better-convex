@@ -1,5 +1,14 @@
 # better-convex
 
+## 0.2.1
+
+### Patch Changes
+
+- [#24](https://github.com/udecode/better-convex/pull/24) [`b5555ea`](https://github.com/udecode/better-convex/commit/b5555eac9e67ef06328f5e122ce2d4512f3b3c7f) Thanks [@zbeyens](https://github.com/zbeyens)! - - Fix (`UNAUTHORIZED`) queries failing after switching tabs and returning to the app. The auth token is now preserved during session refetch instead of being cleared.
+  - Fix (`UNAUTHORIZED`) `useSuspenseQuery` failing on initial page load when auth is still loading. WebSocket subscriptions now wait for auth to settle before connecting.
+  - Fix logout setting `isAuthenticated: false` before unsubscribing to prevent query re-subscriptions.
+  - Add missing `dotenv` dependency for CLI.
+
 ## 0.2.0
 
 ### Minor Changes
