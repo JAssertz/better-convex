@@ -119,6 +119,16 @@ function ConvexAuthProviderInner({
   sessionRef.current = session;
   isPendingRef.current = isPending;
 
+  // Clear token when session becomes null (logout)
+  // This can't be inside fetchAccessToken because it's not called after logout
+  useEffect(() => {
+    if (!session && !isPending) {
+      authStore.set('token', null);
+      authStore.set('expiresAt', null);
+      authStore.set('isAuthenticated', false);
+    }
+  }, [session, isPending, authStore]);
+
   // Stable fetchAccessToken - only recreated when authStore/authClient change (rare)
   // Reads session/isPending from refs to avoid dependency on changing objects
   const fetchAccessToken = useCallback(
@@ -184,7 +194,6 @@ function ConvexAuthProviderInner({
   // This prevents Convex SDK from calling setAuth() on every session refetch
   const useAuth = useCallback(
     function useConvexAuthHook() {
-      // Return fresh values on each call, but the hook function itself is stable
       return {
         isLoading: isPendingRef.current,
         isAuthenticated: sessionRef.current !== null,

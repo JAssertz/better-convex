@@ -106,6 +106,9 @@ export function createAuthMutations<T extends AuthClient>(
     return {
       ...options,
       mutationFn: async (args?: Parameters<T['signOut']>[0]) => {
+        // Set isAuthenticated: false BEFORE unsubscribing to prevent re-subscriptions
+        // (cache events check shouldSkipSubscription which reads isAuthenticated)
+        authStoreApi.set('isAuthenticated', false);
         convexQueryClient?.unsubscribeAuthQueries();
         const res = await authClient.signOut(args);
         await waitForTokenClear(authStoreApi);

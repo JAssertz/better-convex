@@ -37,6 +37,7 @@
   "dependencies": {
     "chokidar": "^5.0.0",
     "common-tags": "^1.8.2",
+    "dotenv": "^17.2.3",
     "execa": "^9.6.1",
     "jiti": "^2.6.1",
     "jotai-x": "^2.3.3",
