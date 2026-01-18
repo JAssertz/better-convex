@@ -7,7 +7,7 @@
     "codegen": "better-convex codegen",
     "convex:dev": "convex dev --until-success --run init && better-convex dev",
     "dev": "mprocs",
-    "dev:app": "next dev --port 3005",
+    "dev:app": "bunx @react-grab/claude-code@latest && next dev --port 3005",
     "gen": "next typegen",
     "gen:auth": "@better-auth/cli generate -y --output convex/functions/authSchema.ts --config convex/functions/auth.ts",
     "lint": "biome check",
