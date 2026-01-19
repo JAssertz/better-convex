@@ -343,6 +343,10 @@ export const appRouter = router({
 
 The HTTP router uses [Hono](https://hono.dev/) for routing and middleware. This provides CORS handling, middleware chains, and a clean API for building HTTP endpoints.
 
+```bash
+bun add hono
+```
+
 ```ts title="convex/functions/http.ts" showLineNumbers {1-6,8-18,20-24}
 import '../lib/http-polyfills';
 import { authMiddleware } from 'better-convex/auth';

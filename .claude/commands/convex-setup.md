@@ -1231,18 +1231,34 @@ export default {
 
 ### http.ts
 
+```bash
+bun add hono
+```
+
 ```ts title="convex/functions/http.ts"
-import { registerRoutes } from "better-convex/auth";
-import { registerCRPCRoutes } from "better-convex/server";
-import { httpRouter } from "convex/server";
+import "../lib/http-polyfills";
+import { authMiddleware } from "better-convex/auth";
+import { createHttpRouter } from "better-convex/server";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { router } from "../lib/crpc";
-import { httpAction } from "./_generated/server";
 import { createAuth } from "./auth";
 
-const http = httpRouter();
+const app = new Hono();
 
-// Better Auth routes
-registerRoutes(http, createAuth);
+// CORS for API routes
+app.use(
+  "/api/*",
+  cors({
+    origin: process.env.SITE_URL!,
+    allowHeaders: ["Content-Type", "Authorization", "Better-Auth-Cookie"],
+    exposeHeaders: ["Set-Better-Auth-Cookie"],
+    credentials: true,
+  })
+);
+
+// Better Auth middleware
+app.use(authMiddleware(createAuth));
 
 // HTTP API router (tRPC-style) - add your routes here
 export const appRouter = router({
@@ -1250,16 +1266,7 @@ export const appRouter = router({
   // todos: todosRouter,
 });
 
-// Register cRPC routes to Convex httpRouter
-registerCRPCRoutes(http, appRouter, {
-  httpAction,
-  cors: {
-    allowedOrigins: [process.env.SITE_URL!],
-    allowCredentials: true,
-  },
-});
-
-export default http;
+export default createHttpRouter(app, appRouter);
 ```
 
 ### user.ts

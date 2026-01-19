@@ -39,7 +39,6 @@
     "common-tags": "^1.8.2",
     "dotenv": "^17.2.3",
     "execa": "^9.6.1",
-    "hono": "^4.7.10",
     "jiti": "^2.6.1",
     "jotai-x": "^2.3.3",
     "picocolors": "^1.1.1",
@@ -51,6 +50,7 @@
     "@types/node": "^25.0.3",
     "@types/react": "^19.2.7",
     "babel-plugin-react-compiler": "^1.0.0",
+    "hono": "^4.7.10",
     "next": "^16.1.1",
     "tsdown": "^0.19.0-beta.1",
     "typescript": "^5.9.3"
@@ -61,6 +61,7 @@
     "better-auth": ">=1.4.9",
     "convex": ">=1.31",
     "convex-helpers": ">=0.1",
+    "hono": ">=4",
     "next": ">=14",
     "react": ">=18",
     "zod": ">=3"
@@ -70,6 +71,9 @@
       "optional": true
     },
     "better-auth": {
+      "optional": true
+    },
+    "hono": {
       "optional": true
     },
     "next": {
