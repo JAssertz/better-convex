@@ -74,6 +74,8 @@ export type PaginationState = {
     }
   >;
   version: number;
+  /** Recovery key to prevent infinite recovery loops */
+  autoRecoveryAttempted?: string;
 };
 
 // Query key prefix for pagination state storage
@@ -141,6 +143,133 @@ type PageState = {
 // - SplitRequired: page MUST be split (too large to return)
 type PageResultWithSplit<T> = PaginationResult<T> & {
   splitCursor?: string | null;
+};
+
+/** Build a unique key for recovery attempt detection */
+const buildRecoveryKey = (
+  pageKeys: number[],
+  page0Cursor: string | null,
+  page0UpdatedAt: number
+): string => JSON.stringify({ pageKeys, page0Cursor, page0UpdatedAt });
+
+type UseStaleCursorRecoveryOptions = {
+  argsObject: Record<string, unknown>;
+  combined: {
+    _rawResults: Array<{
+      data?: unknown;
+      dataUpdatedAt?: number;
+      isError?: boolean;
+      isFetching?: boolean;
+      refetch: () => void;
+    }>;
+    isFetchNextPageError: boolean;
+    status: string;
+  };
+  limit?: number;
+  setState: (
+    updater: PaginationState | ((prev: PaginationState) => PaginationState)
+  ) => void;
+  state: PaginationState;
+};
+
+/**
+ * Hook for auto-recovering from stale cursors after WebSocket reconnection.
+ *
+ * When Convex WebSocket reconnects, page 0 (cursor: null) resubscribes and
+ * gets fresh data. However, pages 1+ may have stale cursors that fail.
+ *
+ * This hook detects this pattern and creates a recovery page that fetches
+ * enough items to cover the lost pages, preserving the user's scroll position.
+ */
+const useStaleCursorRecovery = ({
+  argsObject,
+  combined,
+  limit,
+  setState,
+  state,
+}: UseStaleCursorRecoveryOptions): void => {
+  // Auto-recovery from stale cursors
+  // Triggers when: page 0 OK + pages 1+ errored + page 0 has continueCursor
+  useEffect(() => {
+    if (!combined.isFetchNextPageError) return;
+
+    const page0Result = combined._rawResults[0];
+    const page0Data = page0Result?.data as
+      | PaginationResult<unknown>
+      | undefined;
+    const page0UpdatedAt = page0Result?.dataUpdatedAt ?? 0;
+
+    const hasPage0Data = page0Data !== undefined && !page0Result?.isError;
+    const hasSubsequentErrors = combined._rawResults
+      .slice(1)
+      .some((q) => q?.isError && !q?.isFetching);
+
+    if (!hasPage0Data || !hasSubsequentErrors || !page0Data?.continueCursor)
+      return;
+
+    const recoveryKey = buildRecoveryKey(
+      state.pageKeys,
+      page0Data.continueCursor,
+      page0UpdatedAt
+    );
+
+    if (state.autoRecoveryAttempted === recoveryKey) return;
+
+    const erroredPageKeys = state.pageKeys.filter(
+      (_, i) => i > 0 && combined._rawResults[i]?.isError
+    );
+    const itemsToRecover = erroredPageKeys.reduce((sum, key) => {
+      const pageLimit = state.queries[key]?.args?.limit ?? limit ?? 20;
+      return sum + pageLimit;
+    }, 0);
+
+    console.warn('[Pagination] Auto-recovering from stale cursors', {
+      erroredPages: erroredPageKeys.length,
+      itemsToRecover,
+    });
+
+    setState((prev) => ({
+      ...prev,
+      id: prev.id,
+      nextPageKey: 2,
+      pageKeys: [prev.pageKeys[0], 1],
+      queries: {
+        [prev.pageKeys[0]]: prev.queries[prev.pageKeys[0]],
+        1: {
+          args: {
+            ...argsObject,
+            cursor: page0Data.continueCursor,
+            limit: Math.min(itemsToRecover + (limit ?? 20), 500),
+            __paginationId: prev.id,
+          },
+        },
+      },
+      version: prev.version + 1,
+      autoRecoveryAttempted: recoveryKey,
+    }));
+  }, [
+    combined.isFetchNextPageError,
+    combined._rawResults,
+    state.pageKeys,
+    state.queries,
+    state.autoRecoveryAttempted,
+    argsObject,
+    limit,
+    setState,
+  ]);
+
+  // Clear recovery flag on success
+  useEffect(() => {
+    if (
+      (combined.status === 'CanLoadMore' || combined.status === 'Exhausted') &&
+      state.autoRecoveryAttempted
+    ) {
+      setState((prev) => ({
+        ...prev,
+        autoRecoveryAttempted: undefined,
+      }));
+    }
+  }, [combined.status, state.autoRecoveryAttempted, setState]);
 };
 
 /**
@@ -329,30 +458,6 @@ const useInfiniteQueryInternal = <Query extends PaginatedQueryReference>(
     setPaginationState,
   ]);
 
-  // Reset pagination on InvalidCursor error (data changed, cursors invalid)
-  const resetPagination = useCallback(() => {
-    // Invalidate old pagination ID by removing from store
-    paginationIdStore.delete(storeKey);
-    const newId = getOrCreatePaginationId(storeKey);
-
-    setState((prev) => ({
-      id: newId,
-      nextPageKey: 1,
-      pageKeys: [0],
-      queries: {
-        0: {
-          args: {
-            ...argsObject,
-            cursor: null,
-            limit,
-            __paginationId: newId,
-          },
-        },
-      },
-      version: prev.version + 1,
-    }));
-  }, [storeKey, setState, argsObject, limit]);
-
   // Build TanStack queries from state (each page = separate convexQuery)
   // structuralSharing: false ensures Convex WebSocket updates trigger re-renders
   const tanstackQueries = useMemo(
@@ -467,19 +572,14 @@ const useInfiniteQueryInternal = <Query extends PaginatedQueryReference>(
     },
   });
 
-  // Check for InvalidCursor errors and reset if needed
-  useEffect(() => {
-    for (const pageQuery of combined._rawResults) {
-      if (pageQuery.error) {
-        const errorMessage =
-          pageQuery.error instanceof Error ? pageQuery.error.message : '';
-        if (errorMessage.includes('InvalidCursor')) {
-          resetPagination();
-          return;
-        }
-      }
-    }
-  }, [combined._rawResults, resetPagination]);
+  // Auto-recovery from stale cursors after WebSocket reconnection
+  useStaleCursorRecovery({
+    argsObject,
+    combined,
+    limit,
+    setState,
+    state,
+  });
 
   // Handle page splitting - when a page returns splitCursor, we need to split it
   useEffect(() => {
