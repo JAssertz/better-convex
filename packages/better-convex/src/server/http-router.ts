@@ -1,12 +1,10 @@
-import type { HttpRouter as ConvexHttpRouter } from 'convex/server';
-import { corsHeaders } from './http-builder';
-import type {
-  CORSOptions,
-  CRPCRouterOptions,
-  HttpActionConstructor,
-  HttpProcedure,
-  HttpRouteDefinition,
-} from './http-types';
+import {
+  HttpRouter,
+  httpActionGeneric,
+  type RoutableMethod,
+} from 'convex/server';
+import type { Hono } from 'hono';
+import type { CRPCHonoHandler, HttpProcedure } from './http-types';
 
 // =============================================================================
 // Router Types (tRPC-style)
@@ -63,6 +61,107 @@ function isCRPCHttpRouter(value: unknown): value is CRPCHttpRouter<any> {
 }
 
 // =============================================================================
+// Hono-based HTTP Router (extends Convex HttpRouter)
+// =============================================================================
+
+/**
+ * HTTP Router that wraps a Hono app for use with Convex.
+ * Internal class - use `createHttpRouter()` factory instead.
+ */
+export class HttpRouterWithHono extends HttpRouter {
+  private _app: Hono;
+  private _handler: ReturnType<typeof httpActionGeneric>;
+
+  constructor(app: Hono) {
+    super();
+    this._app = app;
+    // Create a single httpAction that delegates all requests to Hono
+    this._handler = httpActionGeneric(async (ctx, request) => {
+      // Pass Convex ctx as Hono's env, accessible via c.env in handlers
+      return await app.fetch(request, ctx);
+    });
+
+    // Save reference to parent methods before overriding
+    const parentGetRoutes = this.getRoutes.bind(this);
+    const parentLookup = this.lookup.bind(this);
+
+    /**
+     * Get routes from the Hono app for Convex dashboard display.
+     * Returns route definitions in the format expected by Convex.
+     */
+    this.getRoutes = (): [
+      string,
+      RoutableMethod,
+      ReturnType<typeof httpActionGeneric>,
+    ][] => {
+      // Get parent routes first (traditional http.route() calls)
+      const parentRoutes = parentGetRoutes();
+
+      // Extract routes from Hono app
+      const honoRoutes: [
+        string,
+        RoutableMethod,
+        ReturnType<typeof httpActionGeneric>,
+      ][] = [];
+
+      for (const route of this._app.routes) {
+        // Hono stores methods in uppercase
+        const method = route.method.toUpperCase() as RoutableMethod;
+        // Skip internal Hono methods like ALL
+        if (
+          ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'].includes(
+            method
+          )
+        ) {
+          honoRoutes.push([route.path, method, this._handler]);
+        }
+      }
+
+      return [
+        ...parentRoutes.map(
+          (r) =>
+            [...r] as [
+              string,
+              RoutableMethod,
+              ReturnType<typeof httpActionGeneric>,
+            ]
+        ),
+        ...honoRoutes,
+      ];
+    };
+
+    /**
+     * Look up the handler for a given path and method.
+     * Checks traditional routes first, then delegates to Hono's router.
+     */
+    this.lookup = (
+      path: string,
+      method: RoutableMethod | 'HEAD'
+    ):
+      | readonly [ReturnType<typeof httpActionGeneric>, RoutableMethod, string]
+      | null => {
+      // Check parent routes first (traditional http.route() calls)
+      const parentMatch = parentLookup(path, method);
+      if (parentMatch !== null) {
+        return parentMatch;
+      }
+
+      // Normalize method
+      const normalizedMethod = method === 'HEAD' ? 'GET' : method;
+
+      // Try to match using Hono's router
+      const matchResult = this._app.router.match(normalizedMethod, path);
+
+      if (matchResult && matchResult[0].length > 0) {
+        return [this._handler, normalizedMethod, path] as const;
+      }
+
+      return null;
+    };
+  }
+}
+
+// =============================================================================
 // Router Factory (tRPC-style c.router)
 // =============================================================================
 
@@ -76,8 +175,8 @@ function isCRPCHttpRouter(value: unknown): value is CRPCHttpRouter<any> {
  *
  * // In api/todos.ts
  * export const todosRouter = router({
- *   get: publicHttpAction.route('/api/todos/:id', 'GET')...,
- *   create: authHttpAction.route('/api/todos', 'POST')...,
+ *   get: publicRoute.get('/api/todos/:id')...,
+ *   create: authRoute.post('/api/todos')...,
  * });
  *
  * // In http.ts
@@ -133,277 +232,59 @@ export function createHttpRouterFactory() {
 }
 
 /**
- * Register a cRPC HTTP router with a Convex httpRouter
+ * Create an HTTP router with cRPC routes registered.
  *
  * @example
  * ```ts
- * const http = httpRouter();
+ * import { Hono } from 'hono';
+ * import { cors } from 'hono/cors';
+ * import { createHttpRouter } from 'better-convex/server';
  *
- * registerCRPCRoutes(http, appRouter, {
- *   cors: { allowedOrigins: '*' },
- * });
+ * const app = new Hono();
+ * app.use('/api/*', cors({ origin: process.env.SITE_URL, credentials: true }));
  *
- * export default http;
+ * export default createHttpRouter(app, appRouter);
  * ```
  */
-export function registerCRPCRoutes<TRecord extends HttpRouterRecord>(
-  http: ConvexHttpRouter,
-  router: CRPCHttpRouter<TRecord>,
-  options: CRPCRouterOptions = {}
-): void {
-  const { cors, httpAction } = options;
-  const registeredPrefixes = new Set<string>();
-
-  // Collect all routes for CORS preflight handling
-  const routes: { route: HttpRouteDefinition; handler: HttpProcedure }[] = [];
-
+export function createHttpRouter<TRecord extends HttpRouterRecord>(
+  app: Hono,
+  router: CRPCHttpRouter<TRecord>
+): HttpRouterWithHono {
+  // Register cRPC routes to Hono
   for (const procedure of Object.values(router._def.procedures)) {
-    // Propagate global CORS to procedures that don't have explicit config
-    if (procedure._cors === undefined && cors) {
-      procedure._cors = cors;
-    }
-    routes.push({ route: procedure._crpcHttpRoute, handler: procedure });
-  }
+    const { path, method } = procedure._crpcHttpRoute;
+    const honoHandler = (procedure as any)._honoHandler as
+      | CRPCHonoHandler
+      | undefined;
 
-  // Register CORS preflight handler if cors is enabled
-  if (cors) {
-    const optionsPaths = new Set<string>();
-
-    for (const { route } of routes) {
-      if (route.usePathPrefix) {
-        const basePath = getBasePath(route.path);
-        optionsPaths.add(`${basePath}*`);
-      } else {
-        optionsPaths.add(route.path);
-      }
+    if (!honoHandler) {
+      console.warn(
+        `Procedure at ${path} does not have a Hono handler. ` +
+          'Make sure you are using the latest version of better-convex.'
+      );
+      continue;
     }
 
-    for (const path of optionsPaths) {
-      const isPrefix = path.endsWith('*');
-
-      if (isPrefix) {
-        const prefixPath = path.slice(0, -1); // Remove * but keep trailing /
-        http.route({
-          pathPrefix: prefixPath,
-          method: 'OPTIONS',
-          handler: createCorsHandler(cors, httpAction),
-        });
-      } else {
-        http.route({
-          path,
-          method: 'OPTIONS',
-          handler: createCorsHandler(cors, httpAction),
-        });
-      }
+    switch (method) {
+      case 'GET':
+        app.get(path, honoHandler);
+        break;
+      case 'POST':
+        app.post(path, honoHandler);
+        break;
+      case 'PUT':
+        app.put(path, honoHandler);
+        break;
+      case 'PATCH':
+        app.patch(path, honoHandler);
+        break;
+      case 'DELETE':
+        app.delete(path, honoHandler);
+        break;
     }
   }
 
-  // Register each procedure
-  // Note: CORS headers on responses must be added by procedures themselves
-  // because Convex doesn't expose handler invocation for wrapping
-  for (const { route, handler } of routes) {
-    if (route.usePathPrefix) {
-      const basePath = getBasePath(route.path);
-      const key = `${basePath}:${route.method}`;
-
-      if (!registeredPrefixes.has(key)) {
-        registeredPrefixes.add(key);
-        http.route({
-          pathPrefix: basePath,
-          method: route.method,
-          handler,
-        });
-      }
-    } else {
-      http.route({
-        path: route.path,
-        method: route.method,
-        handler,
-      });
-    }
-  }
-}
-
-// =============================================================================
-// Legacy API (for backwards compatibility)
-// =============================================================================
-
-/**
- * Get the base path for prefix matching (remove :params)
- * Returns path ending with / as required by Convex httpRouter
- */
-function getBasePath(path: string): string {
-  // Find where the first param starts and truncate
-  const parts = path.split('/');
-  const baseParts: string[] = [];
-
-  for (const part of parts) {
-    if (part.startsWith(':')) {
-      break;
-    }
-    baseParts.push(part);
-  }
-
-  const result = baseParts.join('/');
-  // Convex pathPrefix must end with /
-  return result.endsWith('/') ? result : `${result}/`;
-}
-
-/**
- * Register cRPC HTTP procedures with a Convex httpRouter
- *
- * @example
- * ```ts
- * import { httpRouter } from 'convex/server';
- * import { createCRPCRouter } from 'better-convex/server';
- * import * as users from './api/users';
- * import * as webhooks from './api/webhooks';
- *
- * const http = httpRouter();
- *
- * createCRPCRouter(http, {
- *   ...users,
- *   ...webhooks,
- * }, {
- *   cors: {
- *     allowedOrigins: [process.env.CLIENT_ORIGIN!],
- *     allowCredentials: true,
- *   },
- * });
- *
- * export default http;
- * ```
- */
-export function createCRPCRouter<TProcedures extends Record<string, unknown>>(
-  http: ConvexHttpRouter,
-  procedures: TProcedures,
-  options: CRPCRouterOptions = {}
-): TProcedures {
-  const { cors } = options;
-  const registeredPrefixes = new Set<string>();
-
-  // Collect all routes for CORS preflight handling
-  const routes: { route: HttpRouteDefinition; handler: HttpProcedure }[] = [];
-
-  // Find all cRPC HTTP procedures
-  for (const [, value] of Object.entries(procedures)) {
-    if (isCRPCHttpProcedure(value)) {
-      // Propagate global CORS to procedures that don't have explicit config
-      if (value._cors === undefined && cors) {
-        value._cors = cors;
-      }
-      routes.push({ route: value._crpcHttpRoute, handler: value });
-    }
-  }
-
-  // Register CORS preflight handler if cors is enabled
-  if (cors) {
-    // Get unique paths for OPTIONS handlers
-    const optionsPaths = new Set<string>();
-
-    for (const { route } of routes) {
-      if (route.usePathPrefix) {
-        optionsPaths.add(`${getBasePath(route.path)}/*`);
-      } else {
-        optionsPaths.add(route.path);
-      }
-    }
-
-    // Register OPTIONS handlers
-    for (const path of optionsPaths) {
-      const isPrefix = path.endsWith('/*');
-
-      if (isPrefix) {
-        http.route({
-          pathPrefix: path.slice(0, -1), // Remove * but keep trailing /
-          method: 'OPTIONS',
-          handler: createCorsHandler(cors),
-        });
-      } else {
-        http.route({
-          path,
-          method: 'OPTIONS',
-          handler: createCorsHandler(cors),
-        });
-      }
-    }
-  }
-
-  // Register each procedure
-  // Note: CORS headers on responses must be added by procedures themselves
-  // because Convex doesn't expose handler invocation for wrapping
-  for (const { route, handler } of routes) {
-    if (route.usePathPrefix) {
-      const basePath = getBasePath(route.path);
-
-      // Only register prefix once per path/method combo
-      const key = `${basePath}:${route.method}`;
-      if (!registeredPrefixes.has(key)) {
-        registeredPrefixes.add(key);
-        http.route({
-          pathPrefix: basePath,
-          method: route.method,
-          handler,
-        });
-      }
-    } else {
-      http.route({
-        path: route.path,
-        method: route.method,
-        handler,
-      });
-    }
-  }
-
-  // Return procedures for type inference on client
-  return procedures;
-}
-
-/**
- * Create a CORS preflight handler using the actual httpAction function
- *
- * Note: httpAction is required - Convex doesn't provide a way to create
- * HTTP handlers without it.
- */
-function createCorsHandler(
-  cors: CORSOptions,
-  httpActionFn?: HttpActionConstructor
-): any {
-  if (!httpActionFn) {
-    console.warn(
-      'CORS OPTIONS handler requires httpAction to be passed in options. ' +
-        'Preflight requests may not work correctly.'
-    );
-    // Return a minimal handler - won't work properly but prevents crash
-    const handler = function corsHandler() {} as any;
-    handler.isHttp = true;
-    return handler;
-  }
-
-  return httpActionFn(async (_ctx, request) => {
-    const origin = request.headers.get('Origin');
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders(origin, cors),
-    });
-  });
-}
-
-/**
- * Helper to merge multiple procedure modules
- *
- * @example
- * ```ts
- * import * as users from './api/users';
- * import * as posts from './api/posts';
- *
- * createCRPCRouter(http, mergeProcedures(users, posts));
- * ```
- */
-export function mergeProcedures(
-  ...modules: Record<string, unknown>[]
-): Record<string, unknown> {
-  return Object.assign({}, ...modules);
+  return new HttpRouterWithHono(app);
 }
 
 /**
@@ -411,9 +292,7 @@ export function mergeProcedures(
  *
  * @example
  * ```ts
- * const procedures = createCRPCRouter(http, { getUser, createUser });
- * export const httpRoutes = extractRouteMap(procedures);
- * export type HttpRouter = typeof procedures;
+ * export const httpRoutes = extractRouteMap(appRouter._def.procedures);
  * ```
  */
 export function extractRouteMap<T extends Record<string, HttpProcedure>>(

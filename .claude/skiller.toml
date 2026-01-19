@@ -24,9 +24,9 @@ enabled = true
 enabled = true
 merge_strategy = "merge"
 
-[mcp_servers.playwriter]
+[mcp_servers.next-devtools]
 command = "npx"
-args = ["playwriter@latest"]
+args = ["-y", "next-devtools-mcp@latest"]
 
 # --- Agent-Specific Configuration ---
 

@@ -29,7 +29,7 @@
         "Browser check: USE for new feature flows, e2e interactions, styling/layout, visual bugs, state changes, debugging. SKIP for trivial markup, simple text/button additions, non-UI changes"
       ],
       "todos": [
-        "Use playwriter MCP when Browser check",
+        "Use agent-browser skill when Browser check",
         "Typecheck (ONLY if updated ts files): NEVER run `tsc --noEmit` directly. Instead: (1) Use TaskOutput to check if typecheck task exists; (2) If not running, start `bun typecheck:watch` as background task with run_in_background=true; (3) Use TaskOutput to read results from the background task",
         "Lint: Run `bun lint:fix` - verify passes"
       ]

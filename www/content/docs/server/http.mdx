@@ -104,8 +104,7 @@ Export HTTP route builders from your cRPC setup. These determine whether endpoin
 
 ```ts title="convex/lib/crpc.ts" showLineNumbers
 import { CRPCError, initCRPC } from 'better-convex/server';
-import type { Id } from '../_generated/dataModel';
-import type { DataModel } from './_generated/dataModel';
+import type { DataModel, Id } from '../_generated/dataModel';
 import { httpAction } from '../_generated/server';
 
 const c = initCRPC
@@ -342,84 +341,88 @@ export const appRouter = router({
 
 ## Registration
 
-Register your router with Convex's `httpRouter` to make endpoints accessible.
+The HTTP router uses [Hono](https://hono.dev/) for routing and middleware. This provides CORS handling, middleware chains, and a clean API for building HTTP endpoints.
 
-```ts title="convex/functions/http.ts" showLineNumbers {1-4,16-24}
-import { registerCRPCRoutes } from 'better-convex/server';
-import { httpRouter } from 'convex/server';
+```ts title="convex/functions/http.ts" showLineNumbers {1-6,8-18,20-24}
+import '../lib/http-polyfills';
+import { authMiddleware } from 'better-convex/auth';
+import { createHttpRouter } from 'better-convex/server';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { router } from '../lib/crpc';
-import { httpAction } from './_generated/server';
 
+import { createAuth } from './auth';
 import { health } from '../routers/health';
 import { todosRouter } from '../routers/todos';
 
-const http = httpRouter();
+const app = new Hono();
 
+// CORS for API routes (auth + cRPC)
+app.use(
+  '/api/*',
+  cors({
+    origin: process.env.SITE_URL!,
+    allowHeaders: ['Content-Type', 'Authorization', 'Better-Auth-Cookie'],
+    exposeHeaders: ['Set-Better-Auth-Cookie'],
+    credentials: true,
+  })
+);
+
+// Better Auth middleware
+app.use(authMiddleware(createAuth));
+
+// cRPC router
 export const appRouter = router({
   health,
   todos: todosRouter,
 });
 
-// Register cRPC routes with Convex
-registerCRPCRoutes(http, appRouter, {
-  httpAction,
-  cors: {
-    allowedOrigins: [process.env.SITE_URL!],
-    allowCredentials: true,
-  },
-});
-
-export default http;
+export default createHttpRouter(app, appRouter);
 ```
 
-### Registration Options
+### Key Components
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `httpAction` | Function | The httpAction from Convex's generated server |
-| `cors` | Object | CORS configuration (see below) |
+| Component | Purpose |
+|-----------|---------|
+| `Hono` | Route handling, middleware, CORS |
+| `authMiddleware(createAuth)` | Better Auth routes middleware |
+| `createHttpRouter(app, appRouter)` | Creates Convex HttpRouter with Hono + cRPC |
 
 ## CORS
 
-Configure Cross-Origin Resource Sharing (CORS) globally or per-endpoint.
+Configure Cross-Origin Resource Sharing using Hono's `cors()` middleware.
 
-### Global CORS
+```ts title="convex/functions/http.ts" showLineNumbers {1,5-12}
+import { cors } from 'hono/cors';
 
-Set default CORS headers for all endpoints in `registerCRPCRoutes`.
+const app = new Hono();
 
-```ts title="convex/functions/http.ts" showLineNumbers {3-8}
-registerCRPCRoutes(http, appRouter, {
-  httpAction,
-  cors: {
-    allowedOrigins: ['https://myapp.com', 'http://localhost:3000'],
-    allowedMethods: ['GET', 'POST', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    allowCredentials: true,
-  },
-});
-```
-
-### Per-Endpoint CORS
-
-Override global CORS for specific endpoints using `.cors()`.
-
-```ts title="convex/routers/public.ts" showLineNumbers {4}
-// Public endpoint with permissive CORS
-export const publicData = publicRoute
-  .get('/api/public')
-  .cors({ allowedOrigins: ['*'] })
-  .output(z.object({ message: z.string() }))
-  .query(async () => ({ message: 'Hello, world!' }));
+app.use(
+  '/api/*',
+  cors({
+    origin: ['https://myapp.com', 'http://localhost:3000'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  })
+);
 ```
 
 ### CORS Options
 
+Hono's CORS middleware accepts these options:
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `allowedOrigins` | `string[]` | `[]` | Allowed origin URLs or `['*']` for any |
-| `allowedMethods` | `string[]` | `['GET', 'POST', 'PATCH', 'DELETE']` | Allowed HTTP methods |
-| `allowedHeaders` | `string[]` | `['Content-Type', 'Authorization']` | Allowed request headers |
-| `allowCredentials` | `boolean` | `false` | Allow cookies and auth headers |
+| `origin` | `string \| string[]` | `'*'` | Allowed origin URLs or `'*'` for any |
+| `allowMethods` | `string[]` | `['GET', 'HEAD', 'PUT', 'POST', 'DELETE', 'PATCH']` | Allowed HTTP methods |
+| `allowHeaders` | `string[]` | `[]` | Allowed request headers |
+| `exposeHeaders` | `string[]` | `[]` | Headers exposed to the browser |
+| `credentials` | `boolean` | `false` | Allow cookies and auth headers |
+| `maxAge` | `number` | - | Preflight cache duration in seconds |
+
+<Callout icon={<InfoIcon />}>
+  **Note:** For Better Auth integration, include `'Better-Auth-Cookie'` in `allowHeaders` and `'Set-Better-Auth-Cookie'` in `exposeHeaders` to ensure auth cookies work correctly.
+</Callout>
 
 ## Error Handling
 
@@ -473,6 +476,149 @@ Zod validation failures automatically return `400 Bad Request` with error detail
     ]
   }
 }
+```
+
+## Custom Responses
+
+cRPC handlers receive `c` (Hono Context) for custom responses, headers, and raw request access. This lets you return non-JSON responses like file downloads, redirects, or streaming data.
+
+### File Downloads
+
+```ts title="convex/routers/todos.ts" showLineNumbers {5-7,9-15}
+export const download = authRoute
+  .get('/api/todos/export/:format')
+  .params(z.object({ format: z.enum(['json', 'csv']) }))
+  .query(async ({ ctx, params, c }) => {
+    const todos = await ctx.runQuery(api.todos.list, { limit: 100 });
+
+    c.header('Content-Disposition', `attachment; filename="todos.${params.format}"`);
+    c.header('Cache-Control', 'no-cache');
+
+    if (params.format === 'csv') {
+      const csv = [
+        'id,title,completed',
+        ...todos.map((t) => `${t._id},${t.title},${t.completed}`),
+      ].join('\n');
+      return c.text(csv);
+    }
+    return c.json({ todos });
+  });
+```
+
+### Redirects
+
+```ts title="convex/routers/public.ts" showLineNumbers {4}
+export const redirect = publicRoute
+  .get('/api/old-path')
+  .query(async ({ c }) => c.redirect('/api/new-path', 301));
+```
+
+### Hono Context Methods
+
+| Method | Description |
+|--------|-------------|
+| `c.json(data)` | Return JSON response |
+| `c.text(str)` | Return text response |
+| `c.redirect(url, status?)` | Return redirect response |
+| `c.header(name, value)` | Set response header |
+| `c.req.header(name)` | Get request header |
+| `c.req.text()` | Get raw request body as text |
+
+## Streaming
+
+For Server-Sent Events (SSE) and AI streaming, use Hono's streaming helpers.
+
+### Server-Sent Events
+
+```ts title="convex/routers/stream.ts" showLineNumbers {1,6-8,10-16}
+import { streamText } from 'hono/streaming';
+
+export const events = publicRoute
+  .get('/api/stream')
+  .query(async ({ ctx, c }) => {
+    c.header('Content-Type', 'text/event-stream');
+    c.header('Cache-Control', 'no-cache');
+    c.header('Connection', 'keep-alive');
+
+    return streamText(c, async (stream) => {
+      for (let i = 0; i < 10; i++) {
+        const data = await ctx.runQuery(internal.data.getChunk, { index: i });
+        await stream.write(`data: ${JSON.stringify(data)}\n\n`);
+        await stream.sleep(1000);
+      }
+    });
+  });
+```
+
+### AI Streaming
+
+```ts title="convex/routers/ai.ts" showLineNumbers {1,8-9,11-13}
+import { stream } from 'hono/streaming';
+
+export const chat = publicRoute
+  .post('/api/ai/stream')
+  .input(z.object({ prompt: z.string() }))
+  .mutation(async ({ ctx, input, c }) => {
+    c.header('Content-Type', 'text/event-stream');
+    c.header('Cache-Control', 'no-cache');
+
+    const aiStream = await ctx.runAction(internal.ai.streamResponse, {
+      prompt: input.prompt,
+    });
+
+    return stream(c, async (stream) => {
+      await stream.pipe(aiStream);
+    });
+  });
+```
+
+## Webhooks
+
+Handle external service callbacks like Stripe or GitHub using cRPC routes. Always verify signatures before processing.
+
+```ts title="convex/routers/webhooks.ts" showLineNumbers {4-8,14-17,22-32}
+import { CRPCError } from 'better-convex/server';
+import { publicRoute } from '../lib/crpc';
+
+export const stripe = publicRoute
+  .post('/webhooks/stripe')
+  .mutation(async ({ ctx, c }) => {
+    // 1. Check signature header
+    const signature = c.req.header('stripe-signature');
+    if (!signature) {
+      throw new CRPCError({ code: 'BAD_REQUEST', message: 'No signature' });
+    }
+
+    const body = await c.req.text();
+
+    // 2. Verify signature
+    const isValid = await ctx.runAction(internal.stripe.verify, {
+      body,
+      signature,
+    });
+
+    if (!isValid) {
+      throw new CRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+    }
+
+    // 3. Process the webhook
+    const event = JSON.parse(body);
+
+    switch (event.type) {
+      case 'payment_intent.succeeded':
+        await ctx.runMutation(internal.payments.markPaid, {
+          paymentIntentId: event.data.object.id,
+        });
+        break;
+      case 'customer.subscription.deleted':
+        await ctx.runMutation(internal.subscriptions.cancel, {
+          subscriptionId: event.data.object.id,
+        });
+        break;
+    }
+
+    return c.text('OK', 200);
+  });
 ```
 
 ## React Client
@@ -673,7 +819,7 @@ import { crpc, HydrateClient, prefetch } from '@/lib/convex/rsc';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Skip if not authenticated - returns null instead of erroring
   prefetch(
-    crpc.http.user.me.queryOptions({}, { skipUnauth: true })
+    crpc.http.todos.list.queryOptions({ limit: 10 }, { skipUnauth: true })
   );
 
   return <HydrateClient>{children}</HydrateClient>;
@@ -691,83 +837,32 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   **Note:** RSC HTTP prefetching requires `convexSiteUrl` in `getServerQueryClientOptions`. For complete setup including QueryClient configuration, see [Next.js RSC](/docs/nextjs/rsc).
 </Callout>
 
-## Traditional HTTP
+## Server-Side Calls
 
-For webhooks and external integrations that don't use the cRPC pattern.
+For server-to-server calls outside React (API routes, middleware, cron jobs), use `createContext` with the caller pattern. The caller accesses your cRPC router namespaces directly.
 
-### Webhooks
+```ts title="app/api/sync/route.ts" showLineNumbers {1,4-5,8,11-12}
+import { createContext } from '@/lib/convex/server';
 
-Handle external service callbacks like Stripe or GitHub. Always verify signatures before processing.
+export async function POST(request: Request) {
+  // Create context with auth headers
+  const ctx = await createContext({ headers: request.headers });
 
-```ts title="convex/functions/http.ts" showLineNumbers {4-7,12-18,20-28}
-import { httpAction } from './_generated/server';
+  // Query using the caller (matches your appRouter structure)
+  const todos = await ctx.caller.todos.list({ limit: 10 });
 
-http.route({
-  path: '/webhooks/stripe',
-  method: 'POST',
-  handler: httpAction(async (ctx, req) => {
-    // 1. Check signature header
-    const signature = req.headers.get('stripe-signature');
-    if (!signature) {
-      return new Response('No signature', { status: 400 });
-    }
+  // Mutations
+  if (ctx.isAuthenticated) {
+    await ctx.caller.todos.create({ title: 'New task' });
+  }
 
-    const body = await req.text();
-
-    // 2. Verify signature (requires access to secrets)
-    const isValid = await ctx.runAction(internal.stripe.verify, {
-      body,
-      signature,
-    });
-
-    if (!isValid) {
-      return new Response('Invalid signature', { status: 400 });
-    }
-
-    // 3. Process the webhook
-    const event = JSON.parse(body);
-
-    switch (event.type) {
-      case 'payment_intent.succeeded':
-        await ctx.runMutation(internal.payments.markPaid, {
-          paymentIntentId: event.data.object.id,
-        });
-        break;
-      case 'customer.subscription.deleted':
-        await ctx.runMutation(internal.subscriptions.cancel, {
-          subscriptionId: event.data.object.id,
-        });
-        break;
-    }
-
-    return new Response('OK', { status: 200 });
-  }),
-});
+  return Response.json({ todos });
+}
 ```
 
-### ConvexHttpClient
-
-For server-to-server calls outside of React (API routes, cron jobs, scripts).
-
-```ts title="scripts/sync.ts" showLineNumbers
-import { ConvexHttpClient } from 'convex/browser';
-import { api } from '@convex/_generated/api';
-
-const client = new ConvexHttpClient(process.env.CONVEX_URL!);
-
-// Public query
-const users = await client.query(api.users.list, {});
-
-// Authenticated query
-client.setAuth(token);
-const me = await client.query(api.users.me, {});
-
-// Mutation
-await client.mutation(api.users.update, {
-  id: userId,
-  name: 'New Name',
-});
-```
+<Callout icon={<InfoIcon />}>
+  **Note:** The caller provides full type safety and uses your cRPC router definitions. See [Server-Side Calls](/docs/server/server-side-calls) for complete setup.
+</Callout>
 
 ## Next Steps
 

@@ -83,11 +83,15 @@ async function parseModuleRuntime(
 ): Promise<{ meta: ModuleMeta | null; httpRoutes: HttpRoutes }> {
   const result: ModuleMeta = {};
   const httpRoutes: HttpRoutes = {};
+  const isHttp = filePath.endsWith('http.ts');
 
   // Use jiti to import TypeScript files
   const module = await jiti.import(filePath);
 
   if (!module || typeof module !== 'object') {
+    if (isHttp) {
+      console.error('  http.ts: module is empty or not an object');
+    }
     return { meta: null, httpRoutes: {} };
   }
 
@@ -207,9 +211,15 @@ export async function generateMeta(
       }
 
       // Merge HTTP routes
+      if (Object.keys(httpRoutes).length > 0 && debug) {
+        console.info(
+          `  ✓ ${moduleName}: ${Object.keys(httpRoutes).length} HTTP routes`
+        );
+      }
       Object.assign(allHttpRoutes, httpRoutes);
     } catch (error) {
-      if (debug) {
+      // Always log http.ts errors as they contain critical HTTP routes
+      if (debug || file === 'http.ts') {
         console.error(`  ⚠ Failed to parse ${file}:`, error);
       }
     }

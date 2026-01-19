@@ -350,21 +350,41 @@ user: authSchema.user.index('username', ['username']),
 
 ## 4. HTTP Routes
 
-Register Better Auth HTTP routes in Convex:
+Register Better Auth HTTP routes using Hono middleware:
 
-```ts title="convex/functions/http.ts" showLineNumbers {2-3,7}
-import { httpRouter } from 'convex/server';
-import { registerRoutes } from 'better-convex/auth';
+```ts title="convex/functions/http.ts" showLineNumbers {1-5,9-18,21}
+import '../lib/http-polyfills';
+import { authMiddleware } from 'better-convex/auth';
+import { createHttpRouter } from 'better-convex/server';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { router } from '../lib/crpc';
 import { createAuth } from './auth';
 
-const http = httpRouter();
+const app = new Hono();
 
-registerRoutes(http, createAuth);
+// CORS for API routes
+app.use(
+  '/api/*',
+  cors({
+    origin: process.env.SITE_URL!,
+    allowHeaders: ['Content-Type', 'Authorization', 'Better-Auth-Cookie'],
+    exposeHeaders: ['Set-Better-Auth-Cookie'],
+    credentials: true,
+  })
+);
 
-export default http;
+// Better Auth middleware
+app.use(authMiddleware(createAuth));
+
+export const appRouter = router({
+  // Add your routers here
+});
+
+export default createHttpRouter(app, appRouter);
 ```
 
-Add custom endpoints alongside auth routes - see [HTTP Router](/docs/server/http) for webhooks, CORS, and more.
+See [HTTP Router](/docs/server/http) for route examples, webhooks, and streaming.
 
 ## 5. Sync Environment Variables
 

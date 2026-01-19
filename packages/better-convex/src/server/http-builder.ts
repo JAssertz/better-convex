@@ -1,13 +1,13 @@
 import type { GenericActionCtx, GenericDataModel } from 'convex/server';
+import type { Context } from 'hono';
 import type { z } from 'zod';
 import { CRPCError } from './error';
 import type {
-  CORSOptions,
+  CRPCHonoHandler,
   HttpHandlerOpts,
   HttpMethod,
   HttpProcedure,
   HttpProcedureBuilderDef,
-  HttpRequestContext,
   ProcedureMeta,
 } from './http-types';
 import type {
@@ -52,14 +52,8 @@ export function matchPathParams(
   return params;
 }
 
-// Convert CRPCError to HTTP Response with optional CORS headers
-export function handleHttpError(
-  error: unknown,
-  request?: Request,
-  cors?: CORSOptions | false
-): Response {
-  const headers = getCorsHeadersForResponse(request, cors);
-
+// Convert CRPCError to HTTP Response
+export function handleHttpError(error: unknown): Response {
   if (error instanceof CRPCError) {
     const statusMap: Record<string, number> = {
       BAD_REQUEST: 400,
@@ -81,7 +75,7 @@ export function handleHttpError(
           message: error.message,
         },
       },
-      { status, headers }
+      { status }
     );
   }
 
@@ -93,68 +87,8 @@ export function handleHttpError(
         message: 'An unexpected error occurred',
       },
     },
-    { status: 500, headers }
+    { status: 500 }
   );
-}
-
-/**
- * Get CORS headers for a response based on request origin and CORS config.
- * Returns undefined if CORS is disabled.
- */
-function getCorsHeadersForResponse(
-  request?: Request,
-  cors?: CORSOptions | false
-): HeadersInit | undefined {
-  if (cors === false || !cors || !request) {
-    return;
-  }
-  const origin = request.headers.get('Origin');
-  return corsHeaders(origin, cors);
-}
-
-/**
- * Create a JSON response with CORS headers
- */
-function createJsonResponse(
-  body: unknown,
-  request: Request,
-  cors?: CORSOptions | false
-): Response {
-  const headers = getCorsHeadersForResponse(request, cors);
-  return Response.json(body, { headers });
-}
-
-// Generate CORS headers
-export function corsHeaders(
-  origin: string | null,
-  options: CORSOptions = {}
-): HeadersInit {
-  const {
-    allowedOrigins = '*',
-    allowedMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders = ['Content-Type', 'Authorization'],
-    allowCredentials = false,
-    maxAge = 86_400,
-  } = options;
-
-  let allowOrigin = '*';
-  if (allowedOrigins !== '*' && origin) {
-    if (allowedOrigins.includes(origin)) {
-      allowOrigin = origin;
-    } else {
-      allowOrigin = '';
-    }
-  } else if (allowedOrigins === '*') {
-    allowOrigin = origin ?? '*';
-  }
-
-  return {
-    'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Methods': allowedMethods.join(', '),
-    'Access-Control-Allow-Headers': allowedHeaders.join(', '),
-    'Access-Control-Max-Age': String(maxAge),
-    ...(allowCredentials && { 'Access-Control-Allow-Credentials': 'true' }),
-  };
 }
 
 // Parse query parameters from URL
@@ -193,8 +127,6 @@ export interface HttpProcedureBuilder<
   TParams extends UnsetMarker | z.ZodTypeAny = UnsetMarker,
   TQuery extends UnsetMarker | z.ZodTypeAny = UnsetMarker,
   TMeta extends ProcedureMeta = ProcedureMeta,
-  TRawMode extends boolean = false,
-  TResponseMode extends boolean = false,
   TMethod extends HttpMethod = HttpMethod,
 > {
   _def: HttpProcedureBuilderDef<
@@ -220,8 +152,6 @@ export interface HttpProcedureBuilder<
     TParams,
     TQuery,
     TMeta,
-    TRawMode,
-    TResponseMode,
     TMethod
   >;
 
@@ -236,8 +166,6 @@ export interface HttpProcedureBuilder<
     TParams,
     TQuery,
     TMeta,
-    TRawMode,
-    TResponseMode,
     TMethod
   >;
 
@@ -253,8 +181,6 @@ export interface HttpProcedureBuilder<
     TParams,
     TQuery,
     TMeta,
-    TRawMode,
-    TResponseMode,
     M
   >;
 
@@ -269,8 +195,6 @@ export interface HttpProcedureBuilder<
     TParams,
     TQuery,
     TMeta,
-    TRawMode,
-    TResponseMode,
     'GET'
   >;
 
@@ -285,8 +209,6 @@ export interface HttpProcedureBuilder<
     TParams,
     TQuery,
     TMeta,
-    TRawMode,
-    TResponseMode,
     'POST'
   >;
 
@@ -301,8 +223,6 @@ export interface HttpProcedureBuilder<
     TParams,
     TQuery,
     TMeta,
-    TRawMode,
-    TResponseMode,
     'PUT'
   >;
 
@@ -317,8 +237,6 @@ export interface HttpProcedureBuilder<
     TParams,
     TQuery,
     TMeta,
-    TRawMode,
-    TResponseMode,
     'PATCH'
   >;
 
@@ -333,8 +251,6 @@ export interface HttpProcedureBuilder<
     TParams,
     TQuery,
     TMeta,
-    TRawMode,
-    TResponseMode,
     'DELETE'
   >;
 
@@ -349,8 +265,6 @@ export interface HttpProcedureBuilder<
     TSchema,
     TQuery,
     TMeta,
-    TRawMode,
-    TResponseMode,
     TMethod
   >;
 
@@ -365,8 +279,6 @@ export interface HttpProcedureBuilder<
     TParams,
     TSchema,
     TMeta,
-    TRawMode,
-    TResponseMode,
     TMethod
   >;
 
@@ -381,8 +293,6 @@ export interface HttpProcedureBuilder<
     TParams,
     TQuery,
     TMeta,
-    TRawMode,
-    TResponseMode,
     TMethod
   >;
 
@@ -397,99 +307,38 @@ export interface HttpProcedureBuilder<
     TParams,
     TQuery,
     TMeta,
-    TRawMode,
-    TResponseMode,
     TMethod
   >;
 
-  /** Enable raw mode - skip body parsing, provide raw Request */
-  raw(): HttpProcedureBuilder<
-    TInitialCtx,
-    TCtx,
-    TInput,
-    TOutput,
-    TParams,
-    TQuery,
-    TMeta,
-    true,
-    TResponseMode,
-    TMethod
-  >;
-
-  /** Enable response mode - return Response directly instead of JSON */
-  response(): HttpProcedureBuilder<
-    TInitialCtx,
-    TCtx,
-    TInput,
-    TOutput,
-    TParams,
-    TQuery,
-    TMeta,
-    TRawMode,
-    true,
-    TMethod
-  >;
-
-  /** Set CORS config for this procedure. Pass false to disable CORS. */
-  cors(
-    options: CORSOptions | false
-  ): HttpProcedureBuilder<
-    TInitialCtx,
-    TCtx,
-    TInput,
-    TOutput,
-    TParams,
-    TQuery,
-    TMeta,
-    TRawMode,
-    TResponseMode,
-    TMethod
-  >;
-
-  /** Define the handler for GET endpoints (maps to useQuery on client) */
+  /**
+   * Define the handler for GET endpoints (maps to useQuery on client).
+   * Handler receives Hono Context `c` for Response helpers (c.json, c.body, c.text).
+   * Return Response for custom responses, or plain object for auto JSON serialization.
+   */
   query<TResult>(
     handler: (
-      opts: HttpHandlerOpts<TCtx, TInput, TParams, TQuery, TRawMode>
+      opts: HttpHandlerOpts<TCtx, TInput, TParams, TQuery>
     ) => Promise<
-      TResponseMode extends true
-        ? Response
-        : TOutput extends z.ZodTypeAny
-          ? z.infer<TOutput>
-          : TResult
+      Response | (TOutput extends z.ZodTypeAny ? z.infer<TOutput> : TResult)
     >
   ): HttpProcedure<TInput, TOutput, TParams, TQuery, TMethod>;
 
-  /** Define the handler for POST/PUT/PATCH/DELETE endpoints (maps to useMutation on client) */
+  /**
+   * Define the handler for POST/PUT/PATCH/DELETE endpoints (maps to useMutation on client).
+   * Handler receives Hono Context `c` for Response helpers (c.json, c.body, c.text).
+   * Return Response for custom responses, or plain object for auto JSON serialization.
+   */
   mutation<TResult>(
     handler: (
-      opts: HttpHandlerOpts<TCtx, TInput, TParams, TQuery, TRawMode>
+      opts: HttpHandlerOpts<TCtx, TInput, TParams, TQuery>
     ) => Promise<
-      TResponseMode extends true
-        ? Response
-        : TOutput extends z.ZodTypeAny
-          ? z.infer<TOutput>
-          : TResult
-    >
-  ): HttpProcedure<TInput, TOutput, TParams, TQuery, TMethod>;
-
-  /** @deprecated Use .query() for GET endpoints or .mutation() for POST/PUT/PATCH/DELETE */
-  action<TResult>(
-    handler: (
-      opts: HttpHandlerOpts<TCtx, TInput, TParams, TQuery, TRawMode>
-    ) => Promise<
-      TResponseMode extends true
-        ? Response
-        : TOutput extends z.ZodTypeAny
-          ? z.infer<TOutput>
-          : TResult
+      Response | (TOutput extends z.ZodTypeAny ? z.infer<TOutput> : TResult)
     >
   ): HttpProcedure<TInput, TOutput, TParams, TQuery, TMethod>;
 }
 
 // Any-typed builder for internal use
 type AnyHttpProcedureBuilder = HttpProcedureBuilder<
-  any,
-  any,
   any,
   any,
   any,
@@ -520,132 +369,149 @@ function createProcedure(
     );
   }
 
-  // Reference to access procedure._cors at runtime (set after procedure is created)
-  let procedureRef: HttpProcedure<any, any, any, any, any>;
+  /**
+   * Hono-compatible handler function.
+   * When used with HttpRouterWithHono, Convex ctx is passed via c.env.
+   */
+  const honoHandler: CRPCHonoHandler = async (
+    c: Context
+  ): Promise<Response> => {
+    // Convex ctx passed via app.fetch(request, ctx) as env
+    const convexCtx = c.env as GenericActionCtx<GenericDataModel>;
+    const request = c.req.raw;
 
+    try {
+      const url = new URL(request.url);
+
+      // Extract path params from Hono's param() if available, fallback to manual extraction
+      const pathParams =
+        c.req.param() ?? matchPathParams(def.route!.path, url.pathname) ?? {};
+
+      // Create base context
+      let ctx = def.functionConfig.createContext(convexCtx as any) as any;
+
+      // Execute middlewares
+      for (const middleware of def.middlewares) {
+        const result = await middleware({
+          ctx: ctx as any,
+          next: async (opts?: any) => {
+            if (opts?.ctx) {
+              ctx = { ...ctx, ...opts.ctx };
+            }
+            return { ctx, marker: undefined as any };
+          },
+          meta: def.meta,
+        });
+        if (result?.ctx) {
+          ctx = { ...ctx, ...(result.ctx as any) };
+        }
+      }
+
+      // Parse path params
+      let parsedParams: unknown;
+      if (def.paramsSchema) {
+        parsedParams = def.paramsSchema.parse(pathParams as any);
+      }
+
+      // Parse query params
+      let parsedQuery: unknown;
+      if (def.querySchema) {
+        const queryParams = parseQueryParams(url);
+        parsedQuery = def.querySchema.parse(queryParams as any);
+      }
+
+      // Parse body for non-GET methods
+      let parsedInput: unknown;
+      if (def.inputSchema && request.method !== 'GET') {
+        const contentType = request.headers.get('content-type') ?? '';
+        let body: unknown;
+
+        if (contentType.includes('application/json')) {
+          body = await request.json();
+        } else if (contentType.includes('application/x-www-form-urlencoded')) {
+          const formData = await request.formData();
+          body = Object.fromEntries(formData.entries());
+        } else {
+          body = await request.json().catch(() => ({}));
+        }
+
+        parsedInput = def.inputSchema.parse(body as any);
+      }
+
+      // Build handler options - ctx namespaced, include Hono Context `c`
+      const handlerOpts: any = {
+        ctx,
+        c,
+      };
+
+      if (parsedInput !== undefined) {
+        handlerOpts.input = parsedInput;
+      }
+
+      if (parsedParams !== undefined) {
+        handlerOpts.params = parsedParams;
+      }
+
+      if (parsedQuery !== undefined) {
+        handlerOpts.query = parsedQuery;
+      }
+
+      const result = await handler(handlerOpts);
+
+      // If handler returned Response (from c.json, c.text, etc.), return it directly
+      if (result instanceof Response) {
+        return result;
+      }
+
+      // Validate and return JSON response via Hono
+      const output = def.outputSchema
+        ? def.outputSchema.parse(result as any)
+        : result;
+      return c.json(output);
+    } catch (error) {
+      return handleHttpError(error);
+    }
+  };
+
+  // Attach route metadata for registration
+  honoHandler._crpcRoute = {
+    path: def.route.path,
+    method: def.route.method,
+  };
+
+  // Also create httpAction for backwards compatibility with non-Hono usage
   const httpActionFn = (def.functionConfig.base as any)(
     async (
       convexCtx: GenericActionCtx<GenericDataModel>,
       request: Request
     ): Promise<Response> => {
-      // Get CORS config (may be set by router registration)
-      const cors = procedureRef?._cors;
+      // Create a minimal Hono-like context for backwards compatibility
+      const minimalContext = {
+        env: convexCtx,
+        req: {
+          raw: request,
+          param: () =>
+            matchPathParams(def.route!.path, new URL(request.url).pathname) ??
+            {},
+        },
+        json: (data: unknown, status?: number) =>
+          Response.json(data, { status }),
+        text: (text: string, status?: number) => new Response(text, { status }),
+        body: (body: BodyInit, init?: ResponseInit) => new Response(body, init),
+        html: (html: string, status?: number) =>
+          new Response(html, {
+            status,
+            headers: { 'Content-Type': 'text/html' },
+          }),
+        redirect: (url: string, status?: number) =>
+          Response.redirect(url, status ?? 302),
+        header: (_name: string, _value: string) => {
+          // Note: headers set via c.header() won't work in minimal context
+          // Users should return Response directly for custom headers
+        },
+      } as unknown as Context;
 
-      try {
-        const url = new URL(request.url);
-
-        // Extract path params
-        const pathParams = matchPathParams(def.route!.path, url.pathname) ?? {};
-
-        // Build request context
-        const requestContext: HttpRequestContext = {
-          request,
-          headers: request.headers,
-          url,
-          pathParams,
-        };
-
-        // Create base context
-        let ctx = def.functionConfig.createContext(convexCtx as any) as any &
-          HttpRequestContext;
-        Object.assign(ctx, requestContext);
-
-        // Execute middlewares
-        for (const middleware of def.middlewares) {
-          const result = await middleware({
-            ctx: ctx as any,
-            next: async (opts?: any) => {
-              if (opts?.ctx) {
-                ctx = { ...ctx, ...opts.ctx };
-              }
-              return { ctx, marker: undefined as any };
-            },
-            meta: def.meta,
-          });
-          if (result?.ctx) {
-            ctx = { ...ctx, ...(result.ctx as any) };
-          }
-        }
-
-        // Raw mode - skip parsing
-        if (def.rawMode) {
-          const result = await handler({
-            ctx,
-            request,
-          } as any);
-
-          if (def.responseMode) {
-            return result as Response;
-          }
-
-          const output = def.outputSchema
-            ? def.outputSchema.parse(result as any)
-            : result;
-          return createJsonResponse(output, request, cors);
-        }
-
-        // Parse path params
-        let parsedParams: unknown;
-        if (def.paramsSchema) {
-          parsedParams = def.paramsSchema.parse(pathParams as any);
-        }
-
-        // Parse query params
-        let parsedQuery: unknown;
-        if (def.querySchema) {
-          const queryParams = parseQueryParams(url);
-          parsedQuery = def.querySchema.parse(queryParams as any);
-        }
-
-        // Parse body for non-GET methods
-        let parsedInput: unknown;
-        if (def.inputSchema && request.method !== 'GET') {
-          const contentType = request.headers.get('content-type') ?? '';
-          let body: unknown;
-
-          if (contentType.includes('application/json')) {
-            body = await request.json();
-          } else if (
-            contentType.includes('application/x-www-form-urlencoded')
-          ) {
-            const formData = await request.formData();
-            body = Object.fromEntries(formData.entries());
-          } else {
-            body = await request.json().catch(() => ({}));
-          }
-
-          parsedInput = def.inputSchema.parse(body as any);
-        }
-
-        // Build handler options
-        const handlerOpts: any = {
-          ctx,
-          input: parsedInput,
-        };
-
-        if (parsedParams !== undefined) {
-          handlerOpts.params = parsedParams;
-        }
-
-        if (parsedQuery !== undefined) {
-          handlerOpts.query = parsedQuery;
-        }
-
-        const result = await handler(handlerOpts);
-
-        // Response mode - return Response directly
-        if (def.responseMode) {
-          return result as Response;
-        }
-
-        // Validate and return JSON response with CORS headers
-        const output = def.outputSchema
-          ? def.outputSchema.parse(result as any)
-          : result;
-        return createJsonResponse(output, request, cors);
-      } catch (error) {
-        return handleHttpError(error, request, cors);
-      }
+      return honoHandler(minimalContext);
     }
   );
 
@@ -659,11 +525,8 @@ function createProcedure(
     paramsSchema: def.paramsSchema,
     querySchema: def.querySchema,
   };
-  // Store per-procedure CORS config (may be overridden by router)
-  procedure._cors = def.cors;
-
-  // Set reference for runtime access
-  procedureRef = procedure;
+  // Attach Hono handler for use with HttpRouterWithHono
+  (procedure as any)._honoHandler = honoHandler;
 
   return procedure;
 }
@@ -787,34 +650,12 @@ function createHttpBuilder(
       });
     },
 
-    raw() {
-      return createNewHttpBuilder(def, {
-        rawMode: true,
-      });
-    },
-
-    response() {
-      return createNewHttpBuilder(def, {
-        responseMode: true,
-      });
-    },
-
-    cors(options: CORSOptions | false) {
-      return createNewHttpBuilder(def, {
-        cors: options,
-      });
-    },
-
     query(handler: any) {
       return createProcedure(def, handler, 'query');
     },
 
     mutation(handler: any) {
       return createProcedure(def, handler, 'mutation');
-    },
-
-    action(handler: any) {
-      return createProcedure(def, handler, 'query');
     },
   };
 
@@ -847,8 +688,6 @@ export function createHttpProcedureBuilder<
   UnsetMarker,
   UnsetMarker,
   TMeta,
-  false,
-  false,
   HttpMethod
 > {
   return createHttpBuilder({
@@ -866,8 +705,6 @@ export function createHttpProcedureBuilder<
     UnsetMarker,
     UnsetMarker,
     TMeta,
-    false,
-    false,
     HttpMethod
   >;
 }

@@ -1,7 +1,7 @@
 - In all interactions and commit messages, be extremely concise and sacrifice grammar for the sake of concision
 - ALWAYS read and understand relevant files before proposing edits. Do not speculate about code you have not inspected
 - ALWAYS use AskUserQuestion tool when asking questions to the user
-- When playwriter browser requires start dev, auth or disconnects, use AskUserQuestion: (1) Connected (2) Skip browser test. Never close browser when done.
+- After any package modification, run `bun --cwd packages/better-convex build`, then touch `convex/functions/schema.ts` to trigger a re-build
 
 ## PR Comments
 
@@ -14,3 +14,11 @@
 ## Plans
 
 - At the end of each plan, give me a list of unresolved questions to answer, if any. Make the questions extremely concise. Sacrifice grammar for the sake of concision.
+
+## Browser Testing
+
+- Use `agent-browser` for all browser automation
+- Never close agent-browser
+- Use `--headed` unless asked for headless
+- Port 3005
+- Do NOT use next-devtools `browser_eval` (overlaps with agent-browser)

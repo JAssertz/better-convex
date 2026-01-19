@@ -97,4 +97,31 @@ export const todosRouter = router({
       });
       return { success: true };
     }),
+
+  // GET /api/todos/export/:format - Export todos as file
+  download: authRoute
+    .get('/api/todos/export/:format')
+    .params(z.object({ format: z.enum(['json', 'csv']) }))
+    .query(async ({ ctx, params, c }) => {
+      const result = await ctx.runQuery(api.todos.list, { limit: 100 });
+      const todos = result.page;
+
+      c.header(
+        'Content-Disposition',
+        `attachment; filename="todos.${params.format}"`
+      );
+      c.header('Cache-Control', 'no-cache');
+
+      if (params.format === 'csv') {
+        const csv = [
+          'id,title,completed,description',
+          ...todos.map(
+            (t) => `${t._id},${t.title},${t.completed},${t.description ?? ''}`
+          ),
+        ].join('\n');
+        return c.text(csv);
+      }
+
+      return c.json({ todos });
+    }),
 });

@@ -19,6 +19,7 @@ import {
   authRoute,
   optionalAuthMutation,
   optionalAuthQuery,
+  optionalAuthRoute,
   publicAction,
   publicMutation,
   publicQuery,
@@ -756,35 +757,26 @@ export const http_params_query = publicRoute
     return { userId, page };
   });
 
-// 15.8 httpAction - raw mode (skip body parsing)
+// 15.8 httpAction - raw mode (use c.req for request access)
 export const http_raw = publicRoute
   .post('/api/webhooks/test')
-  .raw()
-  .mutation(async ({ ctx, request }) => {
-    const body = await request.text();
-    const signature = request.headers.get('x-signature');
+  .mutation(async ({ c }) => {
+    const body = await c.req.text();
+    const signature = c.req.header('x-signature');
     return { received: true, hasSignature: !!signature };
   });
 
-// 15.9 httpAction - response mode (return Response directly)
+// 15.9 httpAction - Response return via c.redirect()
 export const http_response = publicRoute
   .get('/api/redirect')
-  .response()
-  .query(async () => {
-    return Response.redirect('https://example.com', 302);
-  });
+  .query(async ({ c }) => c.redirect('https://example.com', 302));
 
-// 15.10 httpAction - raw + response mode
+// 15.10 httpAction - raw mode returns Response via c helpers
 export const http_raw_response = publicRoute
   .post('/api/proxy')
-  .raw()
-  .response()
-  .mutation(async ({ request }) => {
-    const body = await request.text();
-    return new Response(body, {
-      status: 200,
-      headers: { 'Content-Type': 'text/plain' },
-    });
+  .mutation(async ({ c }) => {
+    const body = await c.req.text();
+    return c.text(body);
   });
 
 // ============================================================================
@@ -817,14 +809,11 @@ export const http_auth_input = authRoute
 export const http_auth_params = authRoute
   .get('/api/projects/:id')
   .params(z.object({ id: zid('projects') }))
-  .response()
-  .query(async ({ ctx, params }) => {
+  .query(async ({ ctx, params, c }) => {
     const projectId: Id<'projects'> = params.id;
     // Test that ctx has storage
     ctx.storage;
-    return new Response(JSON.stringify({ id: projectId }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return c.json({ id: projectId });
   });
 
 // ============================================================================
@@ -887,12 +876,10 @@ export const error_http_output_wrong_type = publicRoute
   // @ts-expect-error - handler returns wrong shape, output enforces { name: string }
   .query(async () => ({ wrong: 'shape' }));
 
-// 17.8 response() mode - handler return type is Response
-// Note: TypeScript allows any Promise return which gets cast, similar to other procedures
+// 17.8 c.text() returns Response - tests Response return
 export const http_response_return = publicRoute
   .get('/api/test')
-  .response()
-  .query(async () => new Response('ok'));
+  .query(async ({ c }) => c.text('ok'));
 
 // ============================================================================
 // Section 18: HTTP Action - Additional Coverage
@@ -944,20 +931,15 @@ export const http_all_schemas = publicRoute
     return { taskId: `task_${title}`, projectId };
   });
 
-// 18.5 httpAction - ctx properties in non-raw mode
+// 18.5 httpAction - access request via c.req
 export const http_ctx_properties = publicRoute
   .get('/api/debug')
-  .query(async ({ ctx }) => {
-    // ctx has HttpRequestContext properties
-    const request: Request = ctx.request;
-    const headers: Headers = ctx.headers;
-    const url: URL = ctx.url;
-    const pathParams: Record<string, string> = ctx.pathParams;
+  .query(async ({ c }) => {
+    // Use c.req for request access (c.req.raw for raw Request)
     return {
-      hasRequest: !!request,
-      hasHeaders: !!headers,
-      urlPath: url.pathname,
-      pathParamsCount: Object.keys(pathParams).length,
+      hasRequest: !!c.req,
+      urlPath: c.req.path,
+      method: c.req.method,
     };
   });
 
@@ -1031,23 +1013,15 @@ export const http_no_query = publicRoute
 export const http_no_input = publicRoute
   .get('/api/no-input')
   .query(async (opts) => {
-    // input is optional undefined when not defined
-    const input = opts.input;
-    // @ts-expect-error - input should be undefined, not have properties
-    return input?.nonexistent;
+    // @ts-expect-error - input not defined, should not exist
+    return opts.input;
   });
 
 // ============================================================================
 // Section 20: HTTP Client Type Tests
 // ============================================================================
 
-import {
-  createHttpClient,
-  type HttpClient,
-  type InferHttpInput,
-  type InferHttpOutput,
-} from 'better-convex/crpc';
-import type { HttpProcedure } from 'better-convex/server';
+import { type InferHttpInput, type InferHttpOutput } from 'better-convex/crpc';
 
 // Mock httpRoutes type for testing (normally from codegen)
 const mockHttpRoutes = {
@@ -1091,56 +1065,57 @@ type _OutputStatus = InferHttpOutput<typeof http_output>;
 // Should be: { status: string; timestamp: number }
 const _testOutput: _OutputStatus = { status: 'ok', timestamp: 123 };
 
-// 20.5 HttpClient type - creates typed call signatures
-type _MockClient = HttpClient<MockHttpRouter>;
 // Each property should be a function
 
-// 20.6 createHttpClient - basic usage (type test, won't actually run)
-const _testClient = createHttpClient<MockHttpRouter>({
-  convexSiteUrl: 'https://example.convex.site',
-  routes: mockHttpRoutes,
-});
+// ============================================================================
+// Section 21: Hono Context `c` - Type Tests
+// ============================================================================
 
-// 20.7 Type-safe procedure calls
-async function _testTypedCalls() {
-  // POST with input - should require name and email
-  const _created = await _testClient.http_post_input({
-    name: 'John',
-    email: 'john@example.com',
+// 21.1 c.json() - returns Response
+export const http_c_json = publicRoute
+  .get('/api/c-json')
+  .query(async ({ c }) => c.json({ data: 'test' }));
+
+// 21.2 c.text() - returns Response
+export const http_c_text = publicRoute
+  .get('/api/c-text')
+  .query(async ({ c }) => c.text('Hello'));
+
+// 21.3 c.header() - set custom headers
+export const http_c_header = publicRoute
+  .get('/api/c-header')
+  .query(async ({ c }) => {
+    c.header('X-Custom', 'value');
+    return c.json({ ok: true });
   });
 
-  // GET with params - should require id
-  const _user = await _testClient.http_params({ id: 'user123' as Id<'user'> });
+// 21.4 c.redirect() - returns Response
+export const http_c_redirect = publicRoute
+  .get('/api/c-redirect')
+  .query(async ({ c }) => c.redirect('/new-path', 301));
 
-  // GET with params and query - both should be accessible
-  const _posts = await _testClient.http_params_query({
-    id: 'user123' as Id<'user'>,
-    page: 1,
+// 21.5 raw mode - c.req.header() and c.req.text()
+export const http_c_raw = publicRoute
+  .post('/api/c-raw')
+  .mutation(async ({ c }) => {
+    const sig = c.req.header('x-signature');
+    const body = await c.req.text();
+    return c.text('OK');
   });
 
-  // GET with output - return type should match schema
-  const status: { status: string; timestamp: number } =
-    await _testClient.http_output();
-}
-
-// 20.8 Type error - missing required input
-async function _testMissingInput() {
-  // @ts-expect-error - name and email are required
-  await _testClient.http_post_input({});
-}
-
-// 20.9 Type error - wrong input type
-async function _testWrongInputType() {
-  // @ts-expect-error - email should be string, not number
-  await _testClient.http_post_input({ name: 'John', email: 123 });
-}
-
-// 20.10 Valid call - all required fields provided
-async function _testValidCall() {
-  const result = await _testClient.http_post_input({
-    name: 'John',
-    email: 'john@example.com',
+// 21.6 optionalAuthRoute - ctx.userId may be null
+export const http_optional_auth = optionalAuthRoute
+  .get('/api/optional-auth')
+  .query(async ({ ctx }) => {
+    const userId: Id<'user'> | null = ctx.userId;
+    return { userId };
   });
-  // result type should be { name: string; email: string }
-  return result;
-}
+
+// 21.7 optionalAuthRoute - must check null
+export const error_optional_auth_no_check = optionalAuthRoute
+  .get('/api/test')
+  .query(async ({ ctx }) => {
+    // @ts-expect-error - userId may be null, can't use directly as non-null
+    const userId: Id<'user'> = ctx.userId;
+    return { userId };
+  });

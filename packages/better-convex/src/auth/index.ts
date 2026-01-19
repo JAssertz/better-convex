@@ -7,5 +7,5 @@ export * from './adapter-utils';
 export * from './create-api';
 export * from './create-client';
 export * from './helpers';
-export * from './registerRoutes';
+export * from './middleware';
 export * from './types';

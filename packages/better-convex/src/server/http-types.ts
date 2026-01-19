@@ -1,4 +1,5 @@
 import type { GenericActionCtx, GenericDataModel } from 'convex/server';
+import type { Context } from 'hono';
 import type { z } from 'zod';
 import type { AnyMiddleware, UnsetMarker } from './types';
 
@@ -14,14 +15,6 @@ export interface HttpRouteDefinition<TMethod extends HttpMethod = HttpMethod> {
   method: TMethod;
   pathParamNames: string[];
   usePathPrefix: boolean;
-}
-
-// Context available in HTTP action handlers
-export interface HttpRequestContext {
-  request: Request;
-  headers: Headers;
-  url: URL;
-  pathParams: Record<string, string>;
 }
 
 /**
@@ -53,10 +46,6 @@ export interface HttpProcedureBuilderDef<
   paramsSchema?: z.ZodTypeAny;
   querySchema?: z.ZodTypeAny;
   route?: HttpRouteDefinition<TMethod>;
-  rawMode?: boolean;
-  responseMode?: boolean;
-  /** Per-procedure CORS config. false to disable, undefined to inherit from router. */
-  cors?: CORSOptions | false;
   functionConfig: {
     base: HttpActionConstructor;
     createContext: (ctx: GenericActionCtx<GenericDataModel>) => TCtx;
@@ -99,39 +88,34 @@ export interface HttpProcedure<
     paramsSchema?: TParams;
     querySchema?: TQuery;
   };
-  /** @internal Resolved CORS config (set by router registration) */
-  _cors?: CORSOptions | false;
 }
 
 /**
- * Handler options type - conditionally includes input, params, query based on what's defined
+ * Handler options with ctx namespace (consistent with cRPC queries/mutations).
+ * - ctx: context properties (userId, db, runQuery, etc.)
+ * - input: parsed JSON body
+ * - params: parsed path params
+ * - query: parsed query params
+ * - c: Hono Context for Response helpers (c.json, c.text, c.redirect, c.header, c.req)
  */
 export type HttpHandlerOpts<
   TCtx,
   TInput extends UnsetMarker | z.ZodTypeAny,
   TParams extends UnsetMarker | z.ZodTypeAny,
   TQuery extends UnsetMarker | z.ZodTypeAny,
-  TRawMode extends boolean,
-> = TRawMode extends true
-  ? { ctx: TCtx & HttpRequestContext; request: Request }
-  : { ctx: TCtx & HttpRequestContext } & (TInput extends UnsetMarker
-      ? { input?: undefined }
-      : { input: z.output<TInput> }) &
-      (TParams extends UnsetMarker ? object : { params: z.output<TParams> }) &
-      (TQuery extends UnsetMarker ? object : { query: z.output<TQuery> });
+> = { ctx: TCtx; c: Context } & (TInput extends UnsetMarker
+  ? object
+  : { input: z.output<TInput> }) &
+  (TParams extends UnsetMarker ? object : { params: z.output<TParams> }) &
+  (TQuery extends UnsetMarker ? object : { query: z.output<TQuery> });
 
-// CORS configuration
-export interface CORSOptions {
-  allowedOrigins?: string[] | '*';
-  allowedMethods?: HttpMethod[];
-  allowedHeaders?: string[];
-  allowCredentials?: boolean;
-  maxAge?: number;
-}
-
-// Router options for createCRPCRouter
-export interface CRPCRouterOptions {
-  cors?: CORSOptions;
-  /** The httpAction constructor from convex/server - required for CORS preflight handlers */
-  httpAction?: HttpActionConstructor;
+/**
+ * Hono handler with cRPC route metadata attached
+ */
+export interface CRPCHonoHandler {
+  (c: Context): Promise<Response>;
+  _crpcRoute: {
+    path: string;
+    method: HttpMethod;
+  };
 }

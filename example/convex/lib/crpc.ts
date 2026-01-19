@@ -356,5 +356,24 @@ export const authRoute = c.httpAction.use(async ({ ctx, next }) => {
   });
 });
 
+/** Optional auth HTTP route - ctx.userId may be null */
+export const optionalAuthRoute = c.httpAction.use(async ({ ctx, next }) => {
+  const identity = await ctx.auth.getUserIdentity();
+
+  return next({
+    ctx: {
+      ...ctx,
+      userId: identity ? (identity.subject as Id<'user'>) : null,
+      user: identity
+        ? {
+            id: identity.subject,
+            email: identity.email,
+            name: identity.name,
+          }
+        : null,
+    },
+  });
+});
+
 /** HTTP router factory - create nested HTTP routers like tRPC */
 export const router = c.router;

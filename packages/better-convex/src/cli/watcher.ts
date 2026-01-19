@@ -4,12 +4,20 @@ import { generateMeta, getConvexConfig } from './codegen.js';
 const outputDir = process.env.BETTER_CONVEX_OUTPUT_DIR || undefined;
 const debug = process.env.BETTER_CONVEX_DEBUG === '1';
 const { functionsDir } = getConvexConfig(outputDir);
-const watchFile = path.join(functionsDir, '_generated', 'api.d.ts');
+
+// Watch api.d.ts, http.ts, and routers/**/*.ts for HTTP route changes
+// Note: routers/ is sibling to functions/, not inside it
+const convexDir = path.dirname(functionsDir);
+const watchPatterns = [
+  path.join(functionsDir, '_generated', 'api.d.ts'),
+  path.join(functionsDir, 'http.ts'),
+  path.join(convexDir, 'routers', '**', '*.ts'),
+];
 
 import('chokidar').then(({ watch }) => {
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  watch(watchFile, { ignoreInitial: true })
+  watch(watchPatterns, { ignoreInitial: true })
     .on('change', () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {

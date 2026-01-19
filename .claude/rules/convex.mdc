@@ -44,7 +44,7 @@ Read as needed:
 - .claude/rules/convex-streams.mdc - Advanced filtering
 - .claude/rules/convex-trigger.mdc - Database triggers
 - .claude/rules/convex-scheduling.mdc - Cron and scheduled functions
-- .claude/rules/convex-http.mdc - HTTP endpoints
+- .claude/rules/convex-http.mdc - Advanced HTTP (Hono, streaming, webhooks)
 - .claude/rules/convex-examples.mdc - Reference implementations
 
 # Convex Guidelines
@@ -170,7 +170,9 @@ export const processData = privateQuery
 
 ### HTTP Endpoints
 
-For HTTP endpoints and webhooks, see [convex-http.mdc](mdc:.claude/rules/convex-http.mdc).
+For cRPC HTTP router (REST APIs, TanStack Query, RSC prefetching), see [/docs/server/http](/docs/server/http).
+
+For advanced patterns (Hono, streaming, webhooks), see [convex-http.mdc](mdc:.claude/rules/convex-http.mdc).
 
 ### Validators
 

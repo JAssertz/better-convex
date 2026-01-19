@@ -1,264 +1,503 @@
 ---
-description: Advanced HTTP patterns - Hono integration, streaming, rate limiting, Discord bots
+description: Advanced HTTP patterns - Hono integration, streaming, rate limiting, Discord bots. Load AFTER reading /docs/server/http
 globs: convex/functions/http.ts,convex/**/*.ts
 alwaysApply: false
 ---
 
 # Convex HTTP - Advanced Patterns
 
-> Prerequisites: See /docs/server/http for setup, request handling, CORS, and basic webhooks
+> Prerequisites: See [/docs/server/http](/docs/server/http) for cRPC HTTP router setup, React client, RSC prefetching
 
-## Hono Integration
+## Quick Reference
 
-Use [Hono](https://hono.dev/) when you need complex routing, middleware chains, or better DX:
+| Pattern                                  | Use Case                 |
+| ---------------------------------------- | ------------------------ |
+| `publicRoute.get('/path').query()`       | Public GET endpoint      |
+| `authRoute.post('/path').mutation()`     | Auth-required POST       |
+| `optionalAuthRoute.get('/path').query()` | Optional auth endpoint   |
+| `.params(z.object({id}))`                | Path params `/todos/:id` |
+| `.searchParams(z.object({limit}))`       | Query params `?limit=10` |
+| `.input(z.object({...}))`                | JSON body (POST/PATCH)   |
+| `.output(z.object({...}))`               | Response validation      |
+| `.meta({ rateLimit: 'api/heavy' })`      | Procedure metadata       |
+| `.use(middleware)`                       | Custom middleware        |
+| `router({ endpoint1, endpoint2 })`       | Group endpoints          |
+
+## HTTP Setup with Hono
+
+cRPC HTTP endpoints require [Hono](https://hono.dev/) for routing and middleware. This provides CORS handling, middleware chains, and a clean API.
 
 ```typescript
 // convex/functions/http.ts
-import { Hono } from 'hono';
-import { HonoWithConvex, HttpRouterWithHono } from 'convex-helpers/server/hono';
-import { ActionCtx } from './_generated/server';
+import "../lib/http-polyfills";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { authMiddleware } from "better-convex/auth";
+import { createHttpRouter } from "better-convex/server";
+import { router } from "../lib/crpc";
+import { createAuth } from "./auth";
+import { todosRouter } from "../routers/todos";
+import { health } from "../routers/health";
 
-const app: HonoWithConvex<ActionCtx> = new Hono();
+const app = new Hono();
 
-// Middleware
-app.use('*', async (c, next) => {
+// CORS for API routes (auth + cRPC)
+app.use(
+  "/api/*",
+  cors({
+    origin: process.env.SITE_URL!,
+    allowHeaders: ["Content-Type", "Authorization", "Better-Auth-Cookie"],
+    exposeHeaders: ["Set-Better-Auth-Cookie"],
+    credentials: true,
+  })
+);
+
+// Better Auth middleware
+app.use(authMiddleware(createAuth));
+
+// cRPC router
+export const appRouter = router({
+  health,
+  todos: todosRouter,
+});
+
+export default createHttpRouter(app, appRouter);
+```
+
+### Key Components
+
+| Component                          | Purpose                                    |
+| ---------------------------------- | ------------------------------------------ |
+| `Hono`                             | Route handling, middleware, CORS           |
+| `authMiddleware(createAuth)`       | Better Auth routes middleware              |
+| `createHttpRouter(app, appRouter)` | Creates Convex HttpRouter with Hono + cRPC |
+
+### Hono Middleware
+
+```typescript
+// Custom middleware (logging, etc.)
+app.use("*", async (c, next) => {
   console.log(`${c.req.method} ${c.req.path}`);
   await next();
 });
 
-// Route groups
-const api = app.basePath('/api');
-
-api.get('/users', async (c) => {
-  const users = await c.env.runQuery(internal.users.list, {});
-  return c.json(users);
-});
-
-api.post('/users', async (c) => {
-  const body = await c.req.json();
-  const id = await c.env.runMutation(internal.users.create, body);
-  return c.json({ id }, 201);
-});
-
-// Error handling middleware
+// Global error handling
 app.onError((err, c) => {
-  console.error('Error:', err);
+  console.error("Error:", err);
   return c.json({ error: err.message }, 500);
 });
-
-export default new HttpRouterWithHono(app);
 ```
 
-### When to Use Hono
+## Custom Responses with `c`
 
-- **Complex routing**: Nested routes, route groups, parameter validation
-- **Middleware**: Auth, logging, rate limiting across routes
-- **OpenAPI**: Auto-generate docs with `@hono/zod-openapi`
-- **Better DX**: Cleaner syntax than raw httpAction
+cRPC handlers receive `c` (Hono Context) for custom responses, headers, and raw request access.
+
+### File Downloads
+
+```typescript
+export const download = authRoute
+  .get("/api/todos/export/:format")
+  .params(z.object({ format: z.enum(["json", "csv"]) }))
+  .query(async ({ ctx, params, c }) => {
+    const todos = await ctx.runQuery(api.todos.list, { limit: 100 });
+
+    c.header(
+      "Content-Disposition",
+      `attachment; filename="todos.${params.format}"`
+    );
+    c.header("Cache-Control", "no-cache");
+
+    if (params.format === "csv") {
+      const csv = [
+        "id,title,completed",
+        ...todos.map((t) => `${t._id},${t.title},${t.completed}`),
+      ].join("\n");
+      return c.text(csv);
+    }
+    return c.json({ todos });
+  });
+```
+
+### Redirects
+
+```typescript
+export const redirect = publicRoute
+  .get("/api/old-path")
+  .query(async ({ c }) => c.redirect("/api/new-path", 301));
+```
+
+## HTTP Methods
+
+All standard HTTP methods are supported:
+
+```typescript
+// GET - queries
+export const get = publicRoute.get('/api/todos/:id').query(...);
+
+// POST - create resources
+export const create = authRoute.post('/api/todos').mutation(...);
+
+// PUT - full update
+export const replace = authRoute
+  .put('/api/todos/:id')
+  .params(z.object({ id: zid('todos') }))
+  .input(z.object({ title: z.string(), completed: z.boolean() }))
+  .mutation(async ({ ctx, params, input }) => {
+    await ctx.runMutation(api.todos.replace, { id: params.id, ...input });
+    return { success: true };
+  });
+
+// PATCH - partial update
+export const update = authRoute
+  .patch('/api/todos/:id')
+  .params(z.object({ id: zid('todos') }))
+  .input(z.object({ title: z.string().optional(), completed: z.boolean().optional() }))
+  .mutation(async ({ ctx, params, input }) => {
+    await ctx.runMutation(api.todos.update, { id: params.id, ...input });
+    return { success: true };
+  });
+
+// DELETE - remove resources
+export const remove = authRoute
+  .delete('/api/todos/:id')
+  .params(z.object({ id: zid('todos') }))
+  .mutation(async ({ ctx, params }) => {
+    await ctx.runMutation(api.todos.delete, { id: params.id });
+    return { deleted: true };
+  });
+```
+
+## Schema Validation
+
+### Output Validation
+
+```typescript
+export const status = publicRoute
+  .get("/api/status")
+  .output(z.object({ status: z.string(), timestamp: z.number() }))
+  .query(async () => ({
+    status: "ok",
+    timestamp: Date.now(),
+  }));
+```
+
+### Combined Schemas (params + query + input)
+
+```typescript
+export const createTask = authRoute
+  .post("/api/projects/:projectId/tasks")
+  .params(z.object({ projectId: zid("projects") }))
+  .searchParams(z.object({ notify: z.coerce.boolean().optional() }))
+  .input(z.object({ title: z.string(), description: z.string().optional() }))
+  .output(z.object({ taskId: zid("tasks"), projectId: zid("projects") }))
+  .mutation(async ({ ctx, params, query, input }) => {
+    const taskId = await ctx.runMutation(api.tasks.create, {
+      projectId: params.projectId,
+      ...input,
+    });
+    if (query.notify) {
+      await ctx.scheduler.runAfter(0, internal.notifications.send, { taskId });
+    }
+    return { taskId, projectId: params.projectId };
+  });
+```
+
+## Procedure Metadata
+
+Use `.meta()` for rate limiting, analytics, and custom behavior:
+
+```typescript
+export const heavyEndpoint = publicRoute
+  .meta({ rateLimit: "api/heavy" })
+  .get("/api/reports")
+  .query(async ({ ctx }) => {
+    return ctx.runQuery(api.reports.generate, {});
+  });
+
+// Chained meta (shallow merge)
+export const adminEndpoint = authRoute
+  .meta({ role: "admin" })
+  .meta({ rateLimit: "api/admin" })
+  .delete("/api/users/:id")
+  .params(z.object({ id: zid("user") }))
+  .mutation(async ({ ctx, params }) => {
+    await ctx.runMutation(api.admin.deleteUser, { id: params.id });
+  });
+```
+
+## Middleware
+
+Use `.use()` to add custom middleware that extends context:
+
+```typescript
+export const withTiming = publicRoute
+  .use(async ({ ctx, next }) => {
+    const start = Date.now();
+    const result = await next({ ctx });
+    console.log(`Request took ${Date.now() - start}ms`);
+    return result;
+  })
+  .get("/api/timed")
+  .query(async () => ({ ok: true }));
+
+// Extend context with custom properties
+export const withPermissions = authRoute
+  .use(async ({ ctx, next }) => {
+    const permissions = await ctx.runQuery(api.permissions.get, {
+      userId: ctx.userId,
+    });
+    return next({ ctx: { ...ctx, permissions } });
+  })
+  .get("/api/protected")
+  .query(async ({ ctx }) => {
+    if (!ctx.permissions.includes("admin")) {
+      throw new CRPCError({ code: "FORBIDDEN", message: "Admin required" });
+    }
+    return { data: "secret" };
+  });
+```
+
+## Optional Auth
+
+Use `optionalAuthRoute` when auth is optional (user may be null):
+
+```typescript
+export const publicOrAuth = optionalAuthRoute
+  .get("/api/content")
+  .query(async ({ ctx }) => {
+    // ctx.user and ctx.userId may be null
+    const userId: Id<"user"> | null = ctx.userId;
+
+    if (userId) {
+      // Authenticated user - return personalized content
+      return ctx.runQuery(api.content.personalized, { userId });
+    }
+    // Anonymous user - return public content
+    return ctx.runQuery(api.content.public, {});
+  });
+```
 
 ## Streaming Responses
 
 ### Server-Sent Events (SSE)
 
 ```typescript
-http.route({
-  path: '/api/stream',
-  method: 'GET',
-  handler: httpAction(async (ctx, req) => {
-    const encoder = new TextEncoder();
+import { streamText } from "hono/streaming";
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        for (let i = 0; i < 10; i++) {
-          const data = await ctx.runQuery(internal.data.getChunk, { index: i });
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-        controller.close();
-      },
-    });
+export const stream = publicRoute
+  .get("/api/stream")
+  .query(async ({ ctx, c }) => {
+    c.header("Content-Type", "text/event-stream");
+    c.header("Cache-Control", "no-cache");
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
+    return streamText(c, async (stream) => {
+      for (let i = 0; i < 10; i++) {
+        const data = await ctx.runQuery(internal.data.getChunk, { index: i });
+        await stream.write(`data: ${JSON.stringify(data)}\n\n`);
+        await stream.sleep(1000);
+      }
     });
-  }),
-});
+  });
 ```
 
-### AI Streaming Integration
+### AI Streaming
 
 ```typescript
-http.route({
-  path: '/api/ai/stream',
-  method: 'POST',
-  handler: httpAction(async (ctx, req) => {
-    const { prompt } = await req.json();
+import { stream } from "hono/streaming";
 
-    // Call AI action that returns a stream
-    const stream = await ctx.runAction(internal.ai.streamResponse, { prompt });
+export const aiStream = publicRoute
+  .post("/api/ai/stream")
+  .input(z.object({ prompt: z.string() }))
+  .mutation(async ({ ctx, input, c }) => {
+    c.header("Content-Type", "text/event-stream");
+    c.header("Cache-Control", "no-cache");
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-      },
+    const aiStream = await ctx.runAction(internal.ai.streamResponse, {
+      prompt: input.prompt,
     });
-  }),
-});
+
+    return stream(c, async (stream) => {
+      await stream.pipe(aiStream);
+    });
+  });
 ```
 
-## Rate Limiting in HTTP
+## Rate Limiting
 
-IP-based rate limiting for public endpoints:
+IP-based rate limiting using `c.req.header()`:
 
 ```typescript
-http.route({
-  path: '/api/public',
-  method: 'POST',
-  handler: httpAction(async (ctx, req) => {
-    // Extract client IP
-    const ip = req.headers.get('X-Forwarded-For')?.split(',')[0]?.trim()
-      ?? req.headers.get('CF-Connecting-IP')
-      ?? 'unknown';
+export const rateLimited = publicRoute
+  .post("/api/public")
+  .input(z.object({ data: z.string() }))
+  .mutation(async ({ ctx, input, c }) => {
+    const ip =
+      c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ??
+      c.req.header("CF-Connecting-IP") ??
+      "unknown";
 
-    // Check rate limit
     const allowed = await ctx.runMutation(internal.rateLimit.check, {
       key: `http:${ip}`,
       limit: 100,
-      window: 3600000, // 1 hour
+      window: 3600000,
     });
 
     if (!allowed) {
-      return new Response('Rate limit exceeded', {
-        status: 429,
-        headers: {
-          'Retry-After': '3600',
-          'X-RateLimit-Limit': '100',
-          'X-RateLimit-Remaining': '0',
-        },
+      return c.text("Rate limit exceeded", 429, {
+        "Retry-After": "3600",
+        "X-RateLimit-Limit": "100",
+        "X-RateLimit-Remaining": "0",
       });
     }
 
-    const result = await ctx.runMutation(internal.api.process, {});
-    return Response.json(result);
-  }),
-});
+    const result = await ctx.runMutation(internal.api.process, {
+      data: input.data,
+    });
+    return c.json(result);
+  });
 ```
 
-## Discord Bot Webhooks
+## Webhook Patterns
 
-### Interaction Handler
-
-Discord sends interactions (slash commands, buttons) to your webhook:
+### Stripe Webhook
 
 ```typescript
-import { verifyKey } from 'discord-interactions';
+export const stripeWebhook = publicRoute
+  .post("/webhooks/stripe")
+  .mutation(async ({ ctx, c }) => {
+    const signature = c.req.header("stripe-signature");
+    if (!signature) {
+      throw new CRPCError({ code: "BAD_REQUEST", message: "No signature" });
+    }
+
+    const body = await c.req.text();
+
+    const isValid = await ctx.runAction(internal.stripe.verify, {
+      body,
+      signature,
+    });
+    if (!isValid) {
+      throw new CRPCError({
+        code: "BAD_REQUEST",
+        message: "Invalid signature",
+      });
+    }
+
+    const event = JSON.parse(body);
+
+    switch (event.type) {
+      case "payment_intent.succeeded":
+        await ctx.runMutation(internal.payments.markPaid, {
+          paymentIntentId: event.data.object.id,
+        });
+        break;
+      case "customer.subscription.deleted":
+        await ctx.runMutation(internal.subscriptions.cancel, {
+          subscriptionId: event.data.object.id,
+        });
+        break;
+    }
+
+    return c.text("OK", 200);
+  });
+```
+
+### Discord Bot
+
+```typescript
+import { verifyKey } from "discord-interactions";
 
 const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY!;
 
-http.route({
-  path: '/webhooks/discord',
-  method: 'POST',
-  handler: httpAction(async (ctx, req) => {
-    // Get verification headers
-    const signature = req.headers.get('X-Signature-Ed25519');
-    const timestamp = req.headers.get('X-Signature-Timestamp');
+export const discordWebhook = publicRoute
+  .post("/webhooks/discord")
+  .mutation(async ({ ctx, c }) => {
+    const signature = c.req.header("X-Signature-Ed25519");
+    const timestamp = c.req.header("X-Signature-Timestamp");
 
     if (!signature || !timestamp) {
-      return new Response('Missing signature', { status: 401 });
+      throw new CRPCError({
+        code: "UNAUTHORIZED",
+        message: "Missing signature",
+      });
     }
 
-    // Get raw body for verification
-    const body = await req.text();
+    const body = await c.req.text();
 
-    // Verify request is from Discord
     const isValid = verifyKey(body, signature, timestamp, DISCORD_PUBLIC_KEY);
     if (!isValid) {
-      return new Response('Invalid signature', { status: 401 });
+      throw new CRPCError({
+        code: "UNAUTHORIZED",
+        message: "Invalid signature",
+      });
     }
 
     const interaction = JSON.parse(body);
 
     // Handle PING (Discord verification)
     if (interaction.type === 1) {
-      return Response.json({ type: 1 });
+      return c.json({ type: 1 });
     }
 
     // Handle slash command
     if (interaction.type === 2) {
-      const { name, options } = interaction.data;
+      const { name } = interaction.data;
 
       switch (name) {
-        case 'stats':
+        case "stats":
           const stats = await ctx.runQuery(internal.stats.get, {});
-          return Response.json({
-            type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
+          return c.json({
+            type: 4,
             data: { content: `Users: ${stats.users}, Posts: ${stats.posts}` },
           });
 
-        case 'create':
-          // Defer for long operations
-          await ctx.runMutation(internal.discord.deferResponse, {
-            token: interaction.token,
-          });
-
-          // Process in background
+        case "create":
           await ctx.scheduler.runAfter(0, internal.discord.processCreate, {
             token: interaction.token,
-            options,
           });
-
-          return Response.json({ type: 5 }); // DEFERRED_CHANNEL_MESSAGE
+          return c.json({ type: 5 }); // DEFERRED
 
         default:
-          return Response.json({
-            type: 4,
-            data: { content: 'Unknown command' },
-          });
+          return c.json({ type: 4, data: { content: "Unknown command" } });
       }
     }
 
     // Handle button clicks
     if (interaction.type === 3) {
-      const customId = interaction.data.custom_id;
-
       await ctx.runMutation(internal.discord.handleButton, {
-        customId,
+        customId: interaction.data.custom_id,
         userId: interaction.user.id,
       });
-
-      return Response.json({
-        type: 7, // UPDATE_MESSAGE
-        data: { content: 'Action completed!' },
-      });
+      return c.json({ type: 7, data: { content: "Done!" } });
     }
 
-    return new Response('Unknown interaction type', { status: 400 });
-  }),
-});
+    throw new CRPCError({
+      code: "BAD_REQUEST",
+      message: "Unknown interaction",
+    });
+  });
 ```
 
-### Deferred Response Follow-up
+## Server-Side Calls
+
+For server-to-server calls outside React (API routes, middleware, cron jobs):
 
 ```typescript
-// internal action to follow up on deferred responses
-export const followUpResponse = internalAction({
-  args: { token: v.string(), content: v.string() },
-  handler: async (ctx, { token, content }) => {
-    const applicationId = process.env.DISCORD_APPLICATION_ID!;
+// Usage in API routes or middleware
+import { createContext } from "@/lib/convex/server";
 
-    await fetch(
-      `https://discord.com/api/v10/webhooks/${applicationId}/${token}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      }
-    );
-  },
-});
+const ctx = await createContext({ headers: request.headers });
+
+// Query
+const users = await ctx.caller.user.list({});
+
+// Mutation
+await ctx.caller.user.create({ name: "John", email: "john@example.com" });
+
+// Check auth state
+if (ctx.isAuthenticated) {
+  const me = await ctx.caller.user.getSessionUser({});
+}
 ```
+
+See [Server-Side Calls](/docs/server/server-side-calls) for full documentation.

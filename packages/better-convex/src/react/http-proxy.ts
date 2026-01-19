@@ -321,7 +321,14 @@ async function executeHttpRequest(opts: {
     return;
   }
 
-  return response.json();
+  // Check Content-Type to determine how to parse the response
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+
+  // Non-JSON responses (text/plain, text/csv, etc.) return as text
+  return response.text();
 }
 
 // ============================================================================

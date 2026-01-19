@@ -39,6 +39,7 @@
     "common-tags": "^1.8.2",
     "dotenv": "^17.2.3",
     "execa": "^9.6.1",
+    "hono": "^4.7.10",
     "jiti": "^2.6.1",
     "jotai-x": "^2.3.3",
     "picocolors": "^1.1.1",

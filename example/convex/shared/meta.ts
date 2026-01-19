@@ -89,9 +89,12 @@ export const meta = {
     updateSettings: { auth: 'required', type: 'mutation' },
   },
   _http: {
+    'examples.redirectExample': { path: '/api/old-path', method: 'GET' },
+    'examples.webhook': { path: '/webhooks/example', method: 'POST' },
     health: { path: '/api/health', method: 'GET' },
     'todos.create': { path: '/api/todos', method: 'POST' },
     'todos.delete': { path: '/api/todos/:id', method: 'DELETE' },
+    'todos.download': { path: '/api/todos/export/:format', method: 'GET' },
     'todos.get': { path: '/api/todos/:id', method: 'GET' },
     'todos.list': { path: '/api/todos', method: 'GET' },
     'todos.update': { path: '/api/todos/:id', method: 'PATCH' },

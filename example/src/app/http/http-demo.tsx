@@ -183,6 +183,9 @@ export function HttpDemo() {
         )}
       </section>
 
+      {/* Examples Endpoints */}
+      <ExamplesSection />
+
       {/* Code Examples */}
       <section className="mt-8 rounded-lg border p-4">
         <h2 className="mb-3 font-semibold text-lg">Code Examples</h2>
@@ -210,5 +213,121 @@ createTodo.mutate({ title: 'New Todo' });`}
         </pre>
       </section>
     </div>
+  );
+}
+
+const SITE_URL = process.env.NEXT_PUBLIC_CONVEX_SITE_URL!;
+
+function ExamplesSection() {
+  const crpc = useCRPC();
+  const queryClient = useQueryClient();
+  const [webhookResult, setWebhookResult] = useState<string | null>(null);
+  const [webhookLoading, setWebhookLoading] = useState(false);
+
+  const handleWebhook = async () => {
+    setWebhookLoading(true);
+    try {
+      const res = await fetch(`${SITE_URL}/webhooks/example`, {
+        method: 'POST',
+        headers: { 'x-webhook-signature': 'test-signature-123' },
+        body: JSON.stringify({ event: 'test' }),
+      });
+      const text = await res.text();
+      setWebhookResult(`${res.status}: ${text}`);
+    } catch (err) {
+      setWebhookResult(
+        `Error: ${err instanceof Error ? err.message : 'Unknown'}`
+      );
+    } finally {
+      setWebhookLoading(false);
+    }
+  };
+
+  const handleDownload = async (format: 'json' | 'csv') => {
+    const data = await queryClient.fetchQuery(
+      crpc.http.todos.download.queryOptions({ format })
+    );
+
+    const content =
+      format === 'json' ? JSON.stringify(data, null, 2) : (data as string);
+    const mimeType = format === 'json' ? 'application/json' : 'text/csv';
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `todos.${format}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRedirect = () => {
+    window.open(`${SITE_URL}/api/old-path`, '_blank');
+  };
+
+  return (
+    <section className="mt-8 rounded-lg border p-4">
+      <h2 className="mb-3 font-semibold text-lg">Examples Endpoints</h2>
+      <div className="space-y-4">
+        {/* Webhook */}
+        <div>
+          <p className="mb-2 text-muted-foreground text-sm">
+            POST /webhooks/example - Raw mode with signature verification
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded bg-primary px-3 py-1.5 font-medium text-primary-foreground text-sm disabled:opacity-50"
+              disabled={webhookLoading}
+              onClick={handleWebhook}
+              type="button"
+            >
+              {webhookLoading ? 'Sending...' : 'Test Webhook'}
+            </button>
+            {webhookResult && (
+              <span className="font-mono text-sm">{webhookResult}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Download */}
+        <div>
+          <p className="mb-2 text-muted-foreground text-sm">
+            GET /api/todos/export/:format - Export todos as file
+          </p>
+          <div className="flex gap-2">
+            <button
+              className="rounded bg-primary px-3 py-1.5 font-medium text-primary-foreground text-sm"
+              onClick={() => handleDownload('json')}
+              type="button"
+            >
+              Download JSON
+            </button>
+            <button
+              className="rounded bg-primary px-3 py-1.5 font-medium text-primary-foreground text-sm"
+              onClick={() => handleDownload('csv')}
+              type="button"
+            >
+              Download CSV
+            </button>
+          </div>
+        </div>
+
+        {/* Redirect */}
+        <div>
+          <p className="mb-2 text-muted-foreground text-sm">
+            GET /api/old-path - Redirect to /api/health (301)
+          </p>
+          <button
+            className="rounded bg-primary px-3 py-1.5 font-medium text-primary-foreground text-sm"
+            onClick={handleRedirect}
+            type="button"
+          >
+            Test Redirect
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }

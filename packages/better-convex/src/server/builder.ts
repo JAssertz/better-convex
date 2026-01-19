@@ -27,7 +27,7 @@ import {
   createHttpRouterFactory,
   type HttpRouterRecord,
 } from './http-router';
-import type { HttpActionConstructor } from './http-types';
+import type { HttpActionConstructor, HttpMethod } from './http-types';
 import type {
   AnyMiddleware,
   IntersectIfDefined,
@@ -837,8 +837,7 @@ type CRPCInstance<
           UnsetMarker,
           UnsetMarker,
           TMeta,
-          false,
-          false
+          HttpMethod
         >;
       });
 
@@ -984,8 +983,7 @@ class CRPCBuilderWithContext<
             UnsetMarker,
             UnsetMarker,
             TMeta,
-            false,
-            false
+            HttpMethod
           >;
         }
       ).httpAction = createHttpProcedureBuilder({
