@@ -182,8 +182,8 @@ type InferHttpClientArgs<T> =
             ? object
             : TInput extends z.ZodTypeAny
               ? z.infer<TInput>
-              : object) & // Client options always optional for per-call overrides
-          {
+              : object) & {
+            // Client options always optional for per-call overrides
             fetch?: typeof fetch;
             init?: RequestInit;
             headers?:
