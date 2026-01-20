@@ -1,6 +1,6 @@
 'use client';
 
-import { Code2, Database, Lock, Radio, Server, Shield } from 'lucide-react';
+import { Code2, Globe, Lock, Radio, Server, Shield } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -13,7 +13,7 @@ const features = [
   },
   {
     icon: Radio,
-    title: 'Real-time native',
+    title: 'Real-time',
     description:
       'WebSocket subscriptions flow directly into TanStack Query cache. No extra setup.',
     color: 'bg-amber-500/10 text-amber-500',
@@ -26,17 +26,17 @@ const features = [
     color: 'bg-pink-500/10 text-pink-500',
   },
   {
-    icon: Database,
-    title: 'Relationships built-in',
+    icon: Globe,
+    title: 'HTTP Router',
     description:
-      'Ents gives you relations, fluent queries, and ctx.table(). No more manual joins.',
+      'Switch from real-time to HTTP with no extra setup. Same API, both sides.',
     color: 'bg-orange-500/10 text-orange-500',
   },
   {
     icon: Lock,
     title: 'Auth that works',
     description:
-      'Better Auth integration with session management, route guards, and lifecycle hooks.',
+      'Better Auth integration with session management and lifecycle hooks.',
     color: 'bg-lime-500/10 text-lime-500',
   },
   {
@@ -59,11 +59,41 @@ const op = (text: string) => <span className="text-[#ff79c6]">{text}</span>;
 const pr = (text: string) => <span className="text-[#f8f8f2]">{text}</span>;
 
 // Token with tooltip (like tRPC's twoslash)
-function T({ children, lsp }: { children: ReactNode; lsp: string }) {
+function T({
+  children,
+  lsp,
+  showPopover,
+}: {
+  children: ReactNode;
+  lsp: string;
+  showPopover?: boolean;
+}) {
   return (
-    <span className="twoslash-hover" data-lsp={lsp}>
+    <span
+      className={showPopover ? 'twoslash-popover' : 'twoslash-hover'}
+      data-lsp={lsp}
+    >
       {children}
     </span>
+  );
+}
+
+// Inline type annotation box (like tRPC's twoslash)
+function PopoverBox({
+  children,
+  indent = 0,
+}: {
+  children: ReactNode;
+  indent?: number;
+}) {
+  return (
+    <div className="twoslash-meta-line">
+      <span className="twoslash-popover-prefix">{' '.repeat(indent)}</span>
+      <span className="twoslash-popover-box">
+        <div className="arrow" />
+        {children}
+      </span>
+    </div>
   );
 }
 
@@ -86,8 +116,14 @@ function Step1Code() {
       {'  '}.{fn('output')}({pr('z')}.{fn('string')}())
       {'\n'}
       {'  '}.{fn('query')}({kw('async ')}({'{ '}
-      {T({ children: pr('input'), lsp: 'input: { name: string }' })}
+      {T({
+        children: pr('input'),
+        lsp: 'input: { name: string }',
+        showPopover: true,
+      })}
       {' }'}) {op('=>')} {'{'}
+      {'\n'}
+      <PopoverBox indent={18}>{'input: { name: string }'}</PopoverBox>
       {'\n'}
       {'    '}
       {kw('return ')}
@@ -123,16 +159,29 @@ function Step2Code() {
       {'\n'}
       {kw('import ')}
       {'{ '}
-      {fn('createCRPCContext')}
+      {fn('createServerCRPCProxy')}
       {' }'} {kw('from ')}
-      {str("'better-convex/react'")}
+      {str("'better-convex/server'")}
       {';'}
       {'\n'}
       {'\n'}
       {kw('export const ')}
       {'{ '}
-      {T({ children: fn('useCRPC'), lsp: 'const useCRPC: () => CRPCProxy' })}
-      {' }'} {op('=')} {fn('createCRPCContext')}({pr('api')}, {pr('meta')});
+      {T({
+        children: fn('useCRPC'),
+        lsp: 'const useCRPC: () => CRPCProxy',
+        showPopover: true,
+      })}
+      {' }'} {op('=')} {fn('createCRPCContext')}({'{ '}
+      {pr('api')}, {pr('meta')}
+      {' }'});{'\n'}
+      <PopoverBox indent={16}>
+        <div className="flex flex-col text-left text-[11px]">
+          <span className="text-white/60">▶ greeting</span>
+          <span className="text-white/60">▶ posts</span>
+          <span className="text-white/60">▶ users</span>
+        </div>
+      </PopoverBox>
     </>
   );
 }
@@ -148,12 +197,28 @@ function Step3Code() {
       {'\n'}
       {kw('const ')}
       {'{ '}
-      {T({ children: pr('data'), lsp: 'const data: string | undefined' })}
+      {T({
+        children: pr('data'),
+        lsp: 'const data: string | undefined',
+        showPopover: true,
+      })}
       {' }'} {op('=')} {fn('useQuery')}({'\n'}
+      <PopoverBox indent={8}>{'const data: string | undefined'}</PopoverBox>
+      {'\n'}
       {'  '}
-      {pr('crpc')}.{pr('greeting')}.{fn('queryOptions')}({'{ '}
-      {pr('name')}: {str("'World'")}
+      {T({
+        children: pr('crpc'),
+        lsp: 'const crpc: CRPCProxy',
+      })}
+      .{pr('greeting')}.{fn('queryOptions')}({'{ '}
+      {T({
+        children: pr('name'),
+        lsp: 'name: string',
+        showPopover: true,
+      })}
+      : {str("'World'")}
       {' }'}){'\n'}
+      <PopoverBox indent={30}>{'name: string'}</PopoverBox>
       );
       {'\n'}
       {'\n'}

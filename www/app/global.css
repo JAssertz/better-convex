@@ -30,3 +30,38 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   pointer-events: none;
 }
+
+/* Always-visible twoslash popover (like tRPC) - inline style */
+.twoslash-popover {
+  border-bottom: 1px dotted currentColor;
+}
+
+.twoslash-meta-line {
+  display: block;
+}
+
+.twoslash-popover-prefix {
+  white-space: pre;
+}
+
+.twoslash-popover-box {
+  display: inline-block;
+  margin-top: 10px;
+  margin-bottom: 0;
+  background-color: #3c3c3c;
+  padding: 0 0.5rem 0.3rem;
+  border-radius: 3px;
+}
+
+.twoslash-popover-box .arrow {
+  background-color: #3c3c3c;
+  position: relative;
+  top: -7px;
+  margin-left: 0.1rem;
+  border-left: 1px solid #3c3c3c;
+  border-top: 1px solid #3c3c3c;
+  transform: translateY(25%) rotate(45deg);
+  height: 8px;
+  width: 8px;
+}
+
