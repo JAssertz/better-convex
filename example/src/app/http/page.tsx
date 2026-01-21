@@ -1,4 +1,5 @@
 import { headers } from 'next/headers';
+import { Suspense } from 'react';
 import { crpc, getQueryClient, prefetch } from '@/lib/convex/rsc';
 import { createContext } from '@/lib/convex/server';
 
@@ -16,5 +17,9 @@ export default async function HttpPage() {
   const ctx = await createContext({ headers: await headers() });
   const _todos = await ctx.caller.todos.list({ limit: 10 });
 
-  return <HttpDemo />;
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-2xl px-6 py-8" />}>
+      <HttpDemo />
+    </Suspense>
+  );
 }

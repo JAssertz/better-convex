@@ -32,6 +32,27 @@ export class CRPCClientError extends Error {
 export const isCRPCClientError = (error: unknown): error is CRPCClientError =>
   error instanceof CRPCClientError;
 
+/**
+ * Unified check for any deterministic CRPC error (Convex or HTTP).
+ * Use in retry logic to skip retrying client errors (4xx).
+ */
+export const isCRPCError = (error: unknown): boolean => {
+  // CRPCClientError - Convex client errors
+  if (error instanceof CRPCClientError) return true;
+
+  // HttpClientError - check by name + status (avoids circular import)
+  if (
+    error instanceof Error &&
+    error.name === 'HttpClientError' &&
+    'status' in error &&
+    typeof error.status === 'number'
+  ) {
+    return error.status < 500; // Don't retry client errors (4xx)
+  }
+
+  return false;
+};
+
 /** Type guard for specific error code */
 export const isCRPCErrorCode = (
   error: unknown,

@@ -5,8 +5,7 @@
     "MAX_THINKING_TOKENS": "31999"
   },
   "permissions": {
-    "allow": ["Bash", "Edit", "Skill", "WebFetch", "WebSearch"],
-    "additionalDirectories": ["../evergarden"]
+    "allow": ["Bash", "Edit", "Skill", "WebFetch", "WebSearch"]
   },
   "enableAllProjectMcpServers": true,
   "hooks": {
@@ -53,13 +52,20 @@
     "git@dotai": true,
     "frontend-design@claude-plugins-official": true,
     "ralph-loop@claude-plugins-official": true,
-    "gh-docs@dotai": true
+    "gh-docs@dotai": true,
+    "compound-engineering@every-marketplace": true
   },
   "extraKnownMarketplaces": {
     "dotai": {
       "source": {
         "source": "github",
         "repo": "udecode/dotai"
+      }
+    },
+    "every-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "EveryInc/compound-engineering-plugin"
       }
     }
   }

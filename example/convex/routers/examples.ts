@@ -29,7 +29,7 @@ export const searchExample = publicRoute
   .searchParams(
     z.object({
       q: z.string(),
-      page: z.coerce.number().optional(),
+      page: z.number().optional(),
       tags: z.array(z.string()).optional(),
     })
   )
@@ -84,8 +84,8 @@ export const paramsSearchParamsExample = publicRoute
   .params(z.object({ id: zid('todos') }))
   .searchParams(
     z.object({
-      limit: z.coerce.number().optional(),
-      offset: z.coerce.number().optional(),
+      limit: z.number().optional(),
+      offset: z.number().optional(),
     })
   )
   .output(z.object({ id: zid('todos'), limit: z.number(), offset: z.number() }))
@@ -99,7 +99,7 @@ export const paramsSearchParamsExample = publicRoute
 export const allCombinedExample = authRoute
   .post('/api/examples/items/:id/tags')
   .params(z.object({ id: zid('todos') }))
-  .searchParams(z.object({ notify: z.coerce.boolean().optional() }))
+  .searchParams(z.object({ notify: z.boolean().optional() }))
   .input(z.object({ tags: z.array(z.string()) }))
   .output(
     z.object({
@@ -120,14 +120,13 @@ export const uploadExample = authRoute
   .form(
     z.object({ file: z.instanceof(Blob), description: z.string().optional() })
   )
-  .mutation(async ({ ctx, c, form }) => {
+  .mutation(async ({ c, form }) => {
     // form.file is typed as Blob, form.description as string | undefined
-    const storageId = await ctx.storage.store(form.file);
-
+    // Demo: just return file metadata (use R2/S3 for actual storage)
     return c.json({
-      storageId,
       filename: form.file instanceof File ? form.file.name : 'unknown',
       size: form.file.size,
+      type: form.file.type,
       description: form.description ?? null,
     });
   });

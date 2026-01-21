@@ -7,7 +7,7 @@ import {
   useSuspenseQuery,
 } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useCRPC } from '@/lib/convex/crpc';
+import { useCRPC, useCRPCClient } from '@/lib/convex/crpc';
 
 /**
  * Demo page showcasing useCRPC HTTP patterns with TanStack Query.
@@ -21,8 +21,15 @@ import { useCRPC } from '@/lib/convex/crpc';
  */
 export function HttpDemo() {
   const crpc = useCRPC();
+  const client = useCRPCClient();
   const queryClient = useQueryClient();
   const [newTitle, setNewTitle] = useState('');
+
+  // Test vanilla client - direct procedural calls
+  const _handleVanillaTest = async () => {
+    // Direct query call (no React Query)
+    const _todos = await client.todos.list.query();
+  };
 
   // Todos query options
   const todosQueryOpts = crpc.http.todos.list.queryOptions({
@@ -199,9 +206,10 @@ const SITE_URL = process.env.NEXT_PUBLIC_CONVEX_SITE_URL!;
 
 function ExamplesSection() {
   const crpc = useCRPC();
-  const queryClient = useQueryClient();
+  const client = useCRPCClient();
   const [webhookResult, setWebhookResult] = useState<string | null>(null);
   const [webhookLoading, setWebhookLoading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<string | null>(null);
 
   // -------------------------------------------------------------------------
   // Examples Router Usage - Full Type Coverage
@@ -230,34 +238,44 @@ function ExamplesSection() {
   );
 
   // POST with input only (JSON body at root)
-  const _inputMutation = useMutation(
+  const inputMutation = useMutation(
     crpc.http.examples.inputExample.mutationOptions()
   );
-  void _inputMutation.mutate({ name: 'test', count: 5 });
+  const _handleInputExample = () => {
+    inputMutation.mutate({ name: 'test', count: 5 });
+  };
 
   // PATCH with params + input
-  const _paramsInputMutation = useMutation(
+  const paramsInputMutation = useMutation(
     crpc.http.examples.paramsInputExample.mutationOptions()
   );
-  void _paramsInputMutation.mutate({ params: { id: 'abc' }, name: 'updated' });
+  const _handleParamsInputExample = () => {
+    paramsInputMutation.mutate({ params: { id: 'abc' }, name: 'updated' });
+  };
 
   // POST with params + searchParams + input (all combined)
-  const _allCombinedMutation = useMutation(
+  const allCombinedMutation = useMutation(
     crpc.http.examples.allCombinedExample.mutationOptions()
   );
-  void _allCombinedMutation.mutate({
-    params: { id: 'abc' },
-    searchParams: { notify: 'true' },
-    tags: ['a'],
-  });
+  const _handleAllCombinedExample = () => {
+    allCombinedMutation.mutate({
+      params: { id: 'abc' },
+      searchParams: { notify: 'true' },
+      tags: ['a'],
+    });
+  };
 
   // POST FormData upload (raw mutation)
-  const _uploadMutation = useMutation(
-    crpc.http.examples.uploadExample.mutationOptions()
+  const uploadMutation = useMutation(
+    crpc.http.examples.uploadExample.mutationOptions({
+      onSuccess: (data) => {
+        setUploadResult(`Success: ${JSON.stringify(data)}`);
+      },
+      onError: (err) => {
+        setUploadResult(`Error: ${err.message}`);
+      },
+    })
   );
-  void _uploadMutation.mutate({
-    form: { file: new Blob(), description: 'test' },
-  });
 
   const handleWebhook = async () => {
     setWebhookLoading(true);
@@ -279,10 +297,8 @@ function ExamplesSection() {
   };
 
   const handleDownload = async (format: 'json' | 'csv') => {
-    // Hono-style: { params: { ... } } for path params
-    const data = await queryClient.fetchQuery(
-      crpc.http.todos.download.queryOptions({ params: { format } })
-    );
+    // Direct HTTP call with vanilla client
+    const data = await client.http.todos.download.query({ params: { format } });
 
     const content =
       format === 'json' ? JSON.stringify(data, null, 2) : (data as string);
@@ -362,6 +378,38 @@ function ExamplesSection() {
           >
             Test Redirect
           </button>
+        </div>
+
+        {/* File Upload */}
+        <div>
+          <p className="mb-2 text-muted-foreground text-sm">
+            POST /api/examples/upload - FormData file upload
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              accept="*/*"
+              className="flex-1 rounded border bg-background px-3 py-1.5 text-sm"
+              disabled={uploadMutation.isPending}
+              id="file-upload"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  uploadMutation.mutate({
+                    form: { file, description: file.name },
+                  });
+                }
+              }}
+              type="file"
+            />
+            {uploadMutation.isPending && (
+              <span className="text-muted-foreground text-sm">
+                Uploading...
+              </span>
+            )}
+          </div>
+          {uploadResult && (
+            <p className="mt-2 font-mono text-sm">{uploadResult}</p>
+          )}
         </div>
       </div>
     </section>

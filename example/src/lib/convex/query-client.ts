@@ -4,7 +4,7 @@ import {
   QueryCache,
   QueryClient,
 } from '@tanstack/react-query';
-import { isCRPCClientError } from 'better-convex/crpc';
+import { isCRPCClientError, isCRPCError } from 'better-convex/crpc';
 import { toast } from 'sonner';
 import SuperJSON from 'superjson';
 
@@ -53,8 +53,8 @@ export function createQueryClient() {
       },
       queries: {
         retry: (failureCount, error) => {
-          // Don't retry CRPC client errors (auth failures)
-          if (isCRPCClientError(error)) return false;
+          // Don't retry deterministic CRPC errors (auth, validation, HTTP 4xx)
+          if (isCRPCError(error)) return false;
 
           const message =
             error instanceof Error ? error.message : String(error);

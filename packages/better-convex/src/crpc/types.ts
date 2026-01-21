@@ -11,6 +11,7 @@ import type {
   UseMutationOptions,
   UseQueryOptions,
 } from '@tanstack/react-query';
+import type { Watch, WatchQueryOptions } from 'convex/react';
 import type {
   FunctionArgs,
   FunctionReference,
@@ -398,6 +399,79 @@ export type DecorateAction<T extends FunctionReference<'action'>> = {
     args?: DeepPartial<FunctionArgs<T>>,
     filters?: DistributiveOmit<QueryFilters, 'queryKey'>
   ) => QueryFilters;
+};
+
+// ============================================================================
+// Vanilla Client Types (for direct procedural calls)
+// ============================================================================
+
+/** Vanilla query - direct .query() and .watchQuery() calls without React Query */
+export type VanillaQuery<T extends FunctionReference<'query'>> = {
+  query: keyof FunctionArgs<T> extends never
+    ? (args?: EmptyObject) => Promise<FunctionReturnType<T>>
+    : EmptyObject extends FunctionArgs<T>
+      ? (args?: FunctionArgs<T>) => Promise<FunctionReturnType<T>>
+      : (args: FunctionArgs<T>) => Promise<FunctionReturnType<T>>;
+  watchQuery: keyof FunctionArgs<T> extends never
+    ? (
+        args?: EmptyObject,
+        opts?: WatchQueryOptions
+      ) => Watch<FunctionReturnType<T>>
+    : EmptyObject extends FunctionArgs<T>
+      ? (
+          args?: FunctionArgs<T>,
+          opts?: WatchQueryOptions
+        ) => Watch<FunctionReturnType<T>>
+      : (
+          args: FunctionArgs<T>,
+          opts?: WatchQueryOptions
+        ) => Watch<FunctionReturnType<T>>;
+};
+
+/** Vanilla mutation - direct .mutate() call without React Query */
+export type VanillaMutation<T extends FunctionReference<'mutation'>> = {
+  mutate: keyof FunctionArgs<T> extends never
+    ? (args?: EmptyObject) => Promise<FunctionReturnType<T>>
+    : EmptyObject extends FunctionArgs<T>
+      ? (args?: FunctionArgs<T>) => Promise<FunctionReturnType<T>>
+      : (args: FunctionArgs<T>) => Promise<FunctionReturnType<T>>;
+};
+
+/** Vanilla action - both .query() and .mutate() for direct calls */
+export type VanillaAction<T extends FunctionReference<'action'>> = {
+  query: keyof FunctionArgs<T> extends never
+    ? (args?: EmptyObject) => Promise<FunctionReturnType<T>>
+    : EmptyObject extends FunctionArgs<T>
+      ? (args?: FunctionArgs<T>) => Promise<FunctionReturnType<T>>
+      : (args: FunctionArgs<T>) => Promise<FunctionReturnType<T>>;
+  mutate: keyof FunctionArgs<T> extends never
+    ? (args?: EmptyObject) => Promise<FunctionReturnType<T>>
+    : EmptyObject extends FunctionArgs<T>
+      ? (args?: FunctionArgs<T>) => Promise<FunctionReturnType<T>>
+      : (args: FunctionArgs<T>) => Promise<FunctionReturnType<T>>;
+};
+
+/**
+ * Recursively creates vanilla client type for direct procedural calls.
+ * Similar to CRPCClient but for imperative usage outside React Query.
+ *
+ * @example
+ * ```ts
+ * const client = useCRPCClient();
+ * await client.user.get.query({ id });
+ * await client.user.update.mutate({ id, name: 'test' });
+ * ```
+ */
+export type VanillaCRPCClient<TApi> = {
+  [K in keyof TApi]: TApi[K] extends FunctionReference<'query'>
+    ? VanillaQuery<TApi[K]>
+    : TApi[K] extends FunctionReference<'mutation'>
+      ? VanillaMutation<TApi[K]>
+      : TApi[K] extends FunctionReference<'action'>
+        ? VanillaAction<TApi[K]>
+        : TApi[K] extends Record<string, unknown>
+          ? VanillaCRPCClient<TApi[K]>
+          : never;
 };
 
 // ============================================================================

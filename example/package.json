@@ -6,6 +6,7 @@
     "build": "next build",
     "codegen": "better-convex codegen",
     "convex:dev": "convex dev --until-success --run init && better-convex dev",
+    "convex:logs": "bun convex logs --history 50",
     "dev": "mprocs",
     "dev:app": "bunx @react-grab/claude-code@latest && next dev --port 3005",
     "gen": "next typegen",

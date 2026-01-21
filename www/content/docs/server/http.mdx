@@ -708,16 +708,30 @@ const exportTodos = useMutation(
 exportTodos.mutate({ params: { format: 'csv' } });
 ```
 
-Alternatively, use `fetchQuery` for imperative fetching with caching:
+For imperative fetching in event handlers or effects, use the vanilla client:
 
-```tsx showLineNumbers {3}
+```tsx showLineNumbers {5-6,9-10}
 import { useQueryClient } from '@tanstack/react-query';
+import { useCRPC, useCRPCClient } from '@/lib/convex/crpc';
 
+const client = useCRPCClient();
+const todos = await client.http.todos.list.query();
+await client.http.todos.create.mutate({ title: 'New todo' });
+
+// For cache-aware fetches in render context
+const crpc = useCRPC();
 const queryClient = useQueryClient();
-const todos = await queryClient.fetchQuery(
-  crpc.http.todos.list.queryOptions({ searchParams: { limit: '10' } })
-);
+const todos = await queryClient.fetchQuery(crpc.http.todos.list.queryOptions());
 ```
+
+| Method | Context | Caching | Use Case |
+|--------|---------|---------|----------|
+| `client.http.*.query()` | Anywhere | None | Event handlers, effects |
+| `crpc.http.*.queryOptions()` | Render only | Uses cache | Components (uses hooks) |
+
+<Callout icon={<InfoIcon />}>
+**Note:** `queryOptions` uses hooks internally, so it can only be called in React render context - not in event handlers or callbacks.
+</Callout>
 
 ### POST/PATCH/DELETE Requests
 

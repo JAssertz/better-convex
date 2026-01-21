@@ -23,3 +23,4 @@
 - Use `--headed` unless asked for headless
 - Port 3005
 - Do NOT use next-devtools `browser_eval` (overlaps with agent-browser)
+- Use `bun convex:logs` to watch the Convex logs

@@ -285,6 +285,40 @@ Convex actions (which can call external APIs) can be used as one-shot queries. T
 const { data } = useQuery(crpc.ai.analyze.queryOptions({ documentId }));
 ```
 
+## Imperative Calls
+
+For queries in event handlers, effects, or callbacks, use `useCRPCClient`:
+
+```tsx showLineNumbers {4-5}
+import { useCRPCClient } from '@/lib/convex/crpc';
+
+const client = useCRPCClient();
+const user = await client.user.get.query({ id });
+await client.user.update.mutate({ id, name: 'test' });
+```
+
+For cache-aware fetches in render context, use `queryClient.fetchQuery`:
+
+```tsx showLineNumbers {5-6}
+import { useQueryClient } from '@tanstack/react-query';
+import { useCRPC } from '@/lib/convex/crpc';
+
+const crpc = useCRPC();
+const queryClient = useQueryClient();
+const user = await queryClient.fetchQuery(crpc.user.get.queryOptions({ id }));
+```
+
+### Comparison
+
+| Method | Context | Caching | Use Case |
+|--------|---------|---------|----------|
+| `client.*.query()` | Anywhere | None | Event handlers, effects |
+| `crpc.*.queryOptions()` | Render only | Uses cache | Components (uses hooks) |
+
+<Callout icon={<InfoIcon />}>
+**Note:** `queryOptions` uses hooks internally, so it can only be called in React render context - not in event handlers or callbacks.
+</Callout>
+
 ## Migrate from Convex
 
 If you're coming from vanilla Convex, here's what changes.
@@ -330,27 +364,14 @@ type User = ApiOutputs['user']['get'];
 | Query key management | `queryKey()` and `queryFilter()` |
 | DevTools integration | React Query DevTools |
 | One-time fetches | `subscribe: false` option |
+| Imperative calls | `useCRPCClient()` for event handlers |
 
-### One-time fetch
+**Imperative queries (event handlers, effects):**
 
-For imperative queries (e.g., in useEffect or event handlers):
-
-**Before:**
-
-```tsx showLineNumbers {3}
-import { useConvex } from 'convex/react';
-
-const convex = useConvex();
-const result = await convex.query(api.user.get, { id });
-```
-
-**After:**
-
-```tsx showLineNumbers {3}
-import { useQueryClient } from '@tanstack/react-query';
-
-const queryClient = useQueryClient();
-const result = await queryClient.fetchQuery(crpc.user.get.queryOptions({ id }));
+```tsx showLineNumbers {1,3-4}
+// Before                              // After
+const convex = useConvex();            const client = useCRPCClient();
+await convex.query(api.user.get, {});  await client.user.get.query({});
 ```
 
 ## Next Steps

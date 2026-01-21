@@ -298,7 +298,53 @@ type DecorateHttpMutation<T extends HttpProcedure> = {
 };
 
 // ============================================================================
-// HTTP Client Type (recursive)
+// Vanilla HTTP Client Types (direct calls only, no React Query)
+// ============================================================================
+
+/** Vanilla HTTP query - only direct call, no React Query */
+type VanillaHttpQuery<T extends HttpProcedure> = {
+  query: keyof InferHttpInput<T> extends never
+    ? (args?: InferHttpClientArgs<T>) => Promise<InferHttpOutput<T>>
+    : object extends InferHttpInput<T>
+      ? (args?: InferHttpClientArgs<T>) => Promise<InferHttpOutput<T>>
+      : (args: InferHttpClientArgs<T>) => Promise<InferHttpOutput<T>>;
+};
+
+/** Vanilla HTTP mutation - only direct call, no React Query */
+type VanillaHttpMutation<T extends HttpProcedure> = {
+  mutate: keyof InferHttpInput<T> extends never
+    ? (args?: InferHttpClientArgs<T>) => Promise<InferHttpOutput<T>>
+    : object extends InferHttpInput<T>
+      ? (args?: InferHttpClientArgs<T>) => Promise<InferHttpOutput<T>>
+      : (args: InferHttpClientArgs<T>) => Promise<InferHttpOutput<T>>;
+};
+
+/** Vanilla HTTP client type - only query/mutate methods */
+export type VanillaHttpCRPCClient<T extends HttpRouterRecord> = {
+  [K in keyof T]: T[K] extends HttpProcedure<
+    infer _TInput,
+    infer _TOutput,
+    infer _TParams,
+    infer _TQuery,
+    infer TMethod,
+    infer _TForm
+  >
+    ? TMethod extends 'GET'
+      ? VanillaHttpQuery<T[K]>
+      : VanillaHttpMutation<T[K]>
+    : T[K] extends CRPCHttpRouter<infer R>
+      ? VanillaHttpCRPCClient<R>
+      : T[K] extends HttpRouterRecord
+        ? VanillaHttpCRPCClient<T[K]>
+        : never;
+};
+
+/** Extract vanilla HTTP client from router */
+export type VanillaHttpCRPCClientFromRouter<T> =
+  T extends CRPCHttpRouter<infer R> ? VanillaHttpCRPCClient<R> : never;
+
+// ============================================================================
+// HTTP Client Type (recursive) - Full client with React Query options
 // ============================================================================
 
 /**
@@ -575,6 +621,56 @@ function createRecursiveHttpProxy(
 
       const routeKey = path.join('.');
       const route = opts.routes[routeKey];
+
+      // Terminal method: query (vanilla client - direct call for GET)
+      if (prop === 'query') {
+        if (!route) {
+          throw new Error(`Unknown HTTP procedure: ${routeKey}`);
+        }
+
+        return async (args?: HttpInputArgs) => {
+          try {
+            return await executeHttpRequest({
+              convexSiteUrl: opts.convexSiteUrl,
+              route,
+              procedureName: routeKey,
+              args,
+              baseHeaders: opts.headers,
+              baseFetch: opts.fetch,
+            });
+          } catch (error) {
+            if (opts.onError && error instanceof HttpClientError) {
+              opts.onError(error);
+            }
+            throw error;
+          }
+        };
+      }
+
+      // Terminal method: mutate (vanilla client - direct call for mutations)
+      if (prop === 'mutate') {
+        if (!route) {
+          throw new Error(`Unknown HTTP procedure: ${routeKey}`);
+        }
+
+        return async (args?: HttpInputArgs) => {
+          try {
+            return await executeHttpRequest({
+              convexSiteUrl: opts.convexSiteUrl,
+              route,
+              procedureName: routeKey,
+              args,
+              baseHeaders: opts.headers,
+              baseFetch: opts.fetch,
+            });
+          } catch (error) {
+            if (opts.onError && error instanceof HttpClientError) {
+              opts.onError(error);
+            }
+            throw error;
+          }
+        };
+      }
 
       // Terminal method: queryOptions (for GET endpoints)
       // API: (args?, queryOpts?) - client opts (headers, fetch, init) go in args

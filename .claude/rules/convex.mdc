@@ -567,11 +567,30 @@ const { data, isLoading } = useQuery(
 ```typescript
 import { useMaybeAuth } from "better-convex/react";
 const isAuth = useMaybeAuth(); // boolean | undefined
-
-import { useCRPCClient } from "@/lib/convex/crpc";
-const client = useCRPCClient();
-await client.items.get.query({ id }); // Imperative
 ```
+
+### Imperative Calls (One-off)
+
+```typescript
+// useCRPCClient - for event handlers, effects, callbacks
+import { useQueryClient } from "@tanstack/react-query";
+import { useCRPC, useCRPCClient } from "@/lib/convex/crpc";
+
+const client = useCRPCClient();
+await client.items.get.query({ id });
+await client.items.update.mutate({ id, name: "test" });
+await client.http.todos.download.query({ params: { format: "json" } });
+
+// For cache-aware fetches in render context
+const crpc = useCRPC();
+const queryClient = useQueryClient();
+const user = await queryClient.fetchQuery(crpc.user.get.queryOptions({ id }));
+```
+
+| Method               | Context  | Caching    | Use Case                   |
+| -------------------- | -------- | ---------- | -------------------------- |
+| `client.*.query()`   | Anywhere | None       | Event handlers, effects    |
+| `crpc.*.queryOptions()` | Render only | Uses cache | Components (uses hooks) |
 
 ### Error Handling
 

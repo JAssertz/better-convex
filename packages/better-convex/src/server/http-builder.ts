@@ -1,6 +1,6 @@
 import type { GenericActionCtx, GenericDataModel } from 'convex/server';
 import type { Context } from 'hono';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { CRPCError } from './error';
 import type {
   CRPCHonoHandler,
@@ -91,12 +91,73 @@ export function handleHttpError(error: unknown): Response {
   );
 }
 
+// Helper to get base schema type (unwrap Optional/Nullable/Default wrappers)
+function getBaseSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
+  // Only unwrap Optional and Nullable - NOT arrays (which also have unwrap())
+  if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) {
+    return getBaseSchema(schema.unwrap() as z.ZodTypeAny);
+  }
+  // ZodDefault - use _def.innerType
+  if (schema instanceof z.ZodDefault) {
+    return getBaseSchema((schema as any)._def.innerType);
+  }
+  return schema;
+}
+
+// Helper to check if schema expects array
+function isArraySchema(schema: z.ZodTypeAny): boolean {
+  return getBaseSchema(schema) instanceof z.ZodArray;
+}
+
+// Helper to check if schema expects number
+function isNumberSchema(schema: z.ZodTypeAny): boolean {
+  return getBaseSchema(schema) instanceof z.ZodNumber;
+}
+
+// Helper to check if schema expects boolean
+function isBooleanSchema(schema: z.ZodTypeAny): boolean {
+  return getBaseSchema(schema) instanceof z.ZodBoolean;
+}
+
 // Parse query parameters from URL
-function parseQueryParams(url: URL): Record<string, string> {
-  const params: Record<string, string> = {};
-  url.searchParams.forEach((value, key) => {
-    params[key] = value;
-  });
+// Auto-coerces values based on schema: arrays, numbers, booleans
+function parseQueryParams(
+  url: URL,
+  schema?: z.ZodTypeAny
+): Record<string, string | string[] | number | boolean> {
+  const params: Record<string, string | string[] | number | boolean> = {};
+  const keys = new Set(url.searchParams.keys());
+
+  // Get shape from schema if it's a ZodObject
+  const shape =
+    schema instanceof z.ZodObject
+      ? (schema.shape as Record<string, z.ZodTypeAny>)
+      : {};
+
+  for (const key of keys) {
+    const values = url.searchParams.getAll(key);
+    const fieldSchema = shape[key];
+
+    if (fieldSchema) {
+      if (isArraySchema(fieldSchema)) {
+        // Always return array for array schemas
+        params[key] = values;
+      } else if (isNumberSchema(fieldSchema)) {
+        // Coerce to number
+        params[key] = Number(values[0]);
+      } else if (isBooleanSchema(fieldSchema)) {
+        // Coerce to boolean (handle "true"/"false"/"1"/"0")
+        const val = values[0].toLowerCase();
+        params[key] = val === 'true' || val === '1';
+      } else {
+        // Single value: return string, multiple: return array
+        params[key] = values.length === 1 ? values[0] : values;
+      }
+    } else {
+      // No schema info - return raw string(s)
+      params[key] = values.length === 1 ? values[0] : values;
+    }
+  }
   return params;
 }
 
@@ -444,10 +505,10 @@ function createProcedure(
         parsedParams = def.paramsSchema.parse(pathParams as any);
       }
 
-      // Parse query params
+      // Parse query params - pass schema for array coercion
       let parsedQuery: unknown;
       if (def.querySchema) {
-        const queryParams = parseQueryParams(url);
+        const queryParams = parseQueryParams(url, def.querySchema);
         parsedQuery = def.querySchema.parse(queryParams as any);
       }
 
