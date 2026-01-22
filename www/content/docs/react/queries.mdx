@@ -82,6 +82,20 @@ cRPC extends TanStack Query options with:
 
 Plus all standard [TanStack Query options](https://tanstack.com/query/latest/docs/framework/react/reference/useQuery): `enabled`, `placeholderData`, `select`, `gcTime`, etc.
 
+### With select
+
+To transform query data with type inference, spread the query options and add `select`:
+
+```tsx showLineNumbers {2-4}
+const { data } = useSuspenseQuery({
+  ...crpc.http.health.queryOptions(),
+  select: (data) => data.status,
+});
+// data: string (not { status: string })
+```
+
+TanStack Query infers the return type from the `select` function. Note that `select` cannot be passed directly to `queryOptions()`.
+
 ## Real-time Updates
 
 By default, cRPC queries subscribe to Convex's WebSocket connection and automatically update when data changes on the server. This is the key difference from traditional REST APIs:
@@ -147,20 +161,6 @@ const { data } = useQuery(
   crpc.user.get.queryOptions(userId ? { id: userId } : skipToken)
 );
 ```
-
-### With select
-
-To transform query data with type inference, spread the query options and add `select`:
-
-```tsx showLineNumbers {3-4}
-const { data } = useSuspenseQuery({
-  ...crpc.http.health.queryOptions(),
-  select: (data) => data.status,
-});
-// data: string (not { status: string })
-```
-
-TanStack Query infers the return type from the `select` function. Note that `select` cannot be passed directly to `queryOptions()`.
 
 ## Auth-aware Queries
 
