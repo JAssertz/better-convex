@@ -1119,3 +1119,140 @@ export const error_optional_auth_no_check = optionalAuthRoute
     const userId: Id<'user'> = ctx.userId;
     return { userId };
   });
+
+// ============================================================================
+// Section 22: Middleware Input Access - tRPC-style
+// ============================================================================
+
+// 22.1 Middleware before .input() - input is unknown
+export const middleware_before_input = publicQuery
+  .use(async ({ input, next }) => {
+    // input is unknown before .input()
+    const _unknownInput: unknown = input;
+    return next();
+  })
+  .input(z.object({ id: zid('user') }))
+  .query(async ({ input }) => {
+    const id: Id<'user'> = input.id;
+    return { id };
+  });
+
+// 22.2 Middleware after .input() - input is typed
+export const middleware_after_input = publicQuery
+  .input(z.object({ id: zid('user') }))
+  .use(async ({ input, next }) => {
+    // input.id is typed as Id<'user'>
+    const id: Id<'user'> = input.id;
+    return next();
+  })
+  .query(async ({ input }) => {
+    return { id: input.id };
+  });
+
+// 22.3 Chained inputs - middleware sees accumulated type
+export const middleware_chained_input = publicQuery
+  .input(z.object({ a: z.string() }))
+  .use(async ({ input, next }) => {
+    // Has { a: string }
+    const a: string = input.a;
+    return next();
+  })
+  .input(z.object({ b: z.number() }))
+  .use(async ({ input, next }) => {
+    // Has { a: string, b: number }
+    const a: string = input.a;
+    const b: number = input.b;
+    return next();
+  })
+  .query(async ({ input }) => {
+    return { a: input.a, b: input.b };
+  });
+
+// 22.4 Middleware can access getRawInput
+export const middleware_getRawInput = publicQuery
+  .input(z.object({ name: z.string() }))
+  .use(async ({ getRawInput, next }) => {
+    const raw = await getRawInput();
+    // raw is unknown
+    const _raw: unknown = raw;
+    return next();
+  })
+  .query(async () => null);
+
+// 22.5 next() can pass modified input (with ctx to satisfy type constraint)
+export const middleware_next_input = publicQuery
+  .input(z.object({ id: zid('user') }))
+  .use(async ({ ctx, input, next }) => {
+    return next({ ctx, input: { ...input, enriched: true } });
+  })
+  .query(async ({ input }) => {
+    return { id: input.id };
+  });
+
+// 22.6 Existing middleware without input destructuring still works
+export const middleware_no_input_destructure = publicQuery
+  .use(async ({ ctx, next }) => {
+    // Don't destructure input - should still work
+    return next({ ctx: { ...ctx, added: true } });
+  })
+  .query(async ({ ctx }) => {
+    const added: boolean = ctx.added;
+    return { added };
+  });
+
+// 22.7 Middleware context + input both work
+export const middleware_ctx_and_input = authQuery
+  .input(z.object({ projectId: zid('projects') }))
+  .use(async ({ ctx, input, next }) => {
+    // ctx has user/userId from auth middleware
+    const userId: Id<'user'> = ctx.userId;
+    // input is typed
+    const projectId: Id<'projects'> = input.projectId;
+    return next({ ctx: { ...ctx, projectId } });
+  })
+  .query(async ({ ctx, input }) => {
+    const projectId: Id<'projects'> = ctx.projectId;
+    return { userId: ctx.userId, projectId: input.projectId };
+  });
+
+// 22.8 Mutation with middleware input access
+export const middleware_mutation_input = publicMutation
+  .input(z.object({ name: z.string() }))
+  .use(async ({ input, next }) => {
+    const name: string = input.name;
+    return next();
+  })
+  .mutation(async ({ input }) => {
+    return { created: input.name };
+  });
+
+// 22.9 Action with middleware input access
+export const middleware_action_input = publicAction
+  .input(z.object({ url: z.string() }))
+  .use(async ({ input, next }) => {
+    const url: string = input.url;
+    return next();
+  })
+  .action(async ({ input }) => {
+    return { fetched: input.url };
+  });
+
+// 22.10 Error: Accessing typed property before .input()
+export const error_middleware_input_before_schema = publicQuery
+  .use(async ({ input, next }) => {
+    // @ts-expect-error - input is unknown before .input(), can't access .id
+    input.id;
+    return next();
+  })
+  .input(z.object({ id: zid('user') }))
+  .query(async () => null);
+
+// 22.11 Error: Accessing wrong property after .input()
+export const error_middleware_input_wrong_prop = publicQuery
+  .input(z.object({ name: z.string() }))
+  .use(async ({ input, next }) => {
+    // @ts-expect-error - input.nonexistent does not exist
+    input.nonexistent;
+    return next();
+  })
+  .query(async () => null);

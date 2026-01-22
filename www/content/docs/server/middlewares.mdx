@@ -75,7 +75,8 @@ Every middleware receives an object with these properties:
 | `ctx` | Current context |
 | `meta` | Procedure metadata |
 | `next` | Function to call next middleware/handler |
-| `input` | Validated input (if `.input()` was called before `.use()`) |
+| `input` | Validated input (`unknown` before `.input()`, typed after) |
+| `getRawInput` | Function to get raw input before validation |
 
 Here's the basic pattern:
 
@@ -113,6 +114,23 @@ export const profile = authQuery
     return ctx.user; // Type: User, not User | null
   });
 ```
+
+## Input Access
+
+Middleware placed **after** `.input()` receives typed input. Use it to fetch related data:
+
+```ts showLineNumbers {4-6}
+export const queryWithProject = publicQuery
+  .input(z.object({ projectId: zid('projects'), name: z.string() }))
+  .use(async ({ ctx, input, next }) => {
+    const project = await ctx.db.get(input.projectId);
+    // Add to context, enrich input, or override fields
+    return next({ ctx: { ...ctx, project }, input: { ...input, name: input.name.trim() } });
+  })
+  .query(async ({ ctx, input }) => input.project); // both work
+```
+
+Before `.input()`, input is `unknown`. Use `getRawInput()` for raw input before validation.
 
 ## Using Meta
 

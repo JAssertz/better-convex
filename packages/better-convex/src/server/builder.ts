@@ -30,6 +30,7 @@ import {
 import type { HttpActionConstructor, HttpMethod } from './http-types';
 import type {
   AnyMiddleware,
+  GetRawInputFn,
   IntersectIfDefined,
   MiddlewareBuilder,
   MiddlewareFunction,
@@ -56,13 +57,23 @@ const paginatedSchemaForTypes = z.object({
 type PaginatedInputSchema = typeof paginatedSchemaForTypes;
 
 /**
- * Infer input type from ZodObject schema
+ * Infer input type from ZodObject schema (for handlers)
  */
 type InferInput<T> = T extends UnsetMarker
   ? Record<string, never>
   : T extends z.ZodObject<any>
     ? z.infer<T>
     : never;
+
+/**
+ * Infer input type for middleware (returns unknown for UnsetMarker, matching tRPC)
+ * Middleware before .input() receives unknown input
+ */
+type InferMiddlewareInput<T> = T extends UnsetMarker
+  ? unknown
+  : T extends z.ZodObject<any>
+    ? z.infer<T>
+    : unknown;
 
 // =============================================================================
 // Types for Configuration
@@ -180,31 +191,68 @@ export function createMiddlewareFactory<TDefaultContext, TMeta = object>() {
 // Middleware Execution
 // =============================================================================
 
-/** Execute middleware chain recursively */
+/** Result from middleware execution including potentially modified input */
+type MiddlewareExecutionResult = MiddlewareResult<unknown> & {
+  input: unknown;
+};
+
+/** Execute middleware chain recursively with input access */
 async function executeMiddlewares(
   middlewares: AnyMiddleware[],
   ctx: unknown,
   meta: unknown,
+  input: unknown,
+  getRawInput: GetRawInputFn,
   index = 0
-): Promise<MiddlewareResult<unknown>> {
-  // Base case: no more middleware, return final context
+): Promise<MiddlewareExecutionResult> {
+  // Base case: no more middleware, return final context and input
   if (index >= middlewares.length) {
     return {
       marker: undefined as never, // Runtime doesn't need the marker
       ctx,
+      input,
     };
   }
 
   const middleware = middlewares[index];
 
-  // Create next function for this middleware
-  const next = async (opts?: { ctx: any }) => {
+  // Track input modifications through the chain
+  let currentInput = input;
+
+  // Create next function for this middleware (tRPC-compatible signature)
+  const next = async (opts?: { ctx?: unknown; input?: unknown }) => {
     const nextCtx = opts?.ctx ?? ctx;
-    return executeMiddlewares(middlewares, nextCtx, meta, index + 1);
+    const nextInput = opts?.input ?? currentInput;
+    // Track input modification
+    if (opts?.input !== undefined) {
+      currentInput = opts.input;
+    }
+    const result = await executeMiddlewares(
+      middlewares,
+      nextCtx,
+      meta,
+      nextInput,
+      getRawInput,
+      index + 1
+    );
+    return result;
   };
 
-  // Execute current middleware
-  return middleware({ ctx: ctx as any, meta, next });
+  // Execute current middleware with input and getRawInput
+  const result = await middleware({
+    ctx: ctx as any,
+    meta,
+    input,
+    getRawInput,
+    next,
+  });
+
+  // Return result with potentially modified context and input
+  return {
+    marker: undefined as never,
+    ctx: result.ctx ?? ctx,
+    input: currentInput,
+  };
 }
 
 // =============================================================================
@@ -322,19 +370,31 @@ export class ProcedureBuilder<
       this._def;
     const mergedInput = this._getMergedInput();
 
+    // Use customCtx for initial context transformation only
     const customFunction = customFn(
       baseFunction,
-      customCtx(async (_ctx) => {
-        const baseCtx = functionConfig.createContext(_ctx);
-        const result = await executeMiddlewares(middlewares, baseCtx, meta);
-        return result.ctx;
-      })
+      customCtx(async (_ctx) => functionConfig.createContext(_ctx))
     );
 
     const fn = customFunction({
       args: mergedInput ?? {},
       ...(outputSchema ? { returns: outputSchema } : {}),
-      handler: async (ctx: any, input: any) => handler({ ctx, input }),
+      handler: async (ctx: any, rawInput: any) => {
+        // Create getRawInput function for middleware
+        const getRawInput: GetRawInputFn = async () => rawInput;
+
+        // Execute middleware chain with input access
+        const result = await executeMiddlewares(
+          middlewares,
+          ctx,
+          meta,
+          rawInput,
+          getRawInput
+        );
+
+        // Call handler with middleware-modified context and input
+        return handler({ ctx: result.ctx, input: result.input ?? rawInput });
+      },
     });
 
     // Attach metadata for codegen extraction
@@ -371,16 +431,26 @@ export class QueryProcedureBuilder<
   TOutput,
   TMeta
 > {
-  /** Add middleware that transforms the context - $ContextOverridesOut is inferred from next() */
+  /**
+   * Add middleware that transforms the context
+   * Middleware receives typed input if called after .input(), unknown otherwise
+   * $ContextOverridesOut is inferred from next()
+   */
   use<$ContextOverridesOut extends object>(
     middlewareOrBuilder:
       | MiddlewareFunction<
           Overwrite<TContext, TContextOverrides>,
           TMeta,
           TContextOverrides,
-          $ContextOverridesOut
+          $ContextOverridesOut,
+          InferMiddlewareInput<TInput>
         >
-      | MiddlewareBuilder<TBaseCtx, TMeta, $ContextOverridesOut>
+      | MiddlewareBuilder<
+          TBaseCtx,
+          TMeta,
+          $ContextOverridesOut,
+          InferMiddlewareInput<TInput>
+        >
   ): QueryProcedureBuilder<
     TBaseCtx,
     TContext,
@@ -550,16 +620,26 @@ export class MutationProcedureBuilder<
   TOutput,
   TMeta
 > {
-  /** Add middleware that transforms the context - $ContextOverridesOut is inferred from next() */
+  /**
+   * Add middleware that transforms the context
+   * Middleware receives typed input if called after .input(), unknown otherwise
+   * $ContextOverridesOut is inferred from next()
+   */
   use<$ContextOverridesOut extends object>(
     middlewareOrBuilder:
       | MiddlewareFunction<
           Overwrite<TContext, TContextOverrides>,
           TMeta,
           TContextOverrides,
-          $ContextOverridesOut
+          $ContextOverridesOut,
+          InferMiddlewareInput<TInput>
         >
-      | MiddlewareBuilder<TBaseCtx, TMeta, $ContextOverridesOut>
+      | MiddlewareBuilder<
+          TBaseCtx,
+          TMeta,
+          $ContextOverridesOut,
+          InferMiddlewareInput<TInput>
+        >
   ): MutationProcedureBuilder<
     TBaseCtx,
     TContext,
@@ -682,9 +762,15 @@ export class ActionProcedureBuilder<
           Overwrite<TContext, TContextOverrides>,
           TMeta,
           TContextOverrides,
-          $ContextOverridesOut
+          $ContextOverridesOut,
+          InferMiddlewareInput<TInput>
         >
-      | MiddlewareBuilder<TBaseCtx, TMeta, $ContextOverridesOut>
+      | MiddlewareBuilder<
+          TBaseCtx,
+          TMeta,
+          $ContextOverridesOut,
+          InferMiddlewareInput<TInput>
+        >
   ): ActionProcedureBuilder<
     TBaseCtx,
     TContext,

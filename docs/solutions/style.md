@@ -1,6 +1,6 @@
 # Documentation Writing Style
 
-Reference: `@.claude/docs/example.md`, `@www/content/docs/server/http.mdx`
+Reference: `@docs/solutions/style.md`, `@www/content/docs/server/http.mdx`
 
 Write verbose, educational documentation. Guide the reader step by step.
 
@@ -9,13 +9,15 @@ Write verbose, educational documentation. Guide the reader step by step.
 ### 1. Guide, Don't Just Show
 
 **Bad:** Here's the code.
+
 ```tsx
-const form = useForm({ resolver: zodResolver(schema) })
+const form = useForm({ resolver: zodResolver(schema) });
 ```
 
 **Good:** Next, we'll use the `useForm` hook from React Hook Form to create our form instance. We'll also add the Zod resolver to validate the form data.
+
 ```tsx
-const form = useForm({ resolver: zodResolver(schema) })
+const form = useForm({ resolver: zodResolver(schema) });
 ```
 
 ### 2. Explain the Why
@@ -57,13 +59,13 @@ Use callouts for critical information:
 
 ```md
 <Callout icon={<InfoIcon />}>
-  **Note:** We're returning `values` for error cases. This is because we want to keep the user submitted values in the form state.
+**Note:** We're returning `values` for error cases. This is because we want to keep the user submitted values in the form state.
 </Callout>
 ```
 
 ```md
 <Callout icon={<InfoIcon />}>
-  **Important:** Remember to set a `min-h-[VALUE]` on the `ChartContainer` component. This is required for the chart to be responsive.
+**Important:** Remember to set a `min-h-[VALUE]` on the `ChartContainer` component. This is required for the chart to be responsive.
 </Callout>
 ```
 
@@ -72,30 +74,32 @@ Use callouts for critical information:
 Organize options, modes, props clearly:
 
 ```md
-| Mode          | Description                                              |
-| ------------- | -------------------------------------------------------- |
-| `"onChange"`  | Validation triggers on every change.                     |
-| `"onBlur"`    | Validation triggers on blur.                             |
-| `"onSubmit"`  | Validation triggers on submit (default).                 |
+| Mode         | Description                              |
+| ------------ | ---------------------------------------- |
+| `"onChange"` | Validation triggers on every change.     |
+| `"onBlur"`   | Validation triggers on blur.             |
+| `"onSubmit"` | Validation triggers on submit (default). |
 ```
 
 ### 8. Show Real Code, Not Placeholders
 
 **Bad:**
+
 ```tsx
 // Your validation logic here
 ```
 
 **Good:**
+
 ```tsx
-const result = formSchema.safeParse(values)
+const result = formSchema.safeParse(values);
 
 if (!result.success) {
   return {
     values,
     success: false,
     errors: result.error.flatten().fieldErrors,
-  }
+  };
 }
 ```
 
@@ -103,11 +107,13 @@ if (!result.success) {
 
 Use `{line-numbers}` to focus attention:
 
-```md
+````md
 ```tsx showLineNumbers {17-23}
 // Lines 17-23 are highlighted
 ```
-```
+````
+
+````
 
 ### 10. Use Steps for Multi-Part Processes
 
@@ -118,7 +124,7 @@ Use `{line-numbers}` to focus attention:
 
 ```tsx
 import { Bar, BarChart, CartesianGrid } from "recharts"
-```
+````
 
 <Step>Add the `CartesianGrid` component to your chart.</Step>
 
@@ -170,11 +176,11 @@ This form leverages React Hook Form for performant, flexible form handling. We'l
 - `<Controller />` component for controlled inputs.
 - Client-side validation using Zod with `zodResolver`.
 
-| Use Case | Approach |
-|----------|----------|
-| REST APIs | cRPC HTTP Router ✅ |
+| Use Case  | Approach             |
+| --------- | -------------------- |
+| REST APIs | cRPC HTTP Router ✅  |
 | Real-time | Queries/Mutations ✅ |
-| Webhooks | Traditional HTTP |
+| Webhooks  | Traditional HTTP     |
 ```
 
 ### Subsections
@@ -198,14 +204,17 @@ To add a tooltip, we'll use the custom `ChartTooltip` and `ChartTooltipContent` 
 ## Code Blocks
 
 Always include:
+
 - `showLineNumbers` for multi-line code
 - `title="filename.tsx"` for file context
 - `{10-21}` for highlighting important lines
 
-```md
+````md
 ```tsx showLineNumbers title="form.tsx" {17-23}
 // Code with lines 17-23 highlighted
 ```
+````
+
 ```
 
 ## Tone
@@ -224,3 +233,4 @@ Always include:
 ❌ Missing the "why" behind choices
 ❌ Dry, reference-style prose when tutorial-style fits better
 ❌ Forgetting to celebrate completion
+```

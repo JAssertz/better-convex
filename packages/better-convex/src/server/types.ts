@@ -71,41 +71,64 @@ export type MiddlewareResult<TContext> = {
   ctx: TContext;
 };
 
-/** Next function overloads - key to automatic context inference */
+/** Function to get raw input before validation */
+export type GetRawInputFn = () => Promise<unknown>;
+
+/**
+ * Next function overloads - key to automatic context and input inference
+ * Matches tRPC's pattern: can modify context, input, or both
+ */
 export type MiddlewareNext<TContextOverridesIn> = {
   /** Continue without modification - passes through existing overrides */
   (): Promise<MiddlewareResult<TContextOverridesIn>>;
-  /** Continue with modified context - $ContextOverride is inferred from the object literal */
+  /** Continue with modified context and/or input */
   <$ContextOverride>(opts: {
-    ctx: $ContextOverride;
+    ctx?: $ContextOverride;
+    input?: unknown;
   }): Promise<MiddlewareResult<$ContextOverride>>;
 };
 
 /**
- * Middleware function signature
- * $ContextOverridesOut is inferred from what next() returns, not specified upfront
+ * Middleware function signature with input access (tRPC-compatible)
+ *
+ * @typeParam TContext - Base context type
+ * @typeParam TMeta - Procedure metadata type
+ * @typeParam TContextOverridesIn - Context overrides from previous middleware
+ * @typeParam $ContextOverridesOut - Context overrides this middleware adds (inferred from next())
+ * @typeParam TInputOut - Parsed input type (unknown if before .input(), typed if after)
  */
 export type MiddlewareFunction<
   TContext,
   TMeta,
   TContextOverridesIn,
   $ContextOverridesOut,
+  TInputOut = unknown,
 > = (opts: {
   ctx: Simplify<Overwrite<TContext, TContextOverridesIn>>;
   meta: TMeta;
+  input: TInputOut;
+  getRawInput: GetRawInputFn;
   next: MiddlewareNext<TContextOverridesIn>;
 }) => Promise<MiddlewareResult<$ContextOverridesOut>>;
 
 /** Stored middleware with type info erased for runtime */
-export type AnyMiddleware = MiddlewareFunction<any, any, any, any>;
+export type AnyMiddleware = MiddlewareFunction<any, any, any, any, any>;
 
 /**
  * Middleware builder for creating reusable, composable middleware chains
  * Similar to tRPC's MiddlewareBuilder
- * TContext is contravariant (in) so MiddlewareBuilder<object> is assignable to MiddlewareBuilder<SpecificCtx>
+ *
+ * @typeParam TContext - Base context type
+ * @typeParam TMeta - Procedure metadata type
+ * @typeParam $ContextOverridesOut - Accumulated context overrides
+ * @typeParam TInputOut - Input type this middleware chain expects
  */
-// @ts-expect-error Variance annotation conflicts with pipe's return type, but needed for middleware composition
-export type MiddlewareBuilder<in TContext, TMeta, $ContextOverridesOut> = {
+export type MiddlewareBuilder<
+  TContext,
+  TMeta,
+  $ContextOverridesOut,
+  TInputOut = unknown,
+> = {
   /** Internal array of middleware functions */
   _middlewares: AnyMiddleware[];
   /** Chain another middleware to this builder */
@@ -114,14 +137,16 @@ export type MiddlewareBuilder<in TContext, TMeta, $ContextOverridesOut> = {
       TContext,
       TMeta,
       $ContextOverridesOut,
-      $NewContextOverrides
+      $NewContextOverrides,
+      TInputOut
     >
   ): MiddlewareBuilder<
     TContext,
     TMeta,
-    Overwrite<$ContextOverridesOut, $NewContextOverrides>
+    Overwrite<$ContextOverridesOut, $NewContextOverrides>,
+    TInputOut
   >;
 };
 
 /** Type-erased middleware builder for runtime */
-export type AnyMiddlewareBuilder = MiddlewareBuilder<any, any, any>;
+export type AnyMiddlewareBuilder = MiddlewareBuilder<any, any, any, any>;

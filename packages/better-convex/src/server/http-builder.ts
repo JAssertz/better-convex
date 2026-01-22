@@ -12,6 +12,7 @@ import type {
 } from './http-types';
 import type {
   AnyMiddleware,
+  GetRawInputFn,
   MiddlewareBuilder,
   MiddlewareFunction,
   Overwrite,
@@ -206,8 +207,14 @@ export interface HttpProcedureBuilder<
   /** Add middleware to the procedure */
   use<$ContextOverridesOut extends object>(
     middlewareOrBuilder:
-      | MiddlewareFunction<TCtx, TMeta, UnsetMarker, $ContextOverridesOut>
-      | MiddlewareBuilder<TInitialCtx, TMeta, $ContextOverridesOut>
+      | MiddlewareFunction<
+          TCtx,
+          TMeta,
+          UnsetMarker,
+          $ContextOverridesOut,
+          unknown
+        >
+      | MiddlewareBuilder<TInitialCtx, TMeta, $ContextOverridesOut, unknown>
   ): HttpProcedureBuilder<
     TInitialCtx,
     Overwrite<TCtx, $ContextOverridesOut>,
@@ -482,13 +489,28 @@ function createProcedure(
       // Create base context
       let ctx = def.functionConfig.createContext(convexCtx as any) as any;
 
-      // Execute middlewares
+      // getRawInput for HTTP - returns raw request body
+      const getRawInput: GetRawInputFn = async () => {
+        const contentType = request.headers.get('content-type') ?? '';
+        if (contentType.includes('application/json')) {
+          return request.clone().json();
+        }
+        return null;
+      };
+
+      // Execute middlewares (input is unknown for HTTP middleware - parsed after)
+      let currentInput: unknown;
       for (const middleware of def.middlewares) {
         const result = await middleware({
           ctx: ctx as any,
+          input: currentInput,
+          getRawInput,
           next: async (opts?: any) => {
             if (opts?.ctx) {
               ctx = { ...ctx, ...opts.ctx };
+            }
+            if (opts?.input !== undefined) {
+              currentInput = opts.input;
             }
             return { ctx, marker: undefined as any };
           },
