@@ -148,6 +148,20 @@ const { data } = useQuery(
 );
 ```
 
+### With select
+
+To transform query data with type inference, spread the query options and add `select`:
+
+```tsx showLineNumbers {3-4}
+const { data } = useSuspenseQuery({
+  ...crpc.http.health.queryOptions(),
+  select: (data) => data.status,
+});
+// data: string (not { status: string })
+```
+
+TanStack Query infers the return type from the `select` function. Note that `select` cannot be passed directly to `queryOptions()`.
+
 ## Auth-aware Queries
 
 cRPC provides two ways to handle authentication in queries.
