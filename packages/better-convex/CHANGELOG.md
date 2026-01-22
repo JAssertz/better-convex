@@ -1,5 +1,27 @@
 # better-convex
 
+## 0.5.1
+
+### Patch Changes
+
+- [#39](https://github.com/udecode/better-convex/pull/39) [`ede0d47`](https://github.com/udecode/better-convex/commit/ede0d473ed8f7254f44b9edb86172cfd3c900857) Thanks [@zbeyens](https://github.com/zbeyens)! - Middleware now receives `input` and `getRawInput` parameters:
+
+  ```ts
+  publicQuery
+    .input(z.object({ projectId: zid("projects") }))
+    .use(async ({ ctx, input, next }) => {
+      // input.projectId is typed!
+      const project = await ctx.db.get(input.projectId);
+      return next({ ctx: { ...ctx, project } });
+    });
+  ```
+
+  - Middleware after `.input()` receives typed input
+  - Middleware before `.input()` receives `unknown`
+  - `getRawInput()` returns raw input before validation
+  - `next({ input })` allows modifying input for downstream middleware
+  - Non-breaking: existing middleware works unchanged
+
 ## 0.5.0
 
 ### Minor Changes
