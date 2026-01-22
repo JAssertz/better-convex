@@ -23,9 +23,147 @@ The server setup involves these components:
 
 Let's set it up step by step.
 
+## Authentication Flow
+
+Before diving into setup, let's understand how authentication flows through your app. This will help you understand why we configure things the way we do.
+
+### SSR Flow (HTTP Prefetching)
+
+When you call `caller.posts.list()` on the server, here's what happens:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  SSR REQUEST (server-side data fetching)                                 │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  1. Get JWT Token                                                        │
+│     ┌─────────────────────────────────────────────────────────────────┐ │
+│     │ JWT Caching ENABLED (default)                                   │ │
+│     │   ├─ Check cookie for cached JWT                                │ │
+│     │   ├─ If valid & not expired → use cached token (0ms)            │ │
+│     │   └─ If missing/expired → fetch fresh token from auth endpoint  │ │
+│     └─────────────────────────────────────────────────────────────────┘ │
+│     ┌─────────────────────────────────────────────────────────────────┐ │
+│     │ JWT Caching DISABLED                                            │ │
+│     │   └─ Always fetch fresh token from auth endpoint                │ │
+│     └─────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  2. HTTP Request to Convex (fetchQuery)                                  │
+│     Server → Convex backend with JWT in Authorization header             │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  3. Token Validation (every HTTP request)                                │
+│     ┌─────────────────────────────────────────────────────────────────┐ │
+│     │ Dynamic JWKS                                                    │ │
+│     │   ├─ Parse JWT claims (issuer, audience)                        │ │
+│     │   ├─ Fetch OIDC discovery ← +50-200ms network call              │ │
+│     │   ├─ Fetch JWKS keys     ← +50-200ms network call               │ │
+│     │   └─ Verify signature                                           │ │
+│     │   ADDED LATENCY: +100-400ms per request                         │ │
+│     └─────────────────────────────────────────────────────────────────┘ │
+│     ┌─────────────────────────────────────────────────────────────────┐ │
+│     │ Static JWKS (recommended)                                       │ │
+│     │   ├─ Parse JWT claims                                           │ │
+│     │   └─ Verify signature using embedded keys                       │ │
+│     │   ADDED LATENCY: negligible per request                         │ │
+│     └─────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  4. Query Executes & Response                                            │
+│     Data cached in TanStack Query, rendered to HTML                      │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  5. Hydration (fire-and-forget preloading)                               │
+│     ├─ HTML sent to browser with dehydrated query cache                 │
+│     ├─ Client hydrates with prefetched data (instant render)            │
+│     └─ WebSocket subscribes for real-time updates                       │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+JWT caching is **enabled by default** in `convexBetterAuth`, so you don't need to configure anything. If you need to disable it for debugging:
+
+```ts title="src/lib/convex/server.ts" showLineNumbers {5}
+export const { createContext, createCaller, handler } = convexBetterAuth({
+  api,
+  convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!,
+  meta,
+  auth: { jwtCache: false },
+});
+```
+
+### Client Flow (WebSocket)
+
+Now let's look at what happens when you use `useCRPC().posts.list.useQuery()` in client components. This is where Convex differs from traditional REST APIs:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  PAGE LOAD / NAVIGATION                                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  1. WebSocket Connection                                                 │
+│     Browser → Convex backend (establishes persistent connection)         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  2. Auth Handshake (⚠️ BLOCKING - queries wait here)                     │
+│     ┌─────────────────────────────────────────────────────────────────┐ │
+│     │ Unlike REST APIs where queries start immediately, Convex        │ │
+│     │ WebSocket requires auth validation BEFORE any query can run.    │ │
+│     └─────────────────────────────────────────────────────────────────┘ │
+│     Client sends session token → Convex validates JWT                   │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  3. Token Validation                                                     │
+│     ┌─────────────────────────────────────────────────────────────────┐ │
+│     │ Static JWKS (recommended)                                       │ │
+│     │   ├─ Parse JWT claims                                           │ │
+│     │   └─ Verify signature using embedded keys                       │ │
+│     │   → Instant validation, no network calls                        │ │
+│     └─────────────────────────────────────────────────────────────────┘ │
+│     ┌─────────────────────────────────────────────────────────────────┐ │
+│     │ Dynamic JWKS (not recommended)                                  │ │
+│     │   ├─ Fetch OIDC discovery ← +50-200ms network call              │ │
+│     │   ├─ Fetch JWKS keys     ← +50-200ms network call               │ │
+│     │   └─ Verify signature                                           │ │
+│     │   → +100-400ms delay before ANY query can run                   │ │
+│     └─────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  4. Identity Cached → Queries Unblocked                                  │
+│     All pending queries now execute instantly                            │
+│     useQuery(api.posts.list) → runs                                      │
+│     useQuery(api.user.me)    → runs                                      │
+│     ... navigate to other pages → all queries instant                    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+<Callout icon={<InfoIcon />}>
+**Key difference from REST APIs:** REST queries fire immediately and validate auth inline on the server. Convex WebSocket queries are **blocked until the auth handshake completes**. This is why we use Static JWKS - it makes this handshake instant.
+</Callout>
+
+That's the full picture. Now let's set it up.
+
 ## Prerequisites
 
-Install the required packages:
+We'll start by installing the required packages:
 
 ```bash
 bun add better-auth@1.4.9 @convex-dev/better-auth better-convex hono
@@ -37,7 +175,7 @@ Pin `better-auth` to avoid breaking changes. Check [Better Auth releases](https:
 
 ## 1. Auth Config
 
-Create the auth configuration file for Convex:
+Next, we'll create the auth configuration file. This tells Convex how to validate JWTs using Static JWKS:
 
 ```ts title="convex/functions/auth.config.ts" showLineNumbers {4-6}
 import { getAuthConfigProvider } from '@convex-dev/better-auth/auth-config';
@@ -50,7 +188,7 @@ export default {
 
 ## 2. Create Auth Client
 
-Create the auth client with Convex adapter and triggers:
+Now we'll create the auth client. This connects Better Auth to your Convex database and lets you add triggers for user lifecycle events:
 
 ```ts title="convex/functions/auth.ts" showLineNumbers {8,11,14-15,23-27,43-47,52-55,60-67,70-82}
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
@@ -168,9 +306,11 @@ Run `npx convex dev` first to generate `internal.auth` types.
 
 ## 3. Update Schema
 
+Your database needs tables for users, sessions, accounts, and more. You have two options: generate them automatically or define them manually.
+
 <Tabs groupId="schema" items={["CLI Generate", "Manual"]} persist>
   <Tab value="CLI Generate">
-    Run the Better Auth CLI to generate auth tables based on your plugins:
+    The easiest approach is to let the Better Auth CLI generate the tables based on your plugins:
 
     ```bash
     npx @better-auth/cli generate -y --output convex/functions/authSchema.ts --config convex/functions/auth.ts
@@ -189,7 +329,7 @@ Run `npx convex dev` first to generate `internal.auth` types.
     ```
   </Tab>
   <Tab value="Manual">
-    Define auth tables directly in your schema:
+    If you prefer full control, define the auth tables directly in your schema:
 
     <Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
       <Tab value="ctx.db">
@@ -350,7 +490,7 @@ user: authSchema.user.index('username', ['username']),
 
 ## 4. HTTP Routes
 
-Register Better Auth HTTP routes using Hono middleware:
+Now we'll expose Better Auth's endpoints via HTTP. We use Hono as the router:
 
 ```ts title="convex/functions/http.ts" showLineNumbers {1-5,9-18,21}
 import '../lib/http-polyfills';
@@ -388,7 +528,7 @@ See [HTTP Router](/docs/server/http) for route examples, webhooks, and streaming
 
 ## 5. Sync Environment Variables
 
-Create `convex/.env` with your environment variables:
+Finally, we need to set up environment variables. Create `convex/.env`:
 
 ```bash title="convex/.env" showLineNumbers
 SITE_URL=http://localhost:3000
@@ -402,9 +542,9 @@ With Convex dev server running (`npx convex dev`), sync to Convex in another ter
 npx better-convex env sync --auth
 ```
 
-The `--auth` flag auto-generates `BETTER_AUTH_SECRET` and `JWKS` if missing. See [CLI Reference](/docs/cli#env) for more options.
+The `--auth` flag auto-generates `BETTER_AUTH_SECRET` and `JWKS` if they don't exist. See [CLI Reference](/docs/cli#env) for more options.
 
-To rotate keys (invalidates all tokens):
+That's it for the basic setup! Your auth is now configured. To rotate keys later (this invalidates all tokens):
 
 ```bash
 npx convex run auth:rotateKeys | npx convex env set JWKS
@@ -412,7 +552,7 @@ npx convex run auth:rotateKeys | npx convex env set JWKS
 
 ## Framework Integration
 
-After completing the Convex backend setup above, set up your client provider:
+You've set up the Convex backend. Now let's connect your frontend:
 
 <Cards>
   <Card title="React Setup" href="/docs/react/setup#with-auth" description="ConvexAuthProvider setup" />
@@ -421,9 +561,11 @@ After completing the Convex backend setup above, set up your client provider:
 
 ## Key Concepts
 
+Now that you have auth working, let's understand a few important concepts.
+
 ### Direct DB Access vs HTTP Adapter
 
-The auth client provides two adapters for different contexts:
+The auth client provides two adapters depending on where you're calling from:
 
 ```ts showLineNumbers {2-4,8-10}
 // ✅ In queries/mutations: Use getAuth (direct DB access)
@@ -454,7 +596,7 @@ export const someAction = publicAction
 
 ### Custom Mutation Wrapper
 
-The `internalMutation` option lets you wrap auth mutations with custom logic. This is useful for:
+Want to run custom logic when users are created or deleted? The `internalMutation` option lets you wrap auth mutations:
 
 | Use Case | Description |
 |----------|-------------|
@@ -540,7 +682,7 @@ Without `internalMutation`, auth operations use the default Convex `internalMuta
 
 ## Environment Variables
 
-Required variables in `convex/.env`:
+Here's a quick reference for all the environment variables:
 
 | Variable | Description |
 |----------|-------------|
@@ -557,13 +699,66 @@ Social providers (optional):
 
 Run `npx better-convex env sync` to sync all variables to Convex.
 
+## Production Deployment
+
+Your first production deployment will fail authentication because JWKS isn't set yet. Don't worry - here's how to fix it:
+
+<Steps>
+
+<Step>Deploy your app to production</Step>
+
+```bash
+npx convex deploy --prod
+```
+
+Authentication will fail at this point - that's expected.
+
+<Step>Generate and set JWKS</Step>
+
+Run from your local machine with Convex CLI authenticated:
+
+```bash
+npx convex run auth:getLatestJwks --prod | npx convex env set JWKS --prod
+```
+
+This generates new signing keys (if none exist) and sets the JWKS environment variable.
+
+<Step>Verify authentication works</Step>
+
+Test a protected endpoint or sign in through your app. Authentication should now succeed.
+
+</Steps>
+
+<Callout icon={<InfoIcon />}>
+**Troubleshooting:** If you see "Invalid token signature" errors after deployment, your JWKS may be outdated. Re-run the `getLatestJwks` command to sync.
+</Callout>
+
+## Key Rotation
+
+Need to rotate signing keys? Maybe for security compliance or after a suspected compromise:
+
+```bash
+npx convex run auth:rotateKeys --prod | npx convex env set JWKS --prod
+```
+
+<Callout icon={<InfoIcon />}>
+**Warning:** Key rotation invalidates all existing tokens. All users will be logged out and must re-authenticate. Plan rotations during low-traffic periods.
+</Callout>
+
+**Rotation checklist:**
+- Schedule during low-traffic window
+- Notify users about required re-login (optional)
+- Run `rotateKeys` command
+- Verify authentication works with new keys
+- Monitor for authentication errors
+
 ## Helpers
 
-Server helpers extract user identity and session data from Convex context. Use these in queries and mutations to authenticate requests.
+These helpers extract user identity and session data from Convex context. You'll use them in your queries and mutations.
 
 ### getAuthUserIdentity
 
-Get the full user identity from context:
+Returns the full user identity:
 
 ```ts showLineNumbers {1,3,5-8}
 import { getAuthUserIdentity } from 'better-convex/auth';
@@ -579,7 +774,7 @@ if (identity) {
 
 ### getAuthUserId
 
-Get just the user ID:
+If you just need the user ID:
 
 <Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
   <Tab value="ctx.db">
@@ -614,7 +809,7 @@ Get just the user ID:
 
 ### getSession
 
-Get the current session document:
+Returns the full session document:
 
 ```ts showLineNumbers {1,3,5-10}
 import { getSession } from 'better-convex/auth';
@@ -631,7 +826,7 @@ if (session) {
 
 ### getHeaders
 
-Build headers from session for external API calls:
+Need to call an external API with the current session? This builds the headers:
 
 ```ts showLineNumbers {1,3-4,7-9}
 import { getHeaders } from 'better-convex/auth';
@@ -646,6 +841,8 @@ const response = await fetch('https://api.example.com', {
 ```
 
 ## Next Steps
+
+Done! You now have authentication set up. Here's where to go next:
 
 <Cards>
   <Card title="Templates" href="/docs/templates#authts" />
