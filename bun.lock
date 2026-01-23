@@ -34,6 +34,7 @@
         "@react-email/render": "2.0.2",
         "@t3-oss/env-nextjs": "0.13.10",
         "@tanstack/react-query": "5.90.16",
+        "agentation": "^1.3.0",
         "better-auth": "1.4.9",
         "better-convex": "workspace:*",
         "buffer": "^6.0.3",
@@ -83,7 +84,7 @@
     },
     "packages/better-convex": {
       "name": "better-convex",
-      "version": "0.2.1",
+      "version": "0.5.1",
       "bin": {
         "better-convex": "./dist/cli.cjs",
       },
@@ -92,7 +93,6 @@
         "common-tags": "^1.8.2",
         "dotenv": "^17.2.3",
         "execa": "^9.6.1",
-        "hono": "^4.7.10",
         "jiti": "^2.6.1",
         "jotai-x": "^2.3.3",
         "picocolors": "^1.1.1",
@@ -104,6 +104,7 @@
         "@types/node": "^25.0.3",
         "@types/react": "^19.2.7",
         "babel-plugin-react-compiler": "^1.0.0",
+        "hono": "^4.7.10",
         "next": "^16.1.1",
         "tsdown": "^0.19.0-beta.1",
         "typescript": "^5.9.3",
@@ -114,6 +115,7 @@
         "better-auth": ">=1.4.9",
         "convex": ">=1.31",
         "convex-helpers": ">=0.1",
+        "hono": ">=4",
         "next": ">=14",
         "react": ">=18",
         "zod": ">=3",
@@ -121,6 +123,7 @@
       "optionalPeers": [
         "@convex-dev/better-auth",
         "better-auth",
+        "hono",
         "next",
         "react",
       ],
@@ -884,6 +887,8 @@
     "acorn": ["acorn@8.15.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-NZyJarBfL7nWwIq+FDL6Zp/yHEhePMNnnJ0y3qfieCrmNvYct8uvtiV41UvlSe6apAfk0fY1FbWx+NwfmpvtTg=="],
 
     "acorn-jsx": ["acorn-jsx@5.3.2", "", { "peerDependencies": { "acorn": "^6.0.0 || ^7.0.0 || ^8.0.0" } }, "sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ=="],
+
+    "agentation": ["agentation@1.3.0", "", { "peerDependencies": { "react": ">=18.0.0", "react-dom": ">=18.0.0" } }, "sha512-Mq05RrE00bC0lrGSSr1uj7pAT6SnEFGr9TtDgtYUHNH685OAjDgFobEgEV7jgUu0xCWIfIukH7n/Gy05plFw8Q=="],
 
     "ajv": ["ajv@6.12.6", "", { "dependencies": { "fast-deep-equal": "^3.1.1", "fast-json-stable-stringify": "^2.0.0", "json-schema-traverse": "^0.4.1", "uri-js": "^4.2.2" } }, "sha512-j3fVLgvTo527anyYyJOGTYJbG+vnnQYvE0m5mmkc1TK+nxAppkCLMIL0aZ4dblVCNoGShhm+kzE4ZUykBoMg4g=="],
 

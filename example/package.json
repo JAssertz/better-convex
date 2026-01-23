@@ -39,6 +39,7 @@
     "@react-email/render": "2.0.2",
     "@t3-oss/env-nextjs": "0.13.10",
     "@tanstack/react-query": "5.90.16",
+    "agentation": "^1.3.0",
     "better-auth": "1.4.9",
     "better-convex": "workspace:*",
     "buffer": "^6.0.3",
