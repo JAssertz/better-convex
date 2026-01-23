@@ -724,13 +724,47 @@ const queryClient = useQueryClient();
 const todos = await queryClient.fetchQuery(crpc.http.todos.list.queryOptions());
 ```
 
-| Method | Context | Caching | Use Case |
-|--------|---------|---------|----------|
-| `client.http.*.query()` | Anywhere | None | Event handlers, effects |
-| `crpc.http.*.queryOptions()` | Render only | Uses cache | Components (uses hooks) |
+### staticQueryOptions
+
+For prefetching in event handlers, use `staticQueryOptions`. Unlike `queryOptions`, it doesn't use hooks internally, so you can call it anywhere:
+
+```tsx showLineNumbers {6-8}
+import { useQueryClient } from '@tanstack/react-query';
+import { useCRPC } from '@/lib/convex/crpc';
+
+const crpc = useCRPC();
+const queryClient = useQueryClient();
+
+// Prefetch on hover - works in event handlers
+const handleMouseEnter = () => {
+  queryClient.prefetchQuery(crpc.http.todos.list.staticQueryOptions());
+};
+
+// Fetch on click
+const handleClick = async () => {
+  const todos = await queryClient.fetchQuery(
+    crpc.http.todos.list.staticQueryOptions()
+  );
+};
+```
 
 <Callout icon={<InfoIcon />}>
-**Note:** `queryOptions` uses hooks internally, so it can only be called in React render context - not in event handlers or callbacks.
+**Note:** `staticQueryOptions` doesn't include reactive auth state. Auth is handled at execution time by the `queryFn` - if the user isn't authenticated for a protected endpoint, it will throw an `UNAUTHORIZED` error.
+</Callout>
+
+### Comparison
+
+| Method | Context | Caching | Use Case |
+|--------|---------|---------|----------|
+| `client.http.*.query()` | Anywhere | None | Direct calls without cache |
+| `crpc.http.*.queryOptions()` | Render only | Uses cache | Components (uses hooks) |
+| `crpc.http.*.staticQueryOptions()` | Anywhere | Uses cache | Prefetching, event handlers |
+
+<Callout icon={<InfoIcon />}>
+**When to use which:**
+- Use `queryOptions` in components for reactive auth handling
+- Use `staticQueryOptions` for prefetching in event handlers
+- Use `client.http.*.query()` when you don't need TanStack Query caching
 </Callout>
 
 ### POST/PATCH/DELETE Requests

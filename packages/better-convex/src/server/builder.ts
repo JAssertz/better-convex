@@ -156,7 +156,7 @@ type CreateConfig<TMeta extends object> = FunctionsConfig & {
 export function createMiddlewareFactory<TDefaultContext, TMeta = object>() {
   function createMiddlewareInner<TContext, $ContextOverridesOut>(
     middlewares: AnyMiddleware[]
-  ): MiddlewareBuilder<TContext, TMeta, $ContextOverridesOut> {
+  ): MiddlewareBuilder<TContext, TMeta, $ContextOverridesOut, unknown> {
     return {
       _middlewares: middlewares,
       pipe<$NewContextOverrides>(
@@ -164,7 +164,8 @@ export function createMiddlewareFactory<TDefaultContext, TMeta = object>() {
           TContext,
           TMeta,
           $ContextOverridesOut,
-          $NewContextOverrides
+          $NewContextOverrides,
+          unknown
         >
       ) {
         return createMiddlewareInner<
@@ -180,7 +181,7 @@ export function createMiddlewareFactory<TDefaultContext, TMeta = object>() {
     $ContextOverridesOut = object,
   >(
     fn: MiddlewareFunction<TContext, TMeta, object, $ContextOverridesOut>
-  ): MiddlewareBuilder<TContext, TMeta, $ContextOverridesOut> {
+  ): MiddlewareBuilder<TContext, TMeta, $ContextOverridesOut, unknown> {
     return createMiddlewareInner<TContext, $ContextOverridesOut>([
       fn as AnyMiddleware,
     ]);
@@ -446,7 +447,7 @@ export class QueryProcedureBuilder<
           InferMiddlewareInput<TInput>
         >
       | MiddlewareBuilder<
-          TBaseCtx,
+          any, // Allow reusable middleware with any context
           TMeta,
           $ContextOverridesOut,
           InferMiddlewareInput<TInput>
@@ -635,7 +636,7 @@ export class MutationProcedureBuilder<
           InferMiddlewareInput<TInput>
         >
       | MiddlewareBuilder<
-          TBaseCtx,
+          any, // Allow reusable middleware with any context
           TMeta,
           $ContextOverridesOut,
           InferMiddlewareInput<TInput>
@@ -766,7 +767,7 @@ export class ActionProcedureBuilder<
           InferMiddlewareInput<TInput>
         >
       | MiddlewareBuilder<
-          TBaseCtx,
+          any, // Allow reusable middleware with any context
           TMeta,
           $ContextOverridesOut,
           InferMiddlewareInput<TInput>

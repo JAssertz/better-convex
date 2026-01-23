@@ -12,9 +12,14 @@
  * ```
  */
 
-import type { QueryFilters, SkipToken } from '@tanstack/react-query';
-import type { FunctionReference } from 'convex/server';
+import {
+  type QueryFilters,
+  type SkipToken,
+  skipToken,
+} from '@tanstack/react-query';
+import type { FunctionArgs, FunctionReference } from 'convex/server';
 import { getFunctionName } from 'convex/server';
+import { convexAction, convexQuery } from '../crpc/query-options';
 import {
   type ConvexQueryHookOptions,
   type CRPCClient,
@@ -117,6 +122,34 @@ function createRecursiveProxy(
               funcRef as FunctionReference<'query'>,
               args as Record<string, unknown>,
               opts as ConvexQueryHookOptions
+            );
+          };
+        }
+
+        // Terminal method: staticQueryOptions (non-hook for event handlers)
+        if (prop === 'staticQueryOptions') {
+          return (args: unknown = {}, opts?: { skipUnauth?: boolean }) => {
+            const funcRef = getFuncRef(api, path);
+            const fnType = getFunctionType(path, meta);
+
+            // Convert skipToken to 'skip' for convexQuery/convexAction
+            const finalArgs = args === skipToken ? 'skip' : args;
+
+            // Actions use convexAction (one-shot, no subscription)
+            if (fnType === 'action') {
+              return convexAction(
+                funcRef as FunctionReference<'action'>,
+                finalArgs as FunctionArgs<FunctionReference<'action'>>,
+                meta,
+                opts
+              );
+            }
+
+            return convexQuery(
+              funcRef as FunctionReference<'query'>,
+              finalArgs as FunctionArgs<FunctionReference<'query'>>,
+              meta,
+              opts
             );
           };
         }

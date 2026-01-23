@@ -188,6 +188,9 @@ type ActionQueryOptsReturn<T extends FunctionReference<'action'>> =
  * Args are optional when the function has no required parameters.
  * Supports skipToken for type-safe conditional queries.
  */
+/** Static query options parameter type (non-hook, for event handlers) */
+type StaticQueryOptsParam = { skipUnauth?: boolean };
+
 export type DecorateQuery<T extends FunctionReference<'query'>> = {
   queryOptions: keyof FunctionArgs<T> extends never
     ? // No args defined → optional, also accepts skipToken
@@ -206,6 +209,21 @@ export type DecorateQuery<T extends FunctionReference<'query'>> = {
           args: FunctionArgs<T> | SkipToken,
           opts?: QueryOptsParam<T>
         ) => QueryOptsReturn<T>;
+  /** Static (non-hook) query options for event handlers and prefetching */
+  staticQueryOptions: keyof FunctionArgs<T> extends never
+    ? (
+        args?: EmptyObject | SkipToken,
+        opts?: StaticQueryOptsParam
+      ) => ConvexQueryOptions<T> & { meta: ConvexQueryMeta }
+    : EmptyObject extends FunctionArgs<T>
+      ? (
+          args?: FunctionArgs<T> | SkipToken,
+          opts?: StaticQueryOptsParam
+        ) => ConvexQueryOptions<T> & { meta: ConvexQueryMeta }
+      : (
+          args: FunctionArgs<T> | SkipToken,
+          opts?: StaticQueryOptsParam
+        ) => ConvexQueryOptions<T> & { meta: ConvexQueryMeta };
   /** Get query key for QueryClient methods (setQueryData, getQueryData, etc.) */
   queryKey: (args?: DeepPartial<FunctionArgs<T>>) => ConvexQueryKey<T>;
   /** Get query filter for QueryClient methods (invalidateQueries, removeQueries, etc.) */
@@ -375,6 +393,21 @@ export type DecorateAction<T extends FunctionReference<'action'>> = {
           args: FunctionArgs<T> | SkipToken,
           opts?: ActionQueryOptsParam<T>
         ) => ActionQueryOptsReturn<T>;
+  /** Static (non-hook) action query options for event handlers and prefetching */
+  staticQueryOptions: keyof FunctionArgs<T> extends never
+    ? (
+        args?: EmptyObject | SkipToken,
+        opts?: StaticQueryOptsParam
+      ) => ConvexActionOptions<T> & { meta: ConvexQueryMeta }
+    : EmptyObject extends FunctionArgs<T>
+      ? (
+          args?: FunctionArgs<T> | SkipToken,
+          opts?: StaticQueryOptsParam
+        ) => ConvexActionOptions<T> & { meta: ConvexQueryMeta }
+      : (
+          args: FunctionArgs<T> | SkipToken,
+          opts?: StaticQueryOptsParam
+        ) => ConvexActionOptions<T> & { meta: ConvexQueryMeta };
   /** Use action as a mutation */
   mutationOptions: (
     opts?: DistributiveOmit<

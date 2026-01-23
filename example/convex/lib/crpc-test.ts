@@ -1256,3 +1256,55 @@ export const error_middleware_input_wrong_prop = publicQuery
     return next();
   })
   .query(async () => null);
+
+// 22.12 Chained .use() - context accumulation (verifies no regression from TBaseCtx -> any)
+export const middleware_chained_use = publicQuery
+  .use(async ({ ctx, next }) => {
+    // First middleware adds 'firstProp'
+    return next({ ctx: { ...ctx, firstProp: 'first' as const } });
+  })
+  .use(async ({ ctx, next }) => {
+    // Second middleware can access 'firstProp' and adds 'secondProp'
+    const first: 'first' = ctx.firstProp; // ✓ typed correctly
+    return next({ ctx: { ...ctx, secondProp: 42 as const } });
+  })
+  .query(async ({ ctx }) => {
+    // Handler can access both properties with correct types
+    const first: 'first' = ctx.firstProp;
+    const second: 42 = ctx.secondProp;
+    return { first, second };
+  });
+
+// 22.13 Chained .use() with authQuery - verifies auth context preserved
+export const middleware_chained_use_auth = authQuery
+  .use(async ({ ctx, next }) => {
+    // Auth context (user, userId) should be available
+    const userId: Id<'user'> = ctx.userId;
+    return next({ ctx: { ...ctx, step1: true } });
+  })
+  .use(async ({ ctx, next }) => {
+    // Both auth context and step1 should be available
+    const userId: Id<'user'> = ctx.userId;
+    const step1: boolean = ctx.step1;
+    return next({ ctx: { ...ctx, step2: 'done' } });
+  })
+  .query(async ({ ctx }) => {
+    // All context properties should be available
+    const userId: Id<'user'> = ctx.userId;
+    const user: SessionUser = ctx.user;
+    const step1: boolean = ctx.step1;
+    const step2: string = ctx.step2;
+    return { userId, step1, step2 };
+  });
+
+// 22.14 Error: Chained .use() - accessing property from later middleware
+export const error_middleware_chained_forward_ref = publicQuery
+  .use(async ({ ctx, next }) => {
+    // @ts-expect-error - secondProp doesn't exist yet (added by next middleware)
+    ctx.secondProp;
+    return next({ ctx: { ...ctx, firstProp: 'first' } });
+  })
+  .use(async ({ ctx, next }) => {
+    return next({ ctx: { ...ctx, secondProp: 42 } });
+  })
+  .query(async () => null);

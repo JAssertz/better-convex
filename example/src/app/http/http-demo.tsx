@@ -31,6 +31,11 @@ export function HttpDemo() {
     const _todos = await client.todos.list.query();
   };
 
+  // Test staticQueryOptions - prefetch on hover (non-hook, works in event handlers)
+  const handlePrefetchTodos = () => {
+    queryClient.prefetchQuery(crpc.todos.list.staticQueryOptions());
+  };
+
   // Todos query options
   const todosQueryOpts = crpc.http.todos.list.queryOptions({
     searchParams: { limit: '10' },
@@ -91,6 +96,15 @@ export function HttpDemo() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">
       <h1 className="mb-8 font-bold text-2xl">HTTP cRPC Demo</h1>
+
+      {/* staticQueryOptions demo - prefetch on hover */}
+      <button
+        className="mb-4 rounded bg-secondary px-3 py-1.5 text-secondary-foreground text-sm"
+        onMouseEnter={handlePrefetchTodos}
+        type="button"
+      >
+        Hover to prefetch todos (staticQueryOptions)
+      </button>
 
       {/* Health Check Section */}
       <section className="mb-8 rounded-lg border p-4">
