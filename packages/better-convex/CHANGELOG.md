@@ -1,5 +1,11 @@
 # better-convex
 
+## 0.5.3
+
+### Patch Changes
+
+- [#44](https://github.com/udecode/better-convex/pull/44) [`ea6bfce`](https://github.com/udecode/better-convex/commit/ea6bfce4fb20dda7afdad4a9d0663aa7021e2a88) Thanks [@zbeyens](https://github.com/zbeyens)! - Fix queries throwing without auth provider.
+
 ## 0.5.2
 
 ### Patch Changes
