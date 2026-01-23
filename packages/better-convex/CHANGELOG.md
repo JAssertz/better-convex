@@ -1,5 +1,13 @@
 # better-convex
 
+## 0.5.2
+
+### Patch Changes
+
+- [`185f496`](https://github.com/udecode/better-convex/commit/185f496c6b64e70cba96adcfe25e459c8c559a92) Thanks [@zbeyens](https://github.com/zbeyens)! - Add `staticQueryOptions` method to CRPC proxy for non-hook usage in event handlers.
+
+- [`2288076`](https://github.com/udecode/better-convex/commit/228807652c04df9bdb1e9f054a0664d35a643ff2) Thanks [@zbeyens](https://github.com/zbeyens)! - Fix `MiddlewareBuilder` generic parameter mismatch causing typecheck failures when using reusable middleware with `.use()`. Factory functions now correctly pass through the `TInputOut` parameter added in v0.5.1.
+
 ## 0.5.1
 
 ### Patch Changes
