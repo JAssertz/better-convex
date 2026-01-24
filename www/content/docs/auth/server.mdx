@@ -60,6 +60,8 @@ import { createClient, createApi, type AuthFunctions } from 'better-convex/auth'
 import { internal } from './_generated/api';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { DataModel } from './_generated/dataModel';
+// If you aren't using cRPC
+// type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
 import type { GenericCtx } from '../lib/crpc';
 import schema from './schema';
 import authConfig from './auth.config';
