@@ -1039,7 +1039,13 @@ Better Auth client setup with Convex adapter.
         baseURL: process.env.SITE_URL!,
         database: authClient.httpAdapter(ctx),
         plugins: [
-          convex({ authConfig, jwks: process.env.JWKS }),
+          convex({
+            authConfig,
+            jwks: process.env.JWKS,
+            jwt: {
+              expirationSeconds: 60 * 60, // 1 hour
+            },
+          }),
           admin(),
         ],
         session: {
@@ -1140,7 +1146,13 @@ Better Auth client setup with Convex adapter.
         baseURL: process.env.SITE_URL!,
         database: authClient.httpAdapter(ctx),
         plugins: [
-          convex({ authConfig, jwks: process.env.JWKS }),
+          convex({
+            authConfig,
+            jwks: process.env.JWKS,
+            jwt: {
+              expirationSeconds: 60 * 60, // 1 hour
+            },
+          }),
           admin(),
         ],
         session: {
@@ -1323,6 +1335,10 @@ export const authClient = createAuthClient({
     adminClient(),
     convexClient(),
   ],
+  sessionOptions: {
+    // Disable session polling on tab focus (saves ~500ms HTTP call per focus)
+    refetchOnWindowFocus: false,
+  },
 });
 
 export const { useActiveOrganization, useListOrganizations } = authClient;

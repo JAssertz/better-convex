@@ -23,144 +23,6 @@ The server setup involves these components:
 
 Let's set it up step by step.
 
-## Authentication Flow
-
-Before diving into setup, let's understand how authentication flows through your app. This will help you understand why we configure things the way we do.
-
-### SSR Flow (HTTP Prefetching)
-
-When you call `caller.posts.list()` on the server, here's what happens:
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  SSR REQUEST (server-side data fetching)                                 │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  1. Get JWT Token                                                        │
-│     ┌─────────────────────────────────────────────────────────────────┐ │
-│     │ JWT Caching ENABLED (default)                                   │ │
-│     │   ├─ Check cookie for cached JWT                                │ │
-│     │   ├─ If valid & not expired → use cached token (0ms)            │ │
-│     │   └─ If missing/expired → fetch fresh token from auth endpoint  │ │
-│     └─────────────────────────────────────────────────────────────────┘ │
-│     ┌─────────────────────────────────────────────────────────────────┐ │
-│     │ JWT Caching DISABLED                                            │ │
-│     │   └─ Always fetch fresh token from auth endpoint                │ │
-│     └─────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  2. HTTP Request to Convex (fetchQuery)                                  │
-│     Server → Convex backend with JWT in Authorization header             │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  3. Token Validation (every HTTP request)                                │
-│     ┌─────────────────────────────────────────────────────────────────┐ │
-│     │ Dynamic JWKS                                                    │ │
-│     │   ├─ Parse JWT claims (issuer, audience)                        │ │
-│     │   ├─ Fetch OIDC discovery ← +50-200ms network call              │ │
-│     │   ├─ Fetch JWKS keys     ← +50-200ms network call               │ │
-│     │   └─ Verify signature                                           │ │
-│     │   ADDED LATENCY: +100-400ms per request                         │ │
-│     └─────────────────────────────────────────────────────────────────┘ │
-│     ┌─────────────────────────────────────────────────────────────────┐ │
-│     │ Static JWKS (recommended)                                       │ │
-│     │   ├─ Parse JWT claims                                           │ │
-│     │   └─ Verify signature using embedded keys                       │ │
-│     │   ADDED LATENCY: negligible per request                         │ │
-│     └─────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  4. Query Executes & Response                                            │
-│     Data cached in TanStack Query, rendered to HTML                      │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  5. Hydration (fire-and-forget preloading)                               │
-│     ├─ HTML sent to browser with dehydrated query cache                 │
-│     ├─ Client hydrates with prefetched data (instant render)            │
-│     └─ WebSocket subscribes for real-time updates                       │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-JWT caching is **enabled by default** in `convexBetterAuth`, so you don't need to configure anything. If you need to disable it for debugging:
-
-```ts title="src/lib/convex/server.ts" showLineNumbers {5}
-export const { createContext, createCaller, handler } = convexBetterAuth({
-  api,
-  convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!,
-  meta,
-  auth: { jwtCache: false },
-});
-```
-
-### Client Flow (WebSocket)
-
-Now let's look at what happens when you use `useCRPC().posts.list.useQuery()` in client components. This is where Convex differs from traditional REST APIs:
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  PAGE LOAD / NAVIGATION                                                  │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  1. WebSocket Connection                                                 │
-│     Browser → Convex backend (establishes persistent connection)         │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  2. Auth Handshake (⚠️ BLOCKING - queries wait here)                     │
-│     ┌─────────────────────────────────────────────────────────────────┐ │
-│     │ Unlike REST APIs where queries start immediately, Convex        │ │
-│     │ WebSocket requires auth validation BEFORE any query can run.    │ │
-│     └─────────────────────────────────────────────────────────────────┘ │
-│     Client sends session token → Convex validates JWT                   │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  3. Token Validation                                                     │
-│     ┌─────────────────────────────────────────────────────────────────┐ │
-│     │ Static JWKS (recommended)                                       │ │
-│     │   ├─ Parse JWT claims                                           │ │
-│     │   └─ Verify signature using embedded keys                       │ │
-│     │   → Instant validation, no network calls                        │ │
-│     └─────────────────────────────────────────────────────────────────┘ │
-│     ┌─────────────────────────────────────────────────────────────────┐ │
-│     │ Dynamic JWKS (not recommended)                                  │ │
-│     │   ├─ Fetch OIDC discovery ← +50-200ms network call              │ │
-│     │   ├─ Fetch JWKS keys     ← +50-200ms network call               │ │
-│     │   └─ Verify signature                                           │ │
-│     │   → +100-400ms delay before ANY query can run                   │ │
-│     └─────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  4. Identity Cached → Queries Unblocked                                  │
-│     All pending queries now execute instantly                            │
-│     useQuery(crpc.posts.list.queryOptions()) → runs                      │
-│     useQuery(crpc.user.me.queryOptions())    → runs                      │
-│     ... navigate to other pages → all queries instant                    │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-<Callout icon={<InfoIcon />}>
-**Key difference from REST APIs:** REST queries fire immediately and validate auth inline on the server. Convex WebSocket queries are **blocked until the auth handshake completes**. This is why we use Static JWKS - it makes this handshake instant.
-</Callout>
-
-That's the full picture. Now let's set it up.
-
 ## Prerequisites
 
 We'll start by installing the required packages:
@@ -748,9 +610,85 @@ npx convex run auth:rotateKeys --prod | npx convex env set JWKS --prod
 - Verify authentication works with new keys
 - Monitor for authentication errors
 
-## Helpers
+## API
 
-These helpers extract user identity and session data from Convex context. You'll use them in your queries and mutations.
+### Convex Plugin
+
+The `convex` plugin handles JWT generation, cookie handling, and JWKS endpoints. Here's what you can configure:
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `authConfig` | Yes | Your Convex auth config from `convex/auth.config.ts` |
+| `jwt` | No | Customize token expiration and payload |
+| `jwks` | No | Static JWKS string for faster validation |
+| `options` | No | Pass custom `basePath` if using non-default routes |
+
+The simplest setup just needs your auth config:
+
+```ts showLineNumbers
+convex({
+  authConfig,
+})
+```
+
+#### Customizing JWT Tokens
+
+By default, JWTs expire after 15 minutes. The default `definePayload` includes all user fields except `id` and `image`, plus the session ID and issued-at timestamp:
+
+```ts showLineNumbers
+definePayload: ({ user, session }) => ({
+  ...omit(user, ["id", "image"]),
+  sessionId: session.id,
+  iat: Math.floor(new Date().getTime() / 1000),
+});
+```
+
+Here's how to customize the expiration and payload—for example, extending to 4 hours and including only specific fields:
+
+```ts showLineNumbers {3-11}
+convex({
+  authConfig,
+  jwt: {
+    expirationSeconds: 60 * 60 * 4, // 4 hours
+    definePayload: ({ user, session }) => ({
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      sessionId: session.id,
+    }),
+  },
+})
+```
+
+<Callout icon={<InfoIcon />}>
+The `sessionId` and `iat` (issued-at) fields are always added automatically, even if you don't include them in your custom payload.
+</Callout>
+
+#### Static JWKS
+
+For best performance, pass your JWKS as an environment variable. This eliminates database lookups during token validation:
+
+```ts showLineNumbers {3}
+convex({
+  authConfig,
+  jwks: process.env.JWKS,
+})
+```
+
+See [Authentication Flow](/docs/auth#authentication-flow) to understand why this matters.
+
+#### Custom Base Path
+
+If your Better Auth uses a non-default `basePath`, pass the same value here so the JWKS endpoint is configured correctly:
+
+```ts showLineNumbers {3-5}
+convex({
+  authConfig,
+  options: {
+    basePath: "/custom/auth/path",
+  },
+})
+```
 
 ### getAuthUserIdentity
 

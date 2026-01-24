@@ -11,6 +11,10 @@ import { createAuthMutations } from 'better-convex/react';
 
 export const authClient = createAuthClient({
   baseURL: process.env.NEXT_PUBLIC_SITE_URL!,
+  sessionOptions: {
+    // Disable session polling on tab focus (saves ~500ms HTTP call per focus)
+    refetchOnWindowFocus: false,
+  },
   plugins: [
     inferAdditionalFields<Auth>(),
     adminClient(),
