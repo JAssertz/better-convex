@@ -354,8 +354,8 @@ user: authSchema.user.index('username', ['username']),
 
 Now we'll expose Better Auth's endpoints via HTTP. We use Hono as the router:
 
-<Tabs groupId="router" items={["With crpc", "Without crpc"]} persist>
-  <Tab value="With crpc">
+<Tabs groupId="router" items={["With cRPC", "Without cRPC"]} persist>
+  <Tab value="With cRPC">
     ```ts title="convex/functions/http.ts" showLineNumbers {1-5,9-18,21}
     import '../lib/http-polyfills';
     import { authMiddleware } from 'better-convex/auth';
@@ -389,7 +389,7 @@ Now we'll expose Better Auth's endpoints via HTTP. We use Hono as the router:
     ```
 
   </Tab>
-  <Tab value="Without crpc">
+  <Tab value="Without cRPC">
     ```ts title="convex/functions/http.ts" showLineNumbers {1-4,8-17,20}
     import { authMiddleware } from "better-convex/auth";
     import {
@@ -421,9 +421,9 @@ Now we'll expose Better Auth's endpoints via HTTP. We use Hono as the router:
     ```
   </Tab>
 </Tabs>
-<Callout type="info">
+<Callout icon={<InfoIcon />}>
 See [HTTP Router](/docs/server/http) for route examples, webhooks, and streaming.
-</Callout   >
+</Callout>
 
 ## 5. Sync Environment Variables
 
