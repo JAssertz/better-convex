@@ -393,6 +393,7 @@ Now we'll expose Better Auth's endpoints via HTTP. We use Hono as the router:
   </Tab>
   <Tab value="Without cRPC">
     ```ts title="convex/functions/http.ts" showLineNumbers {1-4,8-17,20}
+    import '../lib/http-polyfills';
     import { authMiddleware } from "better-convex/auth";
     import {
         type HonoWithConvex,
