@@ -2,9 +2,6 @@ import { z } from 'zod';
 import { publicQuery } from '../lib/crpc';
 
 export const hello = publicQuery
+  .input(z.object({ message: z.string() }))
   .output(z.object({ message: z.string() }))
-  .query(async ({ ctx }) => {
-    console.log(Math.random());
-
-    return { message: 'Hello from Convex!' };
-  });
+  .query(async () => ({ message: 'Hello from Convex!' }));
