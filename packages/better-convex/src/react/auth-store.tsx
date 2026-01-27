@@ -7,7 +7,10 @@
  * App configures handlers, lib hooks consume state.
  */
 
-import { useConvexAuth } from 'convex/react';
+import {
+  ConvexProviderWithAuth as ConvexProviderWithAuthBase,
+  useConvexAuth,
+} from 'convex/react';
 import { createAtomStore } from 'jotai-x';
 import { createContext, useContext } from 'react';
 
@@ -123,20 +126,8 @@ export function useSafeConvexAuth(): ConvexAuthResult {
 }
 
 /**
- * Bridge for @convex-dev/auth users who don't use better-auth.
- * Wrap your app with this inside ConvexProviderWithAuth.
- *
- * This allows skipUnauth queries to work correctly by providing
- * the auth state from useConvexAuth() via context.
- *
- * @example
- * ```tsx
- * <ConvexProviderWithAuth client={convex} useAuth={useAuthFromConvexDev}>
- *   <ConvexAuthBridge>
- *     <App />
- *   </ConvexAuthBridge>
- * </ConvexProviderWithAuth>
- * ```
+ * Internal bridge component. Use `ConvexProviderWithAuth` instead.
+ * @internal
  */
 export function ConvexAuthBridge({ children }: { children: React.ReactNode }) {
   // Called unconditionally - this component must be inside ConvexProviderWithAuth
@@ -146,6 +137,30 @@ export function ConvexAuthBridge({ children }: { children: React.ReactNode }) {
     <ConvexAuthBridgeContext.Provider value={auth}>
       {children}
     </ConvexAuthBridgeContext.Provider>
+  );
+}
+
+/**
+ * Convex provider with auth bridge for @convex-dev/auth users.
+ * Automatically wraps children with ConvexAuthBridge.
+ *
+ * @example
+ * ```tsx
+ * import { ConvexProviderWithAuth } from 'better-convex/react';
+ *
+ * <ConvexProviderWithAuth client={convex} useAuth={useAuthFromConvexDev}>
+ *   <App />
+ * </ConvexProviderWithAuth>
+ * ```
+ */
+export function ConvexProviderWithAuth({
+  children,
+  ...props
+}: React.ComponentProps<typeof ConvexProviderWithAuthBase>) {
+  return (
+    <ConvexProviderWithAuthBase {...props}>
+      <ConvexAuthBridge>{children}</ConvexAuthBridge>
+    </ConvexProviderWithAuthBase>
   );
 }
 

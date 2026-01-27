@@ -493,28 +493,21 @@ Let's understand how the SSR → client hydration flow works:
 
 ## React Native / @convex-dev/auth Users
 
-If you're using `@convex-dev/auth` (common in React Native) instead of better-auth, wrap your app with `ConvexAuthBridge`:
+If you're using `@convex-dev/auth` (common in React Native) instead of better-auth, import `ConvexProviderWithAuth` from `better-convex/react`:
 
-```tsx title="App.tsx" showLineNumbers {1,6-8}
-import { ConvexAuthBridge } from 'better-convex/react';
-import { ConvexProviderWithAuth } from 'convex/react';
+```tsx title="App.tsx" showLineNumbers {1}
+import { ConvexProviderWithAuth } from 'better-convex/react';
 
 function App() {
   return (
     <ConvexProviderWithAuth client={convex} useAuth={useAuthFromConvexDev}>
-      <ConvexAuthBridge>
-        <YourApp />
-      </ConvexAuthBridge>
+      <YourApp />
     </ConvexProviderWithAuth>
   );
 }
 ```
 
 This enables `skipUnauth` queries, `useAuth`, and conditional rendering components to work with `@convex-dev/auth`.
-
-<Callout icon={<InfoIcon />}>
-`ConvexAuthBridge` must be placed inside `ConvexProviderWithAuth`.
-</Callout>
 
 ## Next Steps
 
