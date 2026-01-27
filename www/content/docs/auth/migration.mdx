@@ -26,20 +26,19 @@ Let's migrate step by step.
 
 ## Step 1: Update Dependencies
 
-We'll start by removing the old package and installing better-convex.
+Install better-convex alongside the existing package (`@convex-dev/better-auth` remains a peer dependency).
 
 ```bash
-bun remove @convex-dev/better-auth
 bun add better-convex
 ```
-
-<Callout icon={<InfoIcon />}>
-Keep `@convex-dev/better-auth` temporarily if you need the `convex` plugin and `getAuthConfigProvider`. These exports are still from `@convex-dev/better-auth`.
-</Callout>
 
 ## Step 2: Remove Component Pattern
 
 Next, we'll remove the Convex component configuration. This is the biggest architectural change.
+
+<Callout icon={<InfoIcon />}>
+**Already in production?** Use the [migration component](https://github.com/get-convex/better-auth) to copy data from component tables to your app tables before deleting the `betterAuth` folder.
+</Callout>
 
 **Files to delete:**
 - `convex/betterAuth/` folder (entire directory)
@@ -265,16 +264,13 @@ export const authClient = createAuthClient({
 ```
 
 **After:**
-```ts showLineNumbers title="lib/convex/auth-client.ts" {3,7-8,15-19}
+```ts showLineNumbers title="lib/convex/auth-client.ts" {3,12-16}
 import { convexClient } from "@convex-dev/better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { createAuthMutations } from "better-convex/react";
 
 export const authClient = createAuthClient({
   baseURL: process.env.NEXT_PUBLIC_SITE_URL!,
-  sessionOptions: {
-    refetchOnWindowFocus: false,  // Saves HTTP calls on tab focus
-  },
   plugins: [
     convexClient(),
     // ... other plugins
@@ -425,14 +421,6 @@ If you were using the auto-generated component schema, you'll now define auth ta
 
 ## Troubleshooting
 
-### "Cannot find module 'better-convex/auth'"
-
-Make sure you've installed the package:
-
-```bash
-bun add better-convex
-```
-
 ### "authFunctions is undefined"
 
 Run `npx convex dev` first to generate the internal API, then reference it correctly:
@@ -440,10 +428,6 @@ Run `npx convex dev` first to generate the internal API, then reference it corre
 ```ts
 const authFunctions: AuthFunctions = internal.auth;
 ```
-
-### "Token not refreshing"
-
-The new provider handles token refresh automatically. If issues persist, check that `onQueryUnauthorized` isn't redirecting before the refresh completes.
 
 ### "Triggers not firing"
 
