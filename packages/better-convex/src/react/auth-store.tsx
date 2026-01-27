@@ -29,6 +29,21 @@ export const FetchAccessTokenContext = createContext<FetchAccessTokenFn | null>(
 export const useFetchAccessToken = () => useContext(FetchAccessTokenContext);
 
 // ============================================================================
+// ConvexAuthBridge Context - For @convex-dev/auth users without better-auth
+// ============================================================================
+
+type ConvexAuthResult = { isAuthenticated: boolean; isLoading: boolean };
+
+/**
+ * Context that holds auth result from ConvexAuthBridge.
+ * Allows @convex-dev/auth users to use skipUnauth queries without better-auth.
+ */
+const ConvexAuthBridgeContext = createContext<ConvexAuthResult | null>(null);
+
+/** Get auth from bridge context (null if no bridge configured) */
+export const useConvexAuthBridge = () => useContext(ConvexAuthBridgeContext);
+
+// ============================================================================
 // Auth Store State
 // ============================================================================
 
@@ -83,52 +98,101 @@ export type AuthStore = ReturnType<typeof useAuthStore>;
 /**
  * Safe wrapper around useConvexAuth that doesn't throw when used outside auth provider.
  * Returns { isAuthenticated: false, isLoading: false } when no auth provider.
+ *
+ * Supports both:
+ * - better-auth users (via AuthProvider)
+ * - @convex-dev/auth users (via ConvexAuthBridge)
  */
-export function useSafeConvexAuth() {
+export function useSafeConvexAuth(): ConvexAuthResult {
   const authStore = useAuthStore();
+  const bridgeAuth = useConvexAuthBridge();
 
-  // If auth is not configured, return defaults without calling useConvexAuth
-  if (!authStore.store) {
-    return { isAuthenticated: false, isLoading: false };
+  // Check better-convex AuthProvider first
+  if (authStore.store) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    return useConvexAuth();
   }
 
-  // Auth is configured - use the real hook
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  return useConvexAuth();
+  // Check ConvexAuthBridge (provides value directly - no conditional hook needed)
+  if (bridgeAuth !== null) {
+    return bridgeAuth;
+  }
+
+  // No auth configured - return defaults
+  return { isAuthenticated: false, isLoading: false };
+}
+
+/**
+ * Bridge for @convex-dev/auth users who don't use better-auth.
+ * Wrap your app with this inside ConvexProviderWithAuth.
+ *
+ * This allows skipUnauth queries to work correctly by providing
+ * the auth state from useConvexAuth() via context.
+ *
+ * @example
+ * ```tsx
+ * <ConvexProviderWithAuth client={convex} useAuth={useAuthFromConvexDev}>
+ *   <ConvexAuthBridge>
+ *     <App />
+ *   </ConvexAuthBridge>
+ * </ConvexProviderWithAuth>
+ * ```
+ */
+export function ConvexAuthBridge({ children }: { children: React.ReactNode }) {
+  // Called unconditionally - this component must be inside ConvexProviderWithAuth
+  const auth = useConvexAuth();
+
+  return (
+    <ConvexAuthBridgeContext.Provider value={auth}>
+      {children}
+    </ConvexAuthBridgeContext.Provider>
+  );
 }
 
 export const useAuth = () => {
   const authStore = useAuthStore();
+  const bridgeAuth = useConvexAuthBridge();
 
-  if (!authStore.store) {
-    return {
-      hasSession: false,
-      isAuthenticated: false,
-      isLoading: false,
-    };
-  }
+  // Check better-convex AuthProvider first
+  if (authStore.store) {
+    // During SSR/prerendering, read token from store for SSR auth-awareness
+    if (typeof window === 'undefined') {
+      const token = authStore.get('token');
 
-  // During SSR/prerendering, read token from store for SSR auth-awareness
-  if (typeof window === 'undefined') {
-    const token = authStore.get('token');
+      return {
+        hasSession: !!token,
+        isAuthenticated: false,
+        isLoading: true,
+      };
+    }
+
+    // Use Convex SDK's auth state directly
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const { isLoading, isAuthenticated } = useConvexAuth();
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const token = useAuthValue('token');
 
     return {
       hasSession: !!token,
-      isAuthenticated: false,
-      isLoading: true,
+      isAuthenticated,
+      isLoading,
     };
   }
 
-  // Use Convex SDK's auth state directly
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { isLoading, isAuthenticated } = useConvexAuth();
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const token = useAuthValue('token');
+  // Check ConvexAuthBridge (provides value directly - no conditional hook needed)
+  if (bridgeAuth !== null) {
+    return {
+      hasSession: false, // No token access via bridge
+      isAuthenticated: bridgeAuth.isAuthenticated,
+      isLoading: bridgeAuth.isLoading,
+    };
+  }
 
+  // No auth configured - return defaults
   return {
-    hasSession: !!token,
-    isAuthenticated,
-    isLoading,
+    hasSession: false,
+    isAuthenticated: false,
+    isLoading: false,
   };
 };
 
