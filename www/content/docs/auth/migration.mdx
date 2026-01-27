@@ -421,13 +421,13 @@ If you were using the auto-generated component schema, you'll now define auth ta
 
 ## Next.js Migration
 
-If you're using Next.js with CRPC, migrate the server-side helpers.
+If you're using Next.js with cRPC, migrate the server-side helpers.
 
 <Callout icon={<InfoIcon />}>
-**Not using CRPC?** Keep using `convexBetterAuthNextJs` from `@convex-dev/better-auth/nextjs`. The migration above covers everything you need.
+**Not using cRPC?** Keep using `convexBetterAuthNextJs` from `@convex-dev/better-auth/nextjs`. The migration above covers everything you need.
 </Callout>
 
-### Server Setup (CRPC)
+### Server Setup (cRPC)
 
 **Before:**
 ```ts showLineNumbers title="lib/auth-server.ts"
@@ -452,7 +452,7 @@ export const { createContext, createCaller, handler } = convexBetterAuth({
 });
 ```
 
-### Root Layout (CRPC)
+### Root Layout (cRPC)
 
 **Before:**
 ```tsx showLineNumbers title="app/layout.tsx" {3,6}
@@ -490,15 +490,195 @@ export default async function RootLayout({ children }) {
 
 ## TanStack Start Migration
 
-For TanStack Start, follow the core steps above (Steps 1-7). Keep using `@convex-dev/better-auth` for server helpers — better-convex doesn't replace them:
+For TanStack Start, follow Steps 1-7 above for core auth migration. This section covers framework-specific setup.
+
+### Server Setup
+
+Create server-side auth helpers using `@convex-dev/better-auth`:
 
 ```ts showLineNumbers title="src/lib/auth-server.ts"
 import { convexBetterAuthReactStart } from '@convex-dev/better-auth/react-start';
 
 export const { handler, getToken } = convexBetterAuthReactStart({
-  convexUrl: process.env.VITE_CONVEX_URL!,
-  convexSiteUrl: process.env.VITE_CONVEX_SITE_URL!,
+  convexUrl: import.meta.env.VITE_CONVEX_URL!,
+  convexSiteUrl: import.meta.env.VITE_CONVEX_SITE_URL!,
 });
+```
+
+### API Route
+
+Create the auth API route handler:
+
+```ts showLineNumbers title="src/routes/api/auth/$.ts"
+import { handler } from '@/lib/auth-server';
+import { createFileRoute } from '@tanstack/react-router';
+
+export const Route = createFileRoute('/api/auth/$')({
+  server: {
+    handlers: {
+      GET: ({ request }) => handler(request),
+      POST: ({ request }) => handler(request),
+    },
+  },
+});
+```
+
+### Router Setup
+
+Configure the router with `ConvexQueryClient`:
+
+```tsx showLineNumbers title="src/router.tsx" {4,14-20,22-29}
+import { createRouter as createTanStackRouter } from '@tanstack/react-router';
+import { QueryClient, notifyManager } from '@tanstack/react-query';
+import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query';
+import { ConvexQueryClient } from '@convex-dev/react-query';
+import { routeTree } from './routeTree.gen';
+
+export function getRouter() {
+  if (typeof document !== 'undefined') {
+    notifyManager.setScheduler(window.requestAnimationFrame);
+  }
+
+  const convexUrl = import.meta.env.VITE_CONVEX_URL!;
+
+  const convexQueryClient = new ConvexQueryClient(convexUrl, {
+    expectAuth: true,
+  });
+
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        queryKeyHashFn: convexQueryClient.hashFn(),
+        queryFn: convexQueryClient.queryFn(),
+      },
+    },
+  });
+  convexQueryClient.connect(queryClient);
+
+  const router = createTanStackRouter({
+    routeTree,
+    context: { queryClient, convexQueryClient },
+    scrollRestoration: true,
+  });
+
+  setupRouterSsrQueryIntegration({ router, queryClient });
+
+  return router;
+}
+```
+
+### Root Route
+
+Set up the root route with auth provider and SSR token:
+
+```tsx showLineNumbers title="src/routes/__root.tsx" {5-6,11-13,18-32,36-43}
+import {
+  Outlet,
+  createRootRouteWithContext,
+  useRouteContext,
+} from '@tanstack/react-router';
+import { QueryClient } from '@tanstack/react-query';
+import { ConvexQueryClient } from '@convex-dev/react-query';
+import { ConvexAuthProvider } from 'better-convex/auth-client';
+import { authClient } from '@/lib/auth-client';
+import { createServerFn } from '@tanstack/react-start';
+import { getToken } from '@/lib/auth-server';
+
+const getAuth = createServerFn({ method: 'GET' }).handler(async () => {
+  return await getToken();
+});
+
+export const Route = createRootRouteWithContext<{
+  queryClient: QueryClient;
+  convexQueryClient: ConvexQueryClient;
+}>()({
+  beforeLoad: async (ctx) => {
+    const token = await getAuth();
+
+    // Set auth token for SSR queries
+    if (token) {
+      ctx.context.convexQueryClient.serverHttpClient?.setAuth(token);
+    }
+
+    return {
+      isAuthenticated: !!token,
+      token,
+    };
+  },
+  component: RootComponent,
+});
+
+function RootComponent() {
+  const context = useRouteContext({ from: Route.id });
+
+  return (
+    <ConvexAuthProvider
+      client={context.convexQueryClient.convexClient}
+      authClient={authClient}
+      initialToken={context.token}
+    >
+      <Outlet />
+    </ConvexAuthProvider>
+  );
+}
+```
+
+### Protected Routes
+
+Create a layout route for authenticated pages:
+
+```tsx showLineNumbers title="src/routes/_authed.tsx"
+import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
+
+export const Route = createFileRoute('/_authed')({
+  beforeLoad: ({ context }) => {
+    if (!context.isAuthenticated) {
+      throw redirect({ to: '/sign-in' });
+    }
+  },
+  component: () => <Outlet />,
+});
+```
+
+### Sign-In Route
+
+Redirect authenticated users away from sign-in:
+
+```tsx showLineNumbers title="src/routes/sign-in.tsx"
+import { createFileRoute, redirect } from '@tanstack/react-router';
+import { SignIn } from '@/components/SignIn';
+
+export const Route = createFileRoute('/sign-in')({
+  component: SignIn,
+  beforeLoad: ({ context }) => {
+    if (context.isAuthenticated) {
+      throw redirect({ to: '/' });
+    }
+  },
+});
+```
+
+### Sign Out
+
+Handle sign out with a page reload (required for `expectAuth`):
+
+```tsx showLineNumbers title="src/components/SignOutButton.tsx"
+import { authClient } from '@/lib/auth-client';
+
+export function SignOutButton() {
+  const handleSignOut = async () => {
+    await authClient.signOut({
+      fetchOptions: {
+        onSuccess: () => {
+          // Reload required when using expectAuth
+          location.reload();
+        },
+      },
+    });
+  };
+
+  return <button onClick={handleSignOut}>Sign out</button>;
+}
 ```
 
 ## Troubleshooting
