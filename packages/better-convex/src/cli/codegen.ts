@@ -1,6 +1,7 @@
-import fs from 'node:fs';
+import fs, { globSync } from 'node:fs';
 import path from 'node:path';
 import { createJiti } from 'jiti';
+import { isValidConvexFile } from '../shared/meta-utils';
 
 /**
  * Generate meta.ts with metadata for all Convex functions.
@@ -17,6 +18,9 @@ type HttpRoutes = Record<string, HttpRoute>;
 
 /** Valid JS identifier pattern for object keys */
 const VALID_IDENTIFIER_RE = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+
+/** Pattern to strip .ts extension */
+const TS_EXTENSION_RE = /\.ts$/;
 
 /** CRPC metadata attached to functions at runtime */
 type CRPCMeta = {
@@ -181,19 +185,15 @@ export async function generateMeta(
   const allHttpRoutes: HttpRoutes = {};
   let totalFunctions = 0;
 
-  // Get all .ts files in functions directory (not subdirs, not _generated)
-  const files = fs
-    .readdirSync(functionsDir)
-    .filter(
-      (file) =>
-        file.endsWith('.ts') &&
-        !file.startsWith('_') &&
-        !['schema.ts', 'convex.config.ts', 'auth.config.ts'].includes(file)
-    );
+  // Get all .ts files recursively in functions directory
+  const files = globSync('**/*.ts', { cwd: functionsDir }).filter(
+    (file) => file.endsWith('.ts') && isValidConvexFile(file)
+  );
 
   for (const file of files) {
     const filePath = path.join(functionsDir, file);
-    const moduleName = file.replace('.ts', '');
+    // Use path (minus .ts) as namespace key: 'items/queries' for nested files
+    const moduleName = file.replace(TS_EXTENSION_RE, '');
 
     try {
       const { meta: moduleMeta, httpRoutes } = await parseModuleRuntime(
@@ -225,6 +225,10 @@ export async function generateMeta(
     }
   }
 
+  // Helper: quote key if needed (contains slashes, dots, spaces, etc.)
+  const formatKey = (key: string) =>
+    VALID_IDENTIFIER_RE.test(key) ? key : `'${key}'`;
+
   // Generate output with proper formatting for objects
   const metaEntries = Object.entries(meta)
     .map(([module, fns]) => {
@@ -246,7 +250,7 @@ export async function generateMeta(
           return `    ${fn}: ${metaStr}`;
         })
         .join(',\n');
-      return `  ${module}: {\n${fnEntries},\n  }`;
+      return `  ${formatKey(module)}: {\n${fnEntries},\n  }`;
     })
     .join(',\n');
 
@@ -270,10 +274,6 @@ export async function generateMeta(
     );
     dedupedRoutes[best.key] = best.route;
   }
-
-  // Helper: quote key if needed (contains dots, spaces, reserved words, etc.)
-  const formatKey = (key: string) =>
-    VALID_IDENTIFIER_RE.test(key) ? key : `'${key}'`;
 
   // Generate _http entries (merged into meta)
   const httpEntries = Object.entries(dedupedRoutes)

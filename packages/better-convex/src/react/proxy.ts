@@ -28,6 +28,11 @@ import {
 } from '../crpc/types';
 import type { CallerMeta } from '../server/caller';
 import {
+  getFuncRef,
+  getFunctionMeta,
+  getFunctionType,
+} from '../shared/meta-utils';
+import {
   useConvexActionOptions,
   useConvexActionQueryOptions,
   useConvexInfiniteQueryOptions,
@@ -38,43 +43,6 @@ import {
 // ============================================================================
 // Proxy Implementation
 // ============================================================================
-
-/**
- * Get a function reference from the API object by traversing the path.
- * Note: Convex's api object is a Proxy, so we use direct property access
- * instead of `in` operator which may not work with all proxy implementations.
- */
-function getFuncRef(
-  api: Record<string, unknown>,
-  path: string[]
-): FunctionReference<'query' | 'mutation' | 'action'> {
-  let current: unknown = api;
-
-  for (const key of path) {
-    if (current && typeof current === 'object') {
-      current = (current as Record<string, unknown>)[key];
-    } else {
-      throw new Error(`Invalid CRPC path: ${path.join('.')}`);
-    }
-  }
-
-  return current as FunctionReference<'query' | 'mutation' | 'action'>;
-}
-
-/** Get function type from meta using path */
-function getFunctionType(
-  path: string[],
-  meta: CallerMeta
-): 'query' | 'mutation' | 'action' {
-  if (path.length >= 2) {
-    const [namespace, fnName] = path;
-    const fnType = meta[namespace]?.[fnName]?.type;
-    if (fnType === 'query' || fnType === 'mutation' || fnType === 'action') {
-      return fnType;
-    }
-  }
-  return 'query';
-}
 
 /** Get query key prefix based on function type */
 function getQueryKeyPrefix(
@@ -208,8 +176,7 @@ function createRecursiveProxy(
 
         // Terminal property: meta (function metadata)
         if (prop === 'meta' && path.length >= 2) {
-          const [namespace, fnName] = path;
-          return meta[namespace]?.[fnName];
+          return getFunctionMeta(path, meta);
         }
 
         // Terminal method: mutationKey

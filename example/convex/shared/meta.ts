@@ -91,6 +91,10 @@ export const meta = {
     getSessionUser: { auth: 'optional', type: 'query' },
     updateSettings: { auth: 'required', type: 'mutation' },
   },
+  'items/queries': {
+    get: { type: 'query' },
+    list: { type: 'query' },
+  },
   _http: {
     'examples.allCombinedExample': { path: '/api/examples/items/:id/tags', method: 'POST' },
     'examples.inputExample': { path: '/api/examples/items', method: 'POST' },

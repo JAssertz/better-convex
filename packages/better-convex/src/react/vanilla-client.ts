@@ -16,45 +16,11 @@ import type { ConvexReactClient, WatchQueryOptions } from 'convex/react';
 import type { FunctionReference } from 'convex/server';
 import type { VanillaCRPCClient } from '../crpc/types';
 import type { CallerMeta } from '../server/caller';
+import { getFuncRef, getFunctionType } from '../shared/meta-utils';
 
 // ============================================================================
 // Proxy Implementation
 // ============================================================================
-
-/**
- * Get a function reference from the API object by traversing the path.
- */
-function getFuncRef(
-  api: Record<string, unknown>,
-  path: string[]
-): FunctionReference<'query' | 'mutation' | 'action'> {
-  let current: unknown = api;
-
-  for (const key of path) {
-    if (current && typeof current === 'object') {
-      current = (current as Record<string, unknown>)[key];
-    } else {
-      throw new Error(`Invalid CRPC path: ${path.join('.')}`);
-    }
-  }
-
-  return current as FunctionReference<'query' | 'mutation' | 'action'>;
-}
-
-/** Get function type from meta using path */
-function getFunctionType(
-  path: string[],
-  meta: CallerMeta
-): 'query' | 'mutation' | 'action' {
-  if (path.length >= 2) {
-    const [namespace, fnName] = path;
-    const fnType = meta[namespace]?.[fnName]?.type;
-    if (fnType === 'query' || fnType === 'mutation' || fnType === 'action') {
-      return fnType;
-    }
-  }
-  return 'query';
-}
 
 /**
  * Create a recursive proxy for vanilla (direct) calls.

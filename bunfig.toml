@@ -1,0 +1,13 @@
+[test]
+# Preload scripts execute BEFORE any test file
+preload = ["./tooling/test-setup.ts"]
+
+# Only run tests in packages directory
+root = "./packages"
+
+# Coverage exclusions
+coveragePathIgnorePatterns = [
+  "tmp/**",
+  "**/node_modules/**",
+  "**/*.d.ts",
+]

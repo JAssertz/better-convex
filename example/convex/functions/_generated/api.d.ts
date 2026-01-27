@@ -81,6 +81,12 @@ export declare const api: {
       boolean
     >;
   };
+  items: {
+    queries: {
+      get: FunctionReference<"query", "public", { id: string }, string | null>;
+      list: FunctionReference<"query", "public", {}, Array<string>>;
+    };
+  };
   organization: {
     acceptInvitation: FunctionReference<
       "mutation",
@@ -403,12 +409,7 @@ export declare const api: {
     >;
   };
   public: {
-    hello: FunctionReference<
-      "query",
-      "public",
-      { message: string },
-      { message: string }
-    >;
+    hello: FunctionReference<"query", "public", {}, { message: string }>;
   };
   seed: {
     generateSamples: FunctionReference<

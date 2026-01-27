@@ -10,7 +10,7 @@
     "build": "bun --cwd www build",
     "build:pkg": "bun --cwd packages/better-convex build",
     "build:watch": "bun --cwd packages/better-convex build:watch",
-    "check": "bun lint && bun typecheck",
+    "check": "bun lint && bun typecheck && bun test",
     "dev": "bun --cwd www dev",
     "gen": "bun --cwd example gen",
     "postinstall": "bunx skiller@latest apply",

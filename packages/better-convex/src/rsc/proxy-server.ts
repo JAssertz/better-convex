@@ -11,6 +11,7 @@ import { convexInfiniteQueryOptions, convexQuery } from '../crpc/query-options';
 import type { CRPCClient, InfiniteQueryOptsParam, Meta } from '../crpc/types';
 import type { HttpCRPCClientFromRouter } from '../react/http-proxy';
 import type { CRPCHttpRouter, HttpRouterRecord } from '../server/http-router';
+import { getFuncRef, getFunctionMeta } from '../shared/meta-utils';
 import { buildHttpQueryOptions } from './http-server';
 
 export type CreateServerCRPCProxyOptions<TApi> = {
@@ -39,23 +40,6 @@ export type ServerCRPCClient<TApi extends Record<string, unknown>> =
         http: HttpCRPCClientFromRouter<ExtractHttpRouter<TApi>>;
       }
     : CRPCClient<TApi>;
-
-function getFuncRef(
-  api: Record<string, unknown>,
-  path: string[]
-): FunctionReference<'query' | 'mutation' | 'action'> {
-  let current: unknown = api;
-
-  for (const key of path) {
-    if (current && typeof current === 'object') {
-      current = (current as Record<string, unknown>)[key];
-    } else {
-      throw new Error(`Invalid CRPC path: ${path.join('.')}`);
-    }
-  }
-
-  return current as FunctionReference<'query' | 'mutation' | 'action'>;
-}
 
 function createRecursiveProxy(
   api: Record<string, unknown>,
@@ -114,8 +98,7 @@ function createRecursiveProxy(
 
       // Terminal property: meta (function metadata)
       if (prop === 'meta' && path.length >= 2) {
-        const [namespace, fnName] = path;
-        return meta[namespace]?.[fnName];
+        return getFunctionMeta(path, meta);
       }
 
       return createRecursiveProxy(api, [...path, prop], meta);

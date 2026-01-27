@@ -7,6 +7,7 @@
 
 import type { FunctionReference, FunctionReturnType } from 'convex/server';
 import type { EmptyObject } from 'convex-helpers';
+import { getFuncRef, getFunctionType } from '../shared/meta-utils';
 
 /** Metadata for a single function */
 type FnMeta = {
@@ -78,40 +79,6 @@ type ServerCallerFn<
 export type ServerCaller<TApi> = {
   [K in keyof TApi]: ServerCallerFn<TApi, K>;
 };
-
-function getFuncRef(
-  api: Record<string, unknown>,
-  path: string[]
-): FunctionReference<'query' | 'mutation' | 'action'> {
-  let current: unknown = api;
-
-  for (const key of path) {
-    if (current && typeof current === 'object') {
-      current = (current as Record<string, unknown>)[key];
-    } else {
-      throw new Error(`Invalid caller path: ${path.join('.')}`);
-    }
-  }
-
-  return current as FunctionReference<'query' | 'mutation' | 'action'>;
-}
-
-function getFunctionType(
-  path: string[],
-  meta: CallerMeta
-): 'query' | 'mutation' | 'action' {
-  // Use meta to look up function type
-  // Path is like ['chatInternal', 'createChat']
-  if (path.length >= 2) {
-    const [namespace, fnName] = path;
-    const fnType = meta[namespace]?.[fnName]?.type;
-    if (fnType === 'query' || fnType === 'mutation' || fnType === 'action') {
-      return fnType;
-    }
-  }
-  // Default to query if type not found
-  return 'query';
-}
 
 function createRecursiveProxy(
   api: Record<string, unknown>,
