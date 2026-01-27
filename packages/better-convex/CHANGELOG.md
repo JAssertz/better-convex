@@ -1,5 +1,20 @@
 # better-convex
 
+## 0.5.4
+
+### Patch Changes
+
+- [#54](https://github.com/udecode/better-convex/pull/54) [`4321118`](https://github.com/udecode/better-convex/commit/43211189285333f998cef34c7726efa1735837aa) Thanks [@zbeyens](https://github.com/zbeyens)! - Support nested file structures in meta generation:
+
+  ```
+  convex/functions/
+    todos.ts           → crpc.todos.*
+    items/queries.ts   → crpc.items.queries.*
+  ```
+
+  - Organize functions in subdirectories
+  - `_` prefixed files/directories are excluded
+
 ## 0.5.3
 
 ### Patch Changes
