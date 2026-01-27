@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test';
+/// <reference types="bun-types/test-globals" />
+
 import { getFunctionMeta, getFunctionType, type Meta } from './meta-utils';
 
 const testMeta: Meta = {
