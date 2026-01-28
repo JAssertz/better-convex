@@ -603,11 +603,50 @@ export const getAuthUser = query({
 
 If you're using Next.js with cRPC, migrate the server-side helpers.
 
-<Callout icon={<InfoIcon />}>
-**Not using cRPC?** Keep using `convexBetterAuthNextJs` from `@convex-dev/better-auth/nextjs`. The migration above covers everything you need.
-</Callout>
+### Without cRPC
 
-### Server Setup (cRPC)
+If you're not using cRPC, keep using `@convex-dev/better-auth/nextjs` for server-side helpers. Still follow Steps 1-9 for the Convex backend and Step 7 for the provider migration.
+
+**Server setup** (unchanged):
+
+```ts showLineNumbers title="lib/auth-server.ts"
+import { convexBetterAuthNextJs } from "@convex-dev/better-auth/nextjs";
+
+export const { handler, getToken } = convexBetterAuthNextJs({
+  convexUrl: process.env.NEXT_PUBLIC_CONVEX_URL!,
+  convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!,
+});
+```
+
+API route (unchanged):
+
+```ts showLineNumbers title="app/api/auth/[...all]/route.ts"
+import { handler } from "@/lib/auth-server";
+
+export const { GET, POST } = handler;
+```
+
+Root layout (unchanged):
+
+```tsx showLineNumbers title="app/layout.tsx"
+import { ConvexClientProvider } from "./ConvexClientProvider";
+import { getToken } from "@/lib/auth-server";
+
+export default async function RootLayout({ children }) {
+  const token = await getToken();
+  return (
+    <html lang="en">
+      <body>
+        <ConvexClientProvider initialToken={token}>{children}</ConvexClientProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+### With cRPC
+
+**Server setup:**
 
 **Before:**
 ```ts showLineNumbers title="lib/auth-server.ts"
@@ -632,7 +671,7 @@ export const { createContext, createCaller, handler } = convexBetterAuth({
 });
 ```
 
-### Root Layout (cRPC)
+**Root layout:**
 
 **Before:**
 ```tsx showLineNumbers title="app/layout.tsx" {3,6}
