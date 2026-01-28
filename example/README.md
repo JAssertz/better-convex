@@ -226,7 +226,7 @@ const schema = defineEntSchema({
 > [!IMPORTANT]
 > Do not modify the default model name or the table name, as we are using the default singular table name in the `better-auth-convex` package.
 
-## Key Patterns from `.claude/rules/convex.mdc`
+## Key Patterns from `.claude/skills/convex/convex.mdc`
 
 ### Authentication Context
 
@@ -319,7 +319,7 @@ src/lib/convex/
 
 This template includes specialized AI agents and coding rules to enhance your development experience:
 
-### Cursor Rules (`.claude/rules/`)
+### Skills (`.claude/skills/`)
 
 #### Core Convex Rules
 

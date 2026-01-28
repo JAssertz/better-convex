@@ -35,14 +35,14 @@ Read as needed:
 
 - convex/functions/schema.ts - Database schema
 - convex/lib/crpc.ts - cRPC setup and procedure builders
-- .claude/rules/convex-ents.mdc - Advanced Ents (rules, cascading deletes, self-directed edges)
-- .claude/rules/convex-aggregate.mdc - Efficient counting
-- .claude/rules/convex-search.mdc - Full-text search
-- .claude/rules/convex-streams.mdc - Advanced filtering
-- .claude/rules/convex-trigger.mdc - Database triggers
-- .claude/rules/convex-scheduling.mdc - Cron and scheduled functions
-- .claude/rules/convex-http.mdc - Advanced HTTP (Hono, streaming, webhooks)
-- .claude/rules/convex-examples.mdc - Reference implementations
+- .claude/skills/convex-ents/convex-ents.mdc - Advanced Ents (rules, cascading deletes, self-directed edges)
+- .claude/skills/convex-aggregate/convex-aggregate.mdc - Efficient counting
+- .claude/skills/convex-search/convex-search.mdc - Full-text search
+- .claude/skills/convex-streams/convex-streams.mdc - Advanced filtering
+- .claude/skills/convex-trigger/convex-trigger.mdc - Database triggers
+- .claude/skills/convex-scheduling/convex-scheduling.mdc - Cron and scheduled functions
+- .claude/skills/convex-http/convex-http.mdc - Advanced HTTP (Hono, streaming, webhooks)
+- .claude/skills/convex-examples/convex-examples.mdc - Reference implementations
 
 # Convex Guidelines
 
@@ -167,7 +167,7 @@ export const processData = privateQuery
 
 ### HTTP Endpoints
 
-For advanced patterns (Hono, streaming, webhooks), see [convex-http.mdc](mdc:.claude/rules/convex-http.mdc).
+For advanced patterns (Hono, streaming, webhooks), see [convex-http.mdc](mdc:.claude/skills/convex-http/convex-http.mdc).
 
 ### Validators
 
@@ -584,9 +584,9 @@ const queryClient = useQueryClient();
 const user = await queryClient.fetchQuery(crpc.user.get.queryOptions({ id }));
 ```
 
-| Method               | Context  | Caching    | Use Case                   |
-| -------------------- | -------- | ---------- | -------------------------- |
-| `client.*.query()`   | Anywhere | None       | Event handlers, effects    |
+| Method                  | Context     | Caching    | Use Case                |
+| ----------------------- | ----------- | ---------- | ----------------------- |
+| `client.*.query()`      | Anywhere    | None       | Event handlers, effects |
 | `crpc.*.queryOptions()` | Render only | Uses cache | Components (uses hooks) |
 
 ### Error Handling
@@ -736,7 +736,7 @@ const enriched = await ctx
 // asyncMap only for plain arrays/streams
 ```
 
-**Count operations:** Use aggregates, not `.length` - see [convex-aggregate.mdc](mdc:.claude/rules/convex-aggregate.mdc)
+**Count operations:** Use aggregates, not `.length` - see [convex-aggregate.mdc](mdc:.claude/skills/convex-aggregate/convex-aggregate.mdc)
 **asyncMap:** Only needed for non-Ent arrays (plain arrays, stream results)
 
 ### Many-to-Many Join Tables
@@ -796,7 +796,7 @@ comments: defineEnt({ content: v.string() }).edge("user", {
 ```
 
 **Performance:** N+1 is fast (~1ms/doc) | Arrays max 10 items | Use indexes
-**Count Operations:** For counting documents, use [convex-aggregate.mdc](mdc:.claude/rules/convex-aggregate.mdc) instead of `.length` on collections
+**Count Operations:** For counting documents, use [convex-aggregate.mdc](mdc:.claude/skills/convex-aggregate/convex-aggregate.mdc) instead of `.length` on collections
 
 ## TypeScript Guidelines
 
@@ -871,7 +871,7 @@ const recent = await ctx
   .take(10);
 ```
 
-For advanced patterns, see [convex-search.mdc](mdc:.claude/rules/convex-search.mdc).
+For advanced patterns, see [convex-search.mdc](mdc:.claude/skills/convex-search/convex-search.mdc).
 
 ## Query Guidelines
 
@@ -881,13 +881,13 @@ For advanced patterns, see [convex-search.mdc](mdc:.claude/rules/convex-search.m
   - Use `.get()` for fetching by ID or unique field: `ctx.table('table').get(id)` or `ctx.table('table').get('email', email)`
   - Use `.paginate()` for user-facing lists
   - Only return all documents when you truly need ALL documents (rare, <1000 docs)
-  - **For counts:** Use [convex-aggregate.mdc](mdc:.claude/rules/convex-aggregate.mdc) instead of `(await ctx.table('table')).length`
+  - **For counts:** Use [convex-aggregate.mdc](mdc:.claude/skills/convex-aggregate/convex-aggregate.mdc) instead of `(await ctx.table('table')).length`
 - **OPTIMIZATION:** Always use indexes first for filtering:
   - **Use indexes:** Define an index in schema and use it in ctx.table with index filtering
   - **Get by index:** Use `.get('indexName', value)` for unique lookups
   - **Simple cases:** Use built-in `.filter()` for simple field comparisons after indexing
   - **Complex + Paginated:** Use streams from `convex-helpers/server/stream` for consistent page sizes (streams require `ctx.db` in first param only)
-  - See [convex-streams.mdc](mdc:.claude/rules/convex-streams.mdc)
+  - See [convex-streams.mdc](mdc:.claude/skills/convex-streams/convex-streams.mdc)
 - Ents queries support chaining: `ctx.table('name').filter().take()` or `ctx.table('name', 'index', filter).take()`
 - Use `.unique()` to get a single document from a query. This method will throw an error if there are multiple documents that match the query.
 - When using async iteration, use the `for await (const row of query)` syntax.
@@ -908,7 +908,7 @@ For advanced patterns, see [convex-search.mdc](mdc:.claude/rules/convex-search.m
 - Using search with only the available filterFields
 - Using streams for complex filtering without search
 - Implementing separate search and filter flows
-  See [convex-search.mdc](mdc:.claude/rules/convex-search.mdc) for detailed patterns.
+  See [convex-search.mdc](mdc:.claude/skills/convex-search/convex-search.mdc) for detailed patterns.
 
 | Use Case                             | Tool                 | Why                            |
 | ------------------------------------ | -------------------- | ------------------------------ |
@@ -974,7 +974,7 @@ export const searchCharacters = publicQuery
   });
 ```
 
-For more stream patterns, see [convex-streams.mdc](mdc:.claude/rules/convex-streams.mdc).
+For more stream patterns, see [convex-streams.mdc](mdc:.claude/skills/convex-streams/convex-streams.mdc).
 
 ## CRITICAL: Never Use ctx.db
 
@@ -1197,11 +1197,11 @@ export const processUserData = authAction
 
 ## Scheduling Guidelines
 
-For cron jobs and scheduling patterns, see [convex-scheduling.mdc](mdc:.claude/rules/convex-scheduling.mdc).
+For cron jobs and scheduling patterns, see [convex-scheduling.mdc](mdc:.claude/skills/convex-scheduling/convex-scheduling.mdc).
 
 ## Examples
 
-For complete examples including chat applications and other patterns, see [convex-examples.mdc](mdc:.claude/rules/convex-examples.mdc).
+For complete examples including chat applications and other patterns, see [convex-examples.mdc](mdc:.claude/skills/convex-examples/convex-examples.mdc).
 
 ## Deletion Behaviors
 
@@ -1227,7 +1227,7 @@ await ctx.table('user').getX(userId).patch({ deletionTime: undefined }); // Unde
 .edges('profiles', { ref: true, deletion: 'soft' }) // Cascade soft delete
 ```
 
-For detailed cascading delete patterns, rules system, and soft/scheduled deletion, see [convex-ents.mdc](mdc:.claude/rules/convex-ents.mdc).
+For detailed cascading delete patterns, rules system, and soft/scheduled deletion, see [convex-ents.mdc](mdc:.claude/skills/convex-ents/convex-ents.mdc).
 
 ## Triggers
 
@@ -1246,7 +1246,7 @@ triggers.register("user", async (ctx, change) => {
 });
 ```
 
-For complete documentation, see [convex-trigger.mdc](mdc:.claude/rules/convex-trigger.mdc).
+For complete documentation, see [convex-trigger.mdc](mdc:.claude/skills/convex-trigger/convex-trigger.mdc).
 
 ## Convex Aggregate
 
@@ -1314,7 +1314,7 @@ This is because aggregates with `null` keys don't have natural ordering, so boun
 
 **IMPORTANT:** All aggregate components must be registered in `convex/functions/convex.config.ts` before they can be used.
 
-For more aggregate patterns, see [convex-aggregate.mdc](mdc:.claude/rules/convex-aggregate.mdc).
+For more aggregate patterns, see [convex-aggregate.mdc](mdc:.claude/skills/convex-aggregate/convex-aggregate.mdc).
 
 ## Performance
 

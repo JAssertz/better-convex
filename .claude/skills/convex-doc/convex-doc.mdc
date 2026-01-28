@@ -20,6 +20,7 @@ Rules for maintaining `convex.mdc` and related `convex-*.mdc` documentation file
 ### 2. File Organization
 
 **convex.mdc** (always loaded):
+
 - ✅ All patterns needed for e2e features
 - ✅ Performance patterns inline (not separate skill)
 - ✅ Platform limits, query caching, rules performance
@@ -27,12 +28,14 @@ Rules for maintaining `convex.mdc` and related `convex-*.mdc` documentation file
 - ❌ NO setup/installation instructions
 
 **convex-setup skill**:
+
 - Installation commands
 - Configuration files
 - Environment variables
 - One-time initialization
 
-**convex-*.mdc** (loaded on demand):
+**convex-\*.mdc** (loaded on demand):
+
 - Specialized patterns not needed for most features
 - Advanced use cases (aggregates, streams, triggers)
 - Complete reference for specific topics
@@ -49,17 +52,17 @@ Rules for maintaining `convex.mdc` and related `convex-*.mdc` documentation file
 6. **Performance Section** - Platform limits, caching, rules, lazy loading
 7. **File Path References** - `**Edit:**` markers throughout
 
-### What Goes to convex-*.mdc
+### What Goes to convex-\*.mdc
 
-| Skill | When to use |
-|-------|-------------|
-| convex-aggregate | Efficient counting at scale |
-| convex-streams | Complex filtering with pagination |
-| convex-search | Full-text search patterns |
-| convex-trigger | Database triggers |
-| convex-ents | Advanced entity relationships |
-| convex-scheduling | Cron jobs, scheduled functions |
-| convex-http | HTTP endpoints, webhooks |
+| Skill             | When to use                       |
+| ----------------- | --------------------------------- |
+| convex-aggregate  | Efficient counting at scale       |
+| convex-streams    | Complex filtering with pagination |
+| convex-search     | Full-text search patterns         |
+| convex-trigger    | Database triggers                 |
+| convex-ents       | Advanced entity relationships     |
+| convex-scheduling | Cron jobs, scheduled functions    |
+| convex-http       | HTTP endpoints, webhooks          |
 
 ## Formatting Rules
 
@@ -112,7 +115,7 @@ Provide basic usage in convex.mdc, link for advanced:
 
 **CRITICAL for Scale:** Use aggregates instead of `.collect().length`.
 
-For setup and advanced patterns, see [convex-aggregate.mdc](mdc:.claude/rules/convex-aggregate.mdc).
+For setup and advanced patterns, see [convex-aggregate.mdc](mdc:.claude/skills/convex-aggregate/convex-aggregate.mdc).
 ```
 
 ## Optimization Techniques
@@ -129,9 +132,9 @@ export const example = authQuery // or publicQuery, authMutation, etc.
 
 ### 2. Use Tables for Comparisons
 
-| Feature | `.filter()` | streams |
-|---------|-------------|---------|
-| Page sizes | Variable | Consistent |
+| Feature    | `.filter()` | streams    |
+| ---------- | ----------- | ---------- |
+| Page sizes | Variable    | Consistent |
 
 ### 3. Inline Short Rules
 
@@ -149,6 +152,6 @@ export const example = authQuery // or publicQuery, authMutation, etc.
 
 - **convex.mdc** = e2e features + performance (loaded every request)
 - **convex-setup** = one-time setup instructions
-- **convex-*.mdc** = specialized patterns (loaded on demand)
+- **convex-\*.mdc** = specialized patterns (loaded on demand)
 - **ctx.table()** not ctx.db in all examples
 - **cRPC builders** not raw query/mutation/action
