@@ -1,5 +1,12 @@
 # better-convex
 
+## 0.5.6
+
+### Patch Changes
+
+- [`fdeae26`](https://github.com/udecode/better-convex/commit/fdeae26ef81b46dc1334a4940814628d398659d9) Thanks [@zbeyens](https://github.com/zbeyens)! - - Support Convex 1.31.6
+  - Missing `jotai` dependency
+
 ## 0.5.5
 
 ### Patch Changes
