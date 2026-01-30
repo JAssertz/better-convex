@@ -12,6 +12,41 @@ import type { AuthStore } from './auth-store';
 import { useAuthStore } from './auth-store';
 import { useConvexQueryClient } from './context';
 
+/**
+ * Error thrown when a Better Auth mutation fails.
+ * Contains the original error details from Better Auth.
+ */
+export class AuthMutationError extends Error {
+  /** Error code from Better Auth (e.g., 'INVALID_PASSWORD', 'EMAIL_ALREADY_REGISTERED') */
+  code?: string;
+  /** HTTP status code */
+  status: number;
+  /** HTTP status text */
+  statusText: string;
+
+  constructor(authError: {
+    message?: string;
+    status: number;
+    statusText: string;
+    code?: string;
+  }) {
+    super(authError.message || authError.statusText);
+    this.name = 'AuthMutationError';
+    this.code = authError.code;
+    this.status = authError.status;
+    this.statusText = authError.statusText;
+  }
+}
+
+/**
+ * Type guard to check if an error is an AuthMutationError.
+ */
+export function isAuthMutationError(
+  error: unknown
+): error is AuthMutationError {
+  return error instanceof AuthMutationError;
+}
+
 type MutationOptionsHook<TData, TVariables = void> = (
   options?: Omit<
     UseMutationOptions<TData, DefaultError, TVariables>,
@@ -111,6 +146,9 @@ export function createAuthMutations<T extends AuthClient>(
         authStoreApi.set('isAuthenticated', false);
         convexQueryClient?.unsubscribeAuthQueries();
         const res = await authClient.signOut(args);
+        if (res?.error) {
+          throw new AuthMutationError(res.error);
+        }
         await waitForTokenClear(authStoreApi);
         return res;
       },
@@ -124,10 +162,10 @@ export function createAuthMutations<T extends AuthClient>(
       ...options,
       mutationFn: async (args: Parameters<T['signIn']['social']>[0]) => {
         const res = await authClient.signIn.social(args);
-        // Only wait if no error (better-auth returns { error } on failure)
-        if (!res?.error) {
-          await waitForAuth(authStoreApi);
+        if (res?.error) {
+          throw new AuthMutationError(res.error);
         }
+        await waitForAuth(authStoreApi);
         return res;
       },
     };
@@ -140,9 +178,10 @@ export function createAuthMutations<T extends AuthClient>(
       ...options,
       mutationFn: async (args: Parameters<T['signIn']['email']>[0]) => {
         const res = await authClient.signIn.email(args);
-        if (!res?.error) {
-          await waitForAuth(authStoreApi);
+        if (res?.error) {
+          throw new AuthMutationError(res.error);
         }
+        await waitForAuth(authStoreApi);
         return res;
       },
     };
@@ -155,9 +194,10 @@ export function createAuthMutations<T extends AuthClient>(
       ...options,
       mutationFn: async (args: Parameters<T['signUp']['email']>[0]) => {
         const res = await authClient.signUp.email(args);
-        if (!res?.error) {
-          await waitForAuth(authStoreApi);
+        if (res?.error) {
+          throw new AuthMutationError(res.error);
         }
+        await waitForAuth(authStoreApi);
         return res;
       },
     };
