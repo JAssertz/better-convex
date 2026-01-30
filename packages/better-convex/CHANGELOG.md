@@ -1,5 +1,25 @@
 # better-convex
 
+## 0.5.7
+
+### Patch Changes
+
+- [#61](https://github.com/udecode/better-convex/pull/61) [`7e63e54`](https://github.com/udecode/better-convex/commit/7e63e541fc2853d8d1d45e4f1fb7db3f82e0592c) Thanks [@zbeyens](https://github.com/zbeyens)! - Auth mutation hooks now properly trigger `onError` when Better Auth returns errors (401, 422, etc.).
+
+  ```tsx
+  // Before: onSuccess always ran, even on errors
+  // After: onError fires on auth failures
+
+  const signUp = useMutation(
+    useSignUpMutationOptions({
+      onSuccess: () => router.push("/"), // Only on success now
+      onError: (error) => toast.error(error.message), // Fires on auth errors
+    }),
+  );
+  ```
+
+  New exports: `AuthMutationError` class and `isAuthMutationError` type guard for error handling.
+
 ## 0.5.6
 
 ### Patch Changes
