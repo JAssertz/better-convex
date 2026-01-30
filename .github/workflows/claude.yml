@@ -193,12 +193,72 @@ jobs:
           additional_permissions: |
             actions: read
 
+  # Interactive mode - /answer (continue previous command)
+  answer:
+    if: |
+      github.actor == 'zbeyens' && (
+        (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/answer')) ||
+        (github.event_name == 'pull_request_review_comment' && startsWith(github.event.comment.body, '/answer'))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          trigger_phrase: "/answer"
+
+          plugin_marketplaces: |
+            https://github.com/EveryInc/compound-engineering-plugin.git
+            https://github.com/udecode/dotai.git
+          plugins: |
+            compound-engineering@every-marketplace
+            dig@dotai
+            debug@dotai
+            test@dotai
+
+          claude_args: |
+            --max-turns 1000
+            --allowedTools "Bash,Edit,Glob,Grep,Read,Task,Write,WebFetch,WebSearch,mcp__github_comment__update_claude_comment"
+            --system-prompt "This is a follow-up answer to a previous command. First: read thread history to identify the original command (/brainstorm, /plan, etc). Then: Read .claude/commands/{command}.md or Skill({command}) to reload its instructions. Finally: process the user's answers following that command's workflow."
+
+          additional_permissions: |
+            actions: read
+
   # Automation mode - other /commands
   slash-commands:
     if: |
       github.actor == 'zbeyens' && (
-        (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/') && !startsWith(github.event.comment.body, '/brainstorm') && !startsWith(github.event.comment.body, '/plan')) ||
-        (github.event_name == 'pull_request_review_comment' && startsWith(github.event.comment.body, '/') && !startsWith(github.event.comment.body, '/brainstorm') && !startsWith(github.event.comment.body, '/plan'))
+        (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/') && !startsWith(github.event.comment.body, '/brainstorm') && !startsWith(github.event.comment.body, '/plan') && !startsWith(github.event.comment.body, '/answer')) ||
+        (github.event_name == 'pull_request_review_comment' && startsWith(github.event.comment.body, '/') && !startsWith(github.event.comment.body, '/brainstorm') && !startsWith(github.event.comment.body, '/plan') && !startsWith(github.event.comment.body, '/answer'))
       )
     runs-on: ubuntu-latest
     timeout-minutes: 15
