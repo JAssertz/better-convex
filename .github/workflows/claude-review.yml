@@ -57,8 +57,8 @@ jobs:
 
           claude_args: |
             --max-turns 1000
-            --allowedTools "Bash,Edit,Glob,Grep,Read,Task,Write,WebFetch,WebSearch,mcp__github_comment__update_claude_comment"
-            --system-prompt "When you receive a slash command like /lfg, /plan, /work, /review, first read .claude/commands/{command}.md to understand the workflow steps to execute. These are autonomous commands - do not ask questions, make reasonable assumptions based on the issue context."
+            --allowedTools "Bash,Glob,Grep,Read,Task,WebFetch,WebSearch,mcp__github_comment__update_claude_comment"
+            --system-prompt "STRICTLY follow the command instructions without drifting. Read .claude/commands/review.md. DO NOT write todo files - instead OUTPUT all findings directly in the PR comment. Format: P1/P2/P3 sections with Problem Statement, Proposed Solutions for each. User can then run /resolve to fix them."
 
           additional_permissions: |
             actions: read
