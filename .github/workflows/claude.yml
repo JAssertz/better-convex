@@ -68,7 +68,7 @@ jobs:
           claude_args: |
             --max-turns 1000
             --allowedTools "Bash,Edit,Glob,Grep,Read,Task,Write,WebFetch,WebSearch,mcp__github_comment__update_claude_comment"
-            --system-prompt "When you receive slash commands, first try to read the command in .claude/commands/{command}.md for instructions. Rules: /brainstorm - ask ALL questions at once with multiple choice options (A/B/C). DO NOT write files. Output brainstorm content and say 'Store at: docs/brainstorms/YYYY-MM-DD-topic-brainstorm.md', suggest /workflows:plan. /plan - ask ALL questions at once. DO NOT write files. Output plan content and say 'Store at: docs/plans/YYYY-MM-DD-type-topic-plan.md', suggest /work. /answer - read thread history, reload original command instructions, follow same rules."
+            --system-prompt "When you receive slash commands, first try to read the command in .claude/commands/{command}.md for instructions. Rules: /brainstorm - ask ALL questions at once with multiple choice options (A/B/C). DO NOT write files. Output brainstorm content and say 'Store at: docs/brainstorms/YYYY-MM-DD-topic-brainstorm.md', suggest /plan. /plan - ask ALL questions at once. DO NOT write files. Output plan content and say 'Store at: docs/plans/YYYY-MM-DD-type-topic-plan.md', suggest /work. /answer - read thread history, reload original command instructions, follow same rules."
 
           additional_permissions: |
             actions: read
@@ -128,7 +128,7 @@ jobs:
           claude_args: |
             --max-turns 1000
             --allowedTools "Bash,Edit,Glob,Grep,Read,Task,Write,WebFetch,WebSearch,mcp__github_comment__update_claude_comment"
-            --system-prompt "When you receive slash commands, first try to read the command in .claude/commands/{command}.md for instructions. For brainstorming: ask ALL questions at once with multiple choice options (A/B/C). DO NOT write files. Output brainstorm content and say 'Store at: docs/brainstorms/YYYY-MM-DD-topic-brainstorm.md', suggest /workflows:plan."
+            --system-prompt "When you receive slash commands, first try to read the command in .claude/commands/{command}.md for instructions. For brainstorming: ask ALL questions at once with multiple choice options (A/B/C). DO NOT write files. Output brainstorm content and say 'Store at: docs/brainstorms/YYYY-MM-DD-topic-brainstorm.md', suggest /plan."
 
           additional_permissions: |
             actions: read
@@ -248,7 +248,7 @@ jobs:
           claude_args: |
             --max-turns 1000
             --allowedTools "Bash,Edit,Glob,Grep,Read,Task,Write,WebFetch,WebSearch,mcp__github_comment__update_claude_comment"
-            --system-prompt "This is a follow-up answer to a previous command. First: read thread history to identify the original command (/brainstorm, /plan, etc). Then: Read .claude/commands/{command}.md or Skill({command}) to reload its instructions. DO NOT write files. For /brainstorm: output brainstorm content, say 'Store at: docs/brainstorms/YYYY-MM-DD-topic-brainstorm.md', suggest /workflows:plan. For /plan: output plan content, say 'Store at: docs/plans/YYYY-MM-DD-type-topic-plan.md', suggest /work."
+            --system-prompt "This is a follow-up answer to a previous command. First: read thread history to identify the original command (/brainstorm, /plan, etc). Then: Read .claude/commands/{command}.md or Skill({command}) to reload its instructions. DO NOT write files. For /brainstorm: output brainstorm content, say 'Store at: docs/brainstorms/YYYY-MM-DD-topic-brainstorm.md', suggest /plan. For /plan: output plan content, say 'Store at: docs/plans/YYYY-MM-DD-type-topic-plan.md', suggest /work."
 
           additional_permissions: |
             actions: read
