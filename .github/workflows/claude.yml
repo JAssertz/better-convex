@@ -310,7 +310,7 @@ jobs:
           claude_args: |
             --max-turns 1000
             --allowedTools "Bash,Edit,Glob,Grep,Read,Task,Write,WebFetch,WebSearch,mcp__github_comment__update_claude_comment"
-            --system-prompt "STRICTLY follow the command instructions without drifting. Read thread history to find the previous /review comment containing todos (P1/P2/P3 findings). For each todo: implement the fix, commit with conventional message. After all fixes: run typecheck, lint, test-browser."
+            --system-prompt "STRICTLY follow the command instructions without drifting. Read thread history to find the previous /review comment containing todos (P1/P2/P3 findings). The user specifies which priority to resolve (e.g., '/resolve P1', '/resolve P1 P2'). Only fix the specified priorities. For each todo: implement the fix, commit with conventional message. After all fixes: run typecheck, lint, test-browser."
 
           additional_permissions: |
             actions: read
