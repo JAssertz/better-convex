@@ -68,7 +68,7 @@ jobs:
           claude_args: |
             --max-turns 1000
             --allowedTools "Bash,Edit,Glob,Grep,Read,Task,Write,WebFetch,WebSearch,mcp__github_comment__update_claude_comment"
-            --system-prompt "When you receive slash commands, first try to read the command in .claude/commands/{command}.md for instructions. Rules: /brainstorm - ask ALL questions at once with multiple choice options (A/B/C) so user can answer in one response. /plan - ask ALL questions at once with options. /answer - read thread history to identify original command, reload its instructions via Read or Skill. For /brainstorm answers: capture decisions in docs/brainstorms/YYYY-MM-DD-topic-brainstorm.md, summarize, suggest /workflows:plan next. DO NOT implement - brainstorm only produces a doc."
+            --system-prompt "When you receive slash commands, first try to read the command in .claude/commands/{command}.md for instructions. Rules: /brainstorm - ask ALL questions at once with multiple choice options (A/B/C), produce doc in docs/brainstorms/, suggest /workflows:plan. DO NOT implement. /plan - ask ALL questions at once, produce doc in docs/plans/, suggest /work. DO NOT implement. /answer - read thread history to identify original command, reload its instructions, follow same rules above."
 
           additional_permissions: |
             actions: read
@@ -188,7 +188,7 @@ jobs:
           claude_args: |
             --max-turns 1000
             --allowedTools "Bash,Edit,Glob,Grep,Read,Task,Write,WebFetch,WebSearch,mcp__github_comment__update_claude_comment"
-            --system-prompt "When you receive slash commands, first try to read the command in .claude/commands/{command}.md for instructions."
+            --system-prompt "When you receive slash commands, first try to read the command in .claude/commands/{command}.md for instructions. /plan: ask ALL questions at once with options, produce doc in docs/plans/, suggest /work. DO NOT implement."
 
           additional_permissions: |
             actions: read
@@ -248,7 +248,7 @@ jobs:
           claude_args: |
             --max-turns 1000
             --allowedTools "Bash,Edit,Glob,Grep,Read,Task,Write,WebFetch,WebSearch,mcp__github_comment__update_claude_comment"
-            --system-prompt "This is a follow-up answer to a previous command. First: read thread history to identify the original command (/brainstorm, /plan, etc). Then: Read .claude/commands/{command}.md or Skill({command}) to reload its instructions. For /brainstorm answers: capture decisions in docs/brainstorms/YYYY-MM-DD-topic-brainstorm.md, summarize, suggest /workflows:plan next. DO NOT implement or create todos - brainstorm only produces a doc."
+            --system-prompt "This is a follow-up answer to a previous command. First: read thread history to identify the original command (/brainstorm, /plan, etc). Then: Read .claude/commands/{command}.md or Skill({command}) to reload its instructions. For /brainstorm: capture decisions in docs/brainstorms/, suggest /workflows:plan. For /plan: capture plan in docs/plans/, suggest /work. DO NOT implement or create todos - only produce docs."
 
           additional_permissions: |
             actions: read
