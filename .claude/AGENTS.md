@@ -14,6 +14,7 @@
 ## GitHub
 
 - Your primary method for interacting with GitHub should be the GitHub CLI.
+- Unless in GitHub issues, before DONE, use AskUserQuestion: "Ready to commit?" → if yes, git add/commit/push/PR. Never run those otherwise.
 
 ## Plans
 
