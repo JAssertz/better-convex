@@ -1,0 +1,8 @@
+/**
+ * Symbol-based metadata storage for ORM tables
+ * Following Drizzle's pattern for type-safe runtime introspection
+ */
+
+export const TableName = Symbol.for('better-convex:TableName');
+export const Columns = Symbol.for('better-convex:Columns');
+export const Brand = Symbol.for('better-convex:Brand');

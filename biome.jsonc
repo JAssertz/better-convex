@@ -79,8 +79,10 @@
         "**/*.tsx",
         "!**/_generated",
         "!**/*.spec.*",
+        "!**/*.test.*",
         "!tmp/**",
-        "!tooling/**"
+        "!tooling/**",
+        "!test/**"
       ],
       "linter": {
         "rules": {
@@ -175,6 +177,29 @@
                 ]
               }
             }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["convex/**"],
+      "linter": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": ["test/**/*.ts", "test/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noEmptyPattern": "off",
+            "noConstantCondition": "off"
+          },
+          "nursery": {
+            "noUnusedExpressions": "off"
+          },
+          "suspicious": {
+            "noExportsInTest": "off"
           }
         }
       }
