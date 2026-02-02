@@ -36,7 +36,8 @@
         "noUnknownAtRules": "off", // allow for Tailwind @ rules
         "noEmptyBlockStatements": "off", // chill
         "useAwait": "off", // chill
-        "noDocumentCookie": "off" // shadcn
+        "noDocumentCookie": "off", // shadcn
+        "noThenProperty": "off" // drizzle
       },
       "style": {
         "noMagicNumbers": "off", // chill
@@ -44,7 +45,8 @@
         "noNestedTernary": "off", // chill
         "noNonNullAssertion": "off", // ts chill
         "useDefaultSwitchClause": "off", // chill
-        "useBlockStatements": "off" // chill
+        "useBlockStatements": "off", // chill,
+        "noParameterProperties": "off" // drizzle
       },
       "nursery": {
         "noShadow": "off", // chill
@@ -55,7 +57,8 @@
         "useSimplifiedLogicExpression": "off", // false +
         "noExcessiveCognitiveComplexity": "off", // chill
         "noForEach": "off", // chill
-        "noVoid": "off" // chill
+        "noVoid": "off", // chill
+        "noBannedTypes": "off" // chill
       },
       "a11y": {
         "noNoninteractiveElementInteractions": "off", // region role not supported

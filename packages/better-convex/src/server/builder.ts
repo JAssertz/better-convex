@@ -1076,7 +1076,9 @@ class CRPCBuilderWithContext<
       ).httpAction = createHttpProcedureBuilder({
         base: functionsConfig.httpAction as HttpActionConstructor,
         // httpAction uses action context or default to identity
-        createContext: this.contextConfig.action ?? ((ctx: any) => ctx),
+        createContext: (this.contextConfig.action ?? ((ctx) => ctx)) as (
+          ctx: GenericActionCtx<GenericDataModel>
+        ) => THttpActionCtx,
         meta: defaultMeta,
       });
     }

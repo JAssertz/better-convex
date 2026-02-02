@@ -22,6 +22,19 @@ const schema = defineEntSchema(
     })
       .field('email', v.string(), { unique: true })
       .field('height', v.optional(v.number()), { index: true })
+      .field('age', v.optional(v.number()))
+      .field(
+        'status',
+        v.optional(
+          v.union(
+            v.literal('active'),
+            v.literal('pending'),
+            v.literal('deleted')
+          )
+        )
+      )
+      .field('role', v.optional(v.string()))
+      .field('deletedAt', v.optional(v.union(v.number(), v.null())))
       .edge('profile', { ref: true })
       .edges('messages', { ref: true })
       .edges('followers', { to: 'users', inverse: 'followees' })
@@ -166,3 +179,100 @@ const schema = defineEntSchema(
 export default schema;
 
 export const entDefinitions = getEntDefinitions(schema);
+
+// ============================================================================
+// Better Convex ORM Schema (M1-M4 Testing)
+// ============================================================================
+// Parallel convexTable-based schema for M1-M4 tests
+// Note: This is the "best equivalent we can do so far" - mirrors defineEnt
+// structure but uses convexTable API for Better Convex ORM testing
+
+import {
+  buildSchema,
+  convexTable,
+  id,
+  number,
+  relations,
+  text,
+} from 'better-convex/orm';
+
+// Table Definitions (M1: Schema Foundation)
+export const ormUsers = convexTable('users', {
+  name: text().notNull(),
+  email: text().notNull(),
+  height: number(),
+  age: number(),
+  status: text(),
+  role: text(),
+  deletedAt: number(),
+});
+
+export const ormPosts = convexTable('posts', {
+  text: text().notNull(),
+  numLikes: number().notNull(),
+  type: text().notNull(),
+});
+
+export const ormProfiles = convexTable('profiles', {
+  bio: text().notNull(),
+});
+
+export const ormMessages = convexTable('messages', {
+  text: text().notNull(),
+});
+
+export const ormTags = convexTable('tags', {
+  name: text().notNull(),
+});
+
+export const ormMessageDetails = convexTable('messageDetails', {
+  value: text().notNull(),
+});
+
+export const ormPhotos = convexTable('photos', {
+  url: text().notNull(),
+  user: id('users'),
+  ownerId: id('users'),
+});
+
+export const ormSecrets = convexTable('secrets', {
+  value: text().notNull(),
+  ownerId: id('users').notNull(),
+});
+
+export const ormHeadshots = convexTable('headshots', {
+  taken: text().notNull(),
+});
+
+export const ormHeadshotDetails = convexTable('headshotDetails', {});
+
+export const ormAttachments = convexTable('attachments', {
+  originId: id('posts'),
+  copyId: id('posts'),
+  shareId: id('posts'),
+});
+
+// Schema Builder (M1)
+export const ormSchema = buildSchema({
+  users: ormUsers,
+  posts: ormPosts,
+  profiles: ormProfiles,
+  messages: ormMessages,
+  tags: ormTags,
+  messageDetails: ormMessageDetails,
+  photos: ormPhotos,
+  secrets: ormSecrets,
+  headshots: ormHeadshots,
+  headshotDetails: ormHeadshotDetails,
+  attachments: ormAttachments,
+});
+
+// Relations Definitions (M2) - Simplified for M4 where filtering tests
+// Note: Each table can only have ONE relations() call (it attaches a Symbol)
+export const ormUsersRelations = relations(ormUsers, ({ many }) => ({
+  posts: many(ormPosts),
+}));
+
+export const ormPostsRelations = relations(ormPosts, ({ one }) => ({
+  user: one(ormUsers, { fields: ['numLikes'] }), // Dummy relation for testing
+}));

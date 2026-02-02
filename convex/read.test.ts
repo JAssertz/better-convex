@@ -260,9 +260,9 @@ test('getMany fails on compound index', async ({ ctx }) => {
     .table('posts')
     .insert({ text: 'My great video', type: 'video', numLikes: 4 });
   await expect(
-    // @ts-expect-error -- compound index
     ctx
       .table('posts')
+      // @ts-expect-error -- compound index
       .getMany('numLikesAndType', ['video'])
   ).rejects.toThrow();
 });

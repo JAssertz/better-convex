@@ -27,7 +27,7 @@ export default defineConfig([
     plugins: [babelPlugin],
     checks: { pluginTimings: false },
   },
-  // Server-safe builds (crpc, rsc, server) - no "use client"
+  // Server-safe builds (crpc, rsc, server, orm) - no "use client"
   {
     entry: {
       'auth/index': 'src/auth/index.ts',
@@ -35,6 +35,7 @@ export default defineConfig([
       'crpc/index': 'src/crpc/index.ts',
       'rsc/index': 'src/rsc/index.ts',
       'server/index': 'src/server/index.ts',
+      'orm/index': 'src/orm/index.ts',
     },
     platform: 'neutral',
     target: 'esnext',

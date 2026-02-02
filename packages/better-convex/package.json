@@ -17,6 +17,7 @@
     "./auth-client": "./dist/auth-client/index.js",
     "./auth-nextjs": "./dist/auth-nextjs/index.js",
     "./crpc": "./dist/crpc/index.js",
+    "./orm": "./dist/orm/index.js",
     "./react": "./dist/react/index.js",
     "./rsc": "./dist/rsc/index.js",
     "./server": "./dist/server/index.js",
@@ -32,7 +33,8 @@
     "build": "tsdown",
     "build:watch": "tsdown --watch",
     "prepublishOnly": "bun run build",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsgo --noEmit",
+    "typecheck:types": "tsc --project ../../convex/test-types/tsconfig.json"
   },
   "dependencies": {
     "chokidar": "^5.0.0",

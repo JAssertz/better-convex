@@ -1,0 +1,207 @@
+---
+title: Quickstart - Better-Convex ORM
+description: Get started with Better-Convex ORM in 5 minutes
+links:
+  doc: https://orm.drizzle.team/docs/quick-start
+---
+
+import { InfoIcon, CheckCircle } from "lucide-react"
+
+Get up and running with Better-Convex ORM in 5 minutes. This guide assumes you have an existing Convex project.
+
+## Prerequisites
+
+- Node.js 18+ installed
+- Existing Convex project (or [create one](https://docs.convex.dev/quickstart))
+- Basic familiarity with TypeScript
+
+## Step 1: Install Better-Convex
+
+<Tabs groupId="package-manager" items={["npm", "pnpm", "yarn", "bun"]} persist>
+  <Tab value="npm">
+    ```bash
+    npm install better-convex
+    ```
+  </Tab>
+  <Tab value="pnpm">
+    ```bash
+    pnpm add better-convex
+    ```
+  </Tab>
+  <Tab value="yarn">
+    ```bash
+    yarn add better-convex
+    ```
+  </Tab>
+  <Tab value="bun">
+    ```bash
+    bun add better-convex
+    ```
+  </Tab>
+</Tabs>
+
+## Step 2: Define Your Schema
+
+Create tables using the Drizzle-style `convexTable()` function:
+
+```ts title="convex/schema.ts" showLineNumbers {1-2,4-11}
+import { convexTable, relations } from 'better-convex/orm';
+import { v } from 'convex/values';
+
+// Define tables
+const users = convexTable('users', {
+  name: v.string(),
+  email: v.string(),
+});
+
+const posts = convexTable('posts', {
+  title: v.string(),
+  content: v.string(),
+  published: v.boolean(),
+});
+
+export const schema = {
+  users,
+  posts,
+};
+
+export default schema;
+```
+
+<Callout icon={<InfoIcon />}>
+**Using Convex Validators**: In M1-M5, Better-Convex ORM uses Convex's `v.*` validators directly. This ensures maximum compatibility and proven type inference. M6 will add Drizzle-style column builders as syntactic sugar.
+</Callout>
+
+## Step 3: Define Relations
+
+Use Drizzle's `relations()` API to connect tables:
+
+```ts title="convex/schema.ts" showLineNumbers {18-29}
+import { convexTable, relations } from 'better-convex/orm';
+import { v } from 'convex/values';
+
+const users = convexTable('users', {
+  name: v.string(),
+  email: v.string(),
+});
+
+const posts = convexTable('posts', {
+  title: v.string(),
+  content: v.string(),
+  published: v.boolean(),
+});
+
+// Define 1:many relationship (user has many posts)
+const usersRelations = relations(users, ({ many }) => ({
+  posts: many(posts),
+}));
+
+// Define many:1 relationship (post belongs to user)
+const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.userId],
+    references: [users._id],
+  }),
+}));
+
+export const schema = {
+  users,
+  posts,
+  usersRelations,
+  postsRelations,
+};
+
+export default schema;
+```
+
+<Callout icon={<CheckCircle />}>
+**✅ 100% Drizzle Compatible**: The relations API is identical to Drizzle ORM. Code that works in Drizzle works in Better-Convex.
+</Callout>
+
+## Step 4: Query Your Data
+
+Create Convex queries using the ORM:
+
+```ts title="convex/queries.ts" showLineNumbers {1-3,7-11}
+import { query } from './_generated/server';
+import { db } from 'better-convex/orm';
+import { eq } from 'better-convex/orm/filter';
+
+export const getPublishedPosts = query({
+  handler: async (ctx) => {
+    const posts = await db(ctx).query.posts.findMany({
+      where: eq(posts.published, true),
+      limit: 10,
+    });
+
+    return posts;
+  },
+});
+
+export const getAllUsers = query({
+  handler: async (ctx) => {
+    const users = await db(ctx).query.users.findMany();
+    return users;
+  },
+});
+```
+
+**Generated Convex Query:**
+```ts
+// Behind the scenes, Better-Convex compiles to:
+ctx.db.query("posts")
+  .filter(q => q.eq(q.field("published"), true))
+  .take(10)
+```
+
+**Type Inference:**
+```ts
+// Return type is automatically inferred from your schema:
+Array<{
+  _id: Id<'posts'>,
+  title: string,
+  content: string,
+  published: boolean,
+  userId: Id<'users'>,
+  _creationTime: number
+}>
+```
+
+
+## What You've Learned
+
+✅ Installed Better-Convex ORM
+✅ Defined tables with `convexTable()`
+✅ Created relations with `relations()`
+✅ Queried data with `findMany()` and filtering
+✅ Understood type inference and generated queries
+
+## Next Steps
+
+<Cards>
+  <Card title="Schema Definition" href="/docs/db/orm/schema">
+    Deep dive into tables, relations, and type inference
+  </Card>
+  <Card title="Querying Data" href="/docs/db/orm/queries">
+    Master findMany(), findFirst(), and filtering operators
+  </Card>
+  <Card title="Relations Deep Dive" href="/docs/db/orm/relations">
+    Learn how to define one-to-one, one-to-many, and many-to-many relations
+  </Card>
+  <Card title="Drizzle Comparison" href="/docs/db/orm/comparison">
+    Side-by-side API comparison and migration guide
+  </Card>
+</Cards>
+
+## Common Gotchas
+
+| Issue | Solution |
+|-------|----------|
+| **Type errors on `db(ctx)`** | Make sure you imported `db` from `better-convex/orm`, not `convex` |
+| **Relations not working** | Export both the table AND the relations object in your schema |
+| **Missing fields in queries** | Convex always returns full documents - you can't select specific columns like in SQL |
+| **Undefined in TypeScript** | Convex uses `undefined` for missing fields, not `null` like SQL databases |
+
+<Callout icon={<InfoIcon />}>
+**Need Help?** Check the [API Reference](/docs/db/orm/api-reference) for complete documentation, or see [Limitations](/docs/db/orm/limitations) for Convex-specific differences from Drizzle.
+</Callout>

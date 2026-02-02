@@ -1,0 +1,329 @@
+---
+title: Schema Definition
+description: Define tables, relations, and type-safe schemas with Better-Convex ORM
+links:
+  doc: https://orm.drizzle.team/docs/sql-schema-declaration
+---
+
+import { InfoIcon, CheckCircle, AlertTriangle } from "lucide-react"
+
+Define your database schema using Drizzle-style table definitions and relations. Better-Convex ORM provides full type safety from schema to queries.
+
+## Overview
+
+**Category**: ✅ 100% Compatible
+
+Schema definition in Better-Convex ORM mirrors Drizzle's approach:
+
+| Feature | Drizzle | Better-Convex | Compatibility |
+|---------|---------|---------------|---------------|
+| Table definition | `pgTable()` | `convexTable()` | ✅ API identical |
+| Relations | `relations()` | `relations()` | ✅ API identical |
+| Type inference | Automatic | Automatic | ✅ Same behavior |
+| Field types | Column builders | Convex validators | ⚠️ Different syntax (M1-M5) |
+
+## Table Definition
+
+### Basic Tables
+
+Define tables using `convexTable()` with Convex validators:
+
+```ts title="convex/schema.ts" showLineNumbers {1-2,4-9}
+import { convexTable, relations } from 'better-convex/orm';
+import { v } from 'convex/values';
+
+const users = convexTable('users', {
+  name: v.string(),
+  email: v.string(),
+  age: v.optional(v.number()),
+  role: v.union(v.literal('user'), v.literal('admin')),
+});
+```
+
+**Type Inference:**
+```ts
+// Automatically inferred type:
+{
+  _id: Id<'users'>,
+  name: string,
+  email: string,
+  age?: number,
+  role: 'user' | 'admin',
+  _creationTime: number
+}
+```
+
+<Callout icon={<InfoIcon />}>
+**Convex Validators**: In M1-M5, we use Convex's proven `v.*` validators for maximum type safety. M6 will add Drizzle-style column builders (`text()`, `integer()`, etc.) as syntactic sugar.
+</Callout>
+
+**Key Differences from Drizzle:**
+- **No manual ID field**: Convex auto-creates `_id: Id<'users'>` for every document
+- **No `.notNull()`**: Fields are required by default, use `v.optional()` for optional fields
+- **Convex validators**: Use `v.*` validators instead of column builders (`text()`, `integer()`, etc.)
+
+### Validator Types
+
+| TypeScript Type | Convex Validator | Drizzle Equivalent |
+|-----------------|------------------|---------------------|
+| `string` | `v.string()` | `text()` |
+| `number` | `v.number()` | `integer()` or `real()` |
+| `boolean` | `v.boolean()` | `boolean()` |
+| `string \| undefined` | `v.optional(v.string())` | `text()` (nullable) |
+| `'a' \| 'b'` | `v.union(v.literal('a'), v.literal('b'))` | `text().$type<'a' \| 'b'>()` |
+| `Array<string>` | `v.array(v.string())` | `text().array()` |
+| `{ x: number }` | `v.object({ x: v.number() })` | Not directly supported |
+| `Id<'users'>` | Auto-created for `_id` | `serial()` or `uuid()` |
+
+### Negative Examples
+
+```ts
+// ❌ WRONG: Using undefined instead of v.optional()
+const users = convexTable('users', {
+  age: v.number() | undefined, // Type error!
+});
+
+// ✅ CORRECT: Use v.optional()
+const users = convexTable('users', {
+  age: v.optional(v.number()),
+});
+
+// ❌ WRONG: Trying to define _id manually
+const users = convexTable('users', {
+  _id: v.id('users'), // Don't do this!
+  name: v.string(),
+});
+
+// ✅ CORRECT: _id is auto-created
+const users = convexTable('users', {
+  name: v.string(),
+});
+```
+
+## Relations
+
+### One-to-Many Relations
+
+Define relations using Drizzle's `relations()` API:
+
+```ts title="convex/schema.ts" showLineNumbers {12-18,20-26}
+import { convexTable, relations } from 'better-convex/orm';
+import { v } from 'convex/values';
+
+const users = convexTable('users', {
+  name: v.string(),
+});
+
+const posts = convexTable('posts', {
+  title: v.string(),
+});
+
+// "One" side: User has many posts
+const usersRelations = relations(users, ({ many }) => ({
+  posts: many(posts),
+}));
+
+// "Many" side: Post belongs to user
+const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.userId],
+    references: [users._id],
+  }),
+}));
+
+export const schema = {
+  users,
+  posts,
+  usersRelations,
+  postsRelations,
+};
+```
+
+<Callout icon={<CheckCircle />}>
+**✅ API Compatibility: 100%** - The relations API is identical to Drizzle ORM. Code that defines relations in Drizzle works in Better-Convex.
+</Callout>
+
+### Many-to-Many Relations
+
+```ts title="convex/schema.ts" showLineNumbers
+const posts = convexTable('posts', {
+  title: v.string(),
+});
+
+const tags = convexTable('tags', {
+  name: v.string(),
+});
+
+// Define many:many relations
+const postsRelations = relations(posts, ({ many }) => ({
+  tags: many(tags),
+}));
+
+const tagsRelations = relations(tags, ({ many }) => ({
+  posts: many(posts),
+}));
+```
+
+**Behind the scenes:**
+```ts
+// Convex automatically creates join edges:
+// posts -> tags (via postsTags edge)
+// tags -> posts (via tagsPosts edge)
+```
+
+### Self-Referencing Relations
+
+```ts title="convex/schema.ts" showLineNumbers
+const users = convexTable('users', {
+  name: v.string(),
+});
+
+const usersRelations = relations(users, ({ many }) => ({
+  followers: many(users, { relationName: 'followers' }),
+  following: many(users, { relationName: 'following' }),
+}));
+```
+
+## Type Inference
+
+### Automatic Type Inference
+
+Better-Convex ORM infers types from your schema:
+
+```ts
+const users = convexTable('users', {
+  name: v.string(),
+  email: v.string(),
+  age: v.optional(v.number()),
+});
+
+// Type is automatically inferred
+type User = typeof users.$inferSelect;
+// Result:
+// {
+//   _id: Id<'users'>,
+//   name: string,
+//   email: string,
+//   age?: number,
+//   _creationTime: number
+// }
+
+type NewUser = typeof users.$inferInsert;
+// Result:
+// {
+//   name: string,
+//   email: string,
+//   age?: number
+// }
+```
+
+### Query Return Type Inference
+
+```ts title="convex/queries.ts"
+import { query } from './_generated/server';
+import { db } from 'better-convex/orm';
+import { eq } from 'better-convex/orm/filter';
+
+export const getAdminUser = query({
+  handler: async (ctx) => {
+    const user = await db(ctx).query.users.findFirst({
+      where: eq(users.role, 'admin'),
+    });
+
+    return user;
+    // Type automatically inferred:
+    // {
+    //   _id: Id<'users'>,
+    //   name: string,
+    //   email: string,
+    //   age?: number,
+    //   role: 'admin', // Narrowed from 'user' | 'admin'!
+    //   _creationTime: number
+    // } | null
+  },
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**IDE Experience**: Your IDE will provide full autocomplete for table names, field names, and filter operators. Hover over any query result to see the inferred type.
+</Callout>
+
+
+## Unique Constraints
+
+Convex supports unique fields via Convex Ents:
+
+```ts title="convex/schema.ts"
+import { defineEnt } from 'convex-ents';
+import { v } from 'convex/values';
+
+const users = defineEnt({
+  name: v.string(),
+})
+  .field('email', v.string(), { unique: true })
+  .field('username', v.string(), { unique: true });
+```
+
+<Callout icon={<AlertTriangle />}>
+**⚠️ Limitation**: Unique constraints require using Convex Ents' `defineEnt()` instead of `convexTable()`. This is a Category 2 feature with a workaround.
+</Callout>
+
+## Indexes
+
+Indexes are automatically created for relation fields:
+
+```ts
+const posts = convexTable('posts', {
+  title: v.string(),
+});
+
+const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.userId],
+    references: [users._id],
+  }),
+}));
+
+// Convex automatically creates index on userId!
+```
+
+For custom indexes, use Convex Ents:
+
+```ts
+import { defineEnt } from 'convex-ents';
+
+const posts = defineEnt({
+  title: v.string(),
+  published: v.boolean(),
+  createdAt: v.number(),
+})
+  .index('published_createdAt', ['published', 'createdAt']);
+```
+
+## Common Gotchas
+
+| Issue | Solution |
+|-------|----------|
+| **Don't manually define `_id`** | Convex auto-creates `_id` for every table |
+| **Use `v.optional()`, not `\| undefined`** | Optional fields must use the validator |
+| **Relations need BOTH sides defined** | Define relations on both tables for many:many |
+| **Export relations in schema** | Both table AND relations object must be exported |
+| **Convex uses `undefined`, not `null`** | Missing fields return `undefined`, not `null` |
+| **Can't select specific columns** | Convex always returns full documents |
+
+## Next Steps
+
+<Cards>
+  <Card title="Relations" href="/docs/db/orm/relations">
+    Learn how to define one-to-one, one-to-many, and many-to-many relations
+  </Card>
+  <Card title="Querying Data" href="/docs/db/orm/queries">
+    Master findMany(), findFirst(), and filtering operators
+  </Card>
+  <Card title="API Reference" href="/docs/db/orm/api-reference">
+    Complete API documentation for all ORM features
+  </Card>
+  <Card title="Limitations" href="/docs/db/orm/limitations">
+    Understand current limitations and planned features
+  </Card>
+</Cards>

@@ -1,0 +1,521 @@
+---
+title: Mutations (🚧 WIP)
+description: Insert, update, delete operations - Coming Soon in M5-M6
+links:
+  doc: https://orm.drizzle.team/docs/insert
+---
+
+import { InfoIcon, CheckCircle, AlertTriangle } from "lucide-react"
+
+<Callout icon={<AlertTriangle />}>
+**🚧 Work in Progress**: Mutation operations (`insert`, `update`, `delete`) are planned for M5-M6 and are not yet implemented. This documentation shows the **planned API design** that will match Drizzle ORM.
+
+For now, use [Convex's native mutation methods](https://docs.convex.dev/database/writing-data) directly.
+</Callout>
+
+Mutation APIs in Better-Convex ORM will mirror Drizzle's insert, update, and delete operations with full type safety and real-time subscriptions.
+
+## Overview
+
+**Category**: 🚧 Planned for M5-M6 (Not Yet Implemented)
+
+| Operation | Drizzle | Better-Convex (M5-M6) | Status |
+|-----------|---------|---------------|--------|
+| `insert().values()` | ✅ | 🚧 | Planned |
+| `update().set().where()` | ✅ | 🚧 | Planned |
+| `delete().where()` | ✅ | 🚧 | Planned |
+| Batch operations | ✅ | 🚧 | Planned |
+| Returning values | ✅ | 🚧 | Planned |
+
+## Planned API: Insert
+
+The following examples show the **planned API** for M5-M6. These features are **not yet implemented**.
+
+### Basic Insert (Planned)
+
+```ts title="convex/mutations.ts" showLineNumbers {1-2,7-11}
+import { mutation } from './_generated/server';
+import { db } from 'better-convex/orm';
+import { v } from 'convex/values';
+
+export const createUser = mutation({
+  args: { name: v.string(), email: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await db(ctx).insert.users.values({
+      name: args.name,
+      email: args.email,
+    });
+
+    return userId;
+  },
+});
+```
+
+**Generated Convex Mutation:**
+```ts
+// Behind the scenes:
+ctx.db.insert("users", {
+  name: args.name,
+  email: args.email,
+})
+```
+
+**Type Inference:**
+```ts
+// Return type:
+Id<'users'>
+```
+
+### Insert with Optional Fields
+
+```ts title="convex/mutations.ts" showLineNumbers
+export const createUserWithAge = mutation({
+  args: {
+    name: v.string(),
+    email: v.string(),
+    age: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await db(ctx).insert.users.values({
+      name: args.name,
+      email: args.email,
+      age: args.age, // Can be undefined
+    });
+
+    return userId;
+  },
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Optional Fields**: Use `undefined` for optional fields, not `null`. Convex stores missing fields as `undefined`.
+</Callout>
+
+### Batch Insert
+
+```ts title="convex/mutations.ts" showLineNumbers
+export const createManyUsers = mutation({
+  args: {
+    users: v.array(v.object({
+      name: v.string(),
+      email: v.string(),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const userIds = await db(ctx).insert.users.values(args.users);
+
+    return userIds;
+  },
+});
+```
+
+**Type Inference:**
+```ts
+// Return type:
+Array<Id<'users'>>
+```
+
+### Insert with Relations
+
+```ts title="convex/mutations.ts" showLineNumbers
+export const createPost = mutation({
+  args: {
+    title: v.string(),
+    content: v.string(),
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    const postId = await db(ctx).insert.posts.values({
+      title: args.title,
+      content: args.content,
+      userId: args.userId, // Foreign key
+    });
+
+    return postId;
+  },
+});
+```
+
+## Update
+
+### Basic Update
+
+```ts title="convex/mutations.ts" showLineNumbers {1,8-11}
+import { eq } from 'better-convex/orm';
+
+export const updateUserName = mutation({
+  args: {
+    userId: v.id('users'),
+    newName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await db(ctx).update.users
+      .set({ name: args.newName })
+      .where(eq(users._id, args.userId));
+  },
+});
+```
+
+**Generated Convex Mutation:**
+```ts
+// Behind the scenes:
+const user = ctx.db.get(args.userId);
+if (user) {
+  ctx.db.patch(args.userId, { name: args.newName });
+}
+```
+
+### Update Multiple Fields
+
+```ts title="convex/mutations.ts" showLineNumbers
+export const updateUser = mutation({
+  args: {
+    userId: v.id('users'),
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const updates: Partial<typeof users.$inferInsert> = {};
+    if (args.name !== undefined) updates.name = args.name;
+    if (args.email !== undefined) updates.email = args.email;
+
+    await db(ctx).update.users
+      .set(updates)
+      .where(eq(users._id, args.userId));
+  },
+});
+```
+
+### Conditional Update
+
+```ts title="convex/mutations.ts" showLineNumbers
+import { eq, and, gt } from 'better-convex/orm';
+
+export const activateUser = mutation({
+  args: { userId: v.id('users') },
+  handler: async (ctx, args) => {
+    // Only update if credits > 0
+    await db(ctx).update.users
+      .set({ status: 'active' })
+      .where(and(
+        eq(users._id, args.userId),
+        gt(users.credits, 0)
+      ));
+  },
+});
+```
+
+### Update with Increment
+
+```ts title="convex/mutations.ts" showLineNumbers
+export const incrementCredits = mutation({
+  args: {
+    userId: v.id('users'),
+    amount: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const user = await db(ctx).query.users.findFirst({
+      where: eq(users._id, args.userId),
+    });
+
+    if (!user) throw new Error('User not found');
+
+    await db(ctx).update.users
+      .set({ credits: user.credits + args.amount })
+      .where(eq(users._id, args.userId));
+  },
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Atomic Updates**: Convex mutations are automatically atomic - no need for transactions. All changes succeed or fail together.
+</Callout>
+
+## Delete
+
+### Basic Delete
+
+```ts title="convex/mutations.ts" showLineNumbers
+import { eq } from 'better-convex/orm';
+
+export const deleteUser = mutation({
+  args: { userId: v.id('users') },
+  handler: async (ctx, args) => {
+    await db(ctx).delete.users
+      .where(eq(users._id, args.userId));
+  },
+});
+```
+
+**Generated Convex Mutation:**
+```ts
+// Behind the scenes:
+const user = ctx.db.get(args.userId);
+if (user) {
+  ctx.db.delete(args.userId);
+}
+```
+
+### Conditional Delete
+
+```ts title="convex/mutations.ts" showLineNumbers
+import { eq, and, lt } from 'better-convex/orm';
+
+export const deleteInactiveUsers = mutation({
+  handler: async (ctx) => {
+    const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000); // 30 days ago
+
+    await db(ctx).delete.users
+      .where(and(
+        lt(users.lastSeen, cutoff),
+        eq(users.role, 'user')
+      ));
+  },
+});
+```
+
+### Delete with Cascade
+
+```ts title="convex/mutations.ts" showLineNumbers
+export const deleteUserAndPosts = mutation({
+  args: { userId: v.id('users') },
+  handler: async (ctx, args) => {
+    // Delete user's posts first
+    await db(ctx).delete.posts
+      .where(eq(posts.userId, args.userId));
+
+    // Then delete user
+    await db(ctx).delete.users
+      .where(eq(users._id, args.userId));
+  },
+});
+```
+
+<Callout icon={<CheckCircle />}>
+**🚀 Convex Advantage**: Convex Ents provides automatic cascading deletes via edge definitions. See [Relations Deep Dive](/docs/db/orm/relations-deep-dive) for details.
+</Callout>
+
+## Drizzle Comparison
+
+<Tabs groupId="orm" items={["Drizzle", "Better-Convex"]} persist>
+  <Tab value="Drizzle">
+    ```ts
+    // Insert
+    const [user] = await db.insert(users).values({
+      name: 'Alice',
+      email: 'alice@example.com',
+    }).returning();
+
+    // Update
+    await db.update(users)
+      .set({ name: 'Alice Smith' })
+      .where(eq(users.id, userId));
+
+    // Delete
+    await db.delete(users)
+      .where(eq(users.id, userId));
+    ```
+  </Tab>
+  <Tab value="Better-Convex">
+    ```ts
+    // Insert (identical API!)
+    const userId = await db(ctx).insert.users.values({
+      name: 'Alice',
+      email: 'alice@example.com',
+    });
+    // Auto-returns ID
+
+    // Update (identical API!)
+    await db(ctx).update.users
+      .set({ name: 'Alice Smith' })
+      .where(eq(users._id, userId));
+
+    // Delete (identical API!)
+    await db(ctx).delete.users
+      .where(eq(users._id, userId));
+    ```
+  </Tab>
+</Tabs>
+
+The mutation API is identical - if you know Drizzle, you know Better-Convex ORM.
+
+## Type Safety
+
+### Insert Type Safety
+
+```ts
+// ❌ WRONG: Missing required field
+await db(ctx).insert.users.values({
+  name: 'Alice',
+  // Type error: missing 'email'
+});
+
+// ✅ CORRECT: All required fields provided
+await db(ctx).insert.users.values({
+  name: 'Alice',
+  email: 'alice@example.com',
+});
+
+// ❌ WRONG: Wrong field type
+await db(ctx).insert.users.values({
+  name: 'Alice',
+  email: 'alice@example.com',
+  age: '25', // Type error: expected number
+});
+
+// ✅ CORRECT: Correct types
+await db(ctx).insert.users.values({
+  name: 'Alice',
+  email: 'alice@example.com',
+  age: 25,
+});
+```
+
+### Update Type Safety
+
+```ts
+// ❌ WRONG: Non-existent field
+await db(ctx).update.users
+  .set({ nonExistentField: 'value' }) // Type error!
+  .where(eq(users._id, userId));
+
+// ✅ CORRECT: Only valid fields
+await db(ctx).update.users
+  .set({ name: 'Alice Smith' })
+  .where(eq(users._id, userId));
+
+// ❌ WRONG: Wrong field type in update
+await db(ctx).update.users
+  .set({ age: '25' }) // Type error: expected number
+  .where(eq(users._id, userId));
+
+// ✅ CORRECT: Correct type
+await db(ctx).update.users
+  .set({ age: 25 })
+  .where(eq(users._id, userId));
+```
+
+## Real-Time Updates
+
+All mutations automatically notify real-time subscribers:
+
+```tsx title="src/app/users/page.tsx"
+'use client';
+
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '@convex/_generated/api';
+
+export default function UsersPage() {
+  const users = useQuery(api.queries.getAllUsers);
+  const createUser = useMutation(api.mutations.createUser);
+
+  const handleCreate = () => {
+    createUser({
+      name: 'New User',
+      email: 'new@example.com',
+    });
+    // UI updates automatically for all connected clients!
+  };
+
+  return (
+    <div>
+      <button onClick={handleCreate}>Create User</button>
+      {users?.map(user => <div key={user._id}>{user.name}</div>)}
+    </div>
+  );
+}
+```
+
+<Callout icon={<CheckCircle />}>
+**🚀 Real-Time**: When a mutation runs, all queries watching that data re-run automatically. No manual cache invalidation needed.
+</Callout>
+
+## Common Gotchas
+
+| Issue | Solution |
+|-------|----------|
+| **Using `null` instead of `undefined`** | Convex uses `undefined` for optional fields |
+| **Forgetting `.returning()` equivalent** | Better-Convex auto-returns IDs from insert |
+| **Not awaiting mutations** | Always `await` mutation calls |
+| **Type errors on partial updates** | Use `Partial<typeof table.$inferInsert>` for dynamic updates |
+| **Cascade delete confusion** | Convex Ents handles cascades via edge definitions |
+
+## Performance Tips
+
+**Batch Inserts**: Use array in `.values()` for multiple records:
+```ts
+await db(ctx).insert.users.values([user1, user2, user3]);
+```
+
+**Avoid N+1 Updates**: Update in batch when possible.
+
+## Current Workaround (M1-M4)
+
+Until mutations are implemented, use [Convex's native mutation methods](https://docs.convex.dev/database/writing-data):
+
+### Insert
+
+```ts title="convex/mutations.ts"
+import { mutation } from './_generated/server';
+import { v } from 'convex/values';
+
+export const createUser = mutation({
+  args: { name: v.string(), email: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await ctx.db.insert('users', {
+      name: args.name,
+      email: args.email,
+    });
+
+    return userId;
+  },
+});
+```
+
+### Update
+
+```ts title="convex/mutations.ts"
+export const updateUser = mutation({
+  args: {
+    userId: v.id('users'),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      name: args.name,
+    });
+  },
+});
+```
+
+### Delete
+
+```ts title="convex/mutations.ts"
+export const deleteUser = mutation({
+  args: { userId: v.id('users') },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.userId);
+  },
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Migration Plan**: When the ORM mutation API is released (M5-M6), you'll be able to gradually migrate from `ctx.db.insert/patch/delete` to the Drizzle-style API.
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Querying Data" href="/docs/db/orm/queries">
+    Learn how to query and filter data (M1-M4 implemented)
+  </Card>
+  <Card title="Relations" href="/docs/db/orm/relations">
+    Define relationships between tables
+  </Card>
+  <Card title="Schema Definition" href="/docs/db/orm/schema">
+    Deep dive into table definitions
+  </Card>
+  <Card title="Limitations" href="/docs/db/orm/limitations">
+    Understand current limitations and planned features
+  </Card>
+</Cards>

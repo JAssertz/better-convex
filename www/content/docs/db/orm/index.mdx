@@ -1,0 +1,193 @@
+---
+title: Better-Convex ORM
+description: Drizzle-style relational queries for Convex with full type safety and real-time subscriptions
+links:
+  doc: https://orm.drizzle.team
+---
+
+import { InfoIcon, CheckCircle, AlertTriangle } from "lucide-react"
+
+Better-Convex ORM brings familiar Drizzle-style ergonomics to Convex's serverless database. If you know Drizzle, you already know how to query Convex.
+
+## Overview
+
+Better-Convex ORM provides a Drizzle-compatible API layer on top of Convex, giving you:
+
+**🎯 Familiar API** - Same `convexTable()`, `relations()`, and query builder patterns as Drizzle
+**⚡ Real-time by Default** - Convex's reactive queries with Drizzle ergonomics
+**🔒 Full Type Safety** - End-to-end TypeScript inference from schema to queries
+**🚀 Zero Configuration** - No build step, no code generation, works instantly
+
+### Why Better-Convex ORM?
+
+Developers coming from SQL ORMs (Drizzle, Prisma) face a steep learning curve with Convex. Better-Convex ORM eliminates this barrier by providing the exact same API patterns you already know.
+
+<Callout icon={<CheckCircle />}>
+**API Compatibility**: Better-Convex ORM mirrors Drizzle's query builder API while adding Convex's real-time capabilities and serverless performance.
+</Callout>
+
+## Feature Compatibility
+
+Better-Convex ORM features fall into four categories:
+
+**✅ Category 1: Drizzle-Compatible** - Identical or highly similar API
+- Schema definition (`convexTable()`, field types)
+- Relations definition (`one()`, `many()`)
+- Query builder (`findMany()`, `findFirst()`)
+- Core filtering (`eq()`, `ne()`, `gt()`, `lt()`, `gte()`, `lte()`, `and()`, `or()`)
+- Type inference (`InferSelectModel`, `InferInsertModel`)
+
+**⚠️ Category 2: Limited/In Development** - Coming in future milestones
+- Relation loading with `with:` option (M5 - planned)
+- Mutations (`insert()`, `update()`, `delete()`) (M5-M6 - planned)
+- Order by (`orderBy()`) (M5 - planned)
+- String operators (`like`, `ilike`) - Use Convex search indexes instead
+
+**🚀 Category 3: Convex-Native Advantages** - Features Drizzle doesn't have
+- Real-time subscriptions on all queries (built-in)
+- Serverless scalability (no connection pooling needed)
+- Document-based storage (denormalized, fast reads)
+- Automatic indexing
+
+**❌ Category 4: Not Applicable** - SQL-specific features not needed in Convex
+- Raw SQL queries (Convex uses documents)
+- Database migrations (Convex is schemaless)
+- Complex joins (Convex uses denormalized documents)
+
+## Installation
+
+Install Better-Convex in your existing Convex project:
+
+<Tabs groupId="package-manager" items={["npm", "pnpm", "yarn", "bun"]} persist>
+  <Tab value="npm">
+    ```bash
+    npm install better-convex
+    ```
+  </Tab>
+  <Tab value="pnpm">
+    ```bash
+    pnpm add better-convex
+    ```
+  </Tab>
+  <Tab value="yarn">
+    ```bash
+    yarn add better-convex
+    ```
+  </Tab>
+  <Tab value="bun">
+    ```bash
+    bun add better-convex
+    ```
+  </Tab>
+</Tabs>
+
+## Basic Usage
+
+Define your schema using Drizzle-style syntax:
+
+```ts title="convex/schema.ts" showLineNumbers {3-9,11-14}
+import { convexTable, relations } from 'better-convex/orm';
+import { v } from 'convex/values';
+
+const users = convexTable('users', {
+  name: v.string(),
+  email: v.string(),
+});
+
+const posts = convexTable('posts', {
+  title: v.string(),
+  content: v.string(),
+  published: v.boolean(),
+});
+
+const usersRelations = relations(users, ({ many }) => ({
+  posts: many(posts),
+}));
+
+const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.userId],
+    references: [users._id],
+  }),
+}));
+```
+
+Query with full type safety:
+
+```ts title="convex/queries.ts" showLineNumbers
+import { query } from './_generated/server';
+import { db } from 'better-convex/orm';
+import { eq } from 'better-convex/orm/filter';
+
+export const getPublishedPosts = query({
+  handler: async (ctx) => {
+    const posts = await db(ctx).query.posts.findMany({
+      where: eq(posts.published, true),
+      limit: 10,
+    });
+
+    return posts;
+    // Type: Array<{
+    //   _id: Id<'posts'>,
+    //   title: string,
+    //   content: string,
+    //   published: boolean,
+    //   userId: Id<'users'>,
+    //   _creationTime: number
+    // }>
+  },
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Type Inference**: Better-Convex ORM automatically infers return types from your schema and query structure. Your IDE will provide full autocomplete and type checking.
+</Callout>
+
+## Real-Time Subscriptions
+
+Every Convex query is real-time by default. When data changes, your UI updates automatically:
+
+```tsx title="src/app/posts/page.tsx"
+'use client';
+
+import { useQuery } from 'convex/react';
+import { api } from '@convex/_generated/api';
+
+export default function PostsPage() {
+  // Automatically re-renders when data changes
+  const posts = useQuery(api.queries.getPublishedPosts);
+
+  return (
+    <div>
+      {posts?.map(post => (
+        <div key={post._id}>
+          <h2>{post.title}</h2>
+          <p>{post.content}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+<Callout icon={<CheckCircle />}>
+**🚀 Convex Advantage**: Real-time subscriptions work out of the box with any query. No need for polling, WebSockets, or additional infrastructure.
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Quickstart" href="/docs/db/orm/quickstart">
+    Get started in 5 minutes with a complete example
+  </Card>
+  <Card title="Schema Definition" href="/docs/db/orm/schema">
+    Learn how to define tables and relations
+  </Card>
+  <Card title="Querying Data" href="/docs/db/orm/queries">
+    Master findMany(), findFirst(), and filtering
+  </Card>
+  <Card title="Drizzle Comparison" href="/docs/db/orm/comparison">
+    Side-by-side API comparison with migration guide
+  </Card>
+</Cards>
+

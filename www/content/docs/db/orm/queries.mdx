@@ -1,0 +1,389 @@
+---
+title: Querying Data
+description: Query tables with findMany, findFirst, filtering, and relation loading
+links:
+  doc: https://orm.drizzle.team/docs/rqb
+---
+
+import { InfoIcon, CheckCircle, AlertTriangle } from "lucide-react"
+
+Query your Convex database using Drizzle's familiar relational query API. Better-Convex ORM provides full type safety and automatic real-time subscriptions.
+
+## Overview
+
+**Category**: ✅ Drizzle-Compatible (Core Queries) | ⚠️ Coming Soon (Relations, OrderBy)
+
+| Feature | Drizzle | Better-Convex (M1-M4) | Status |
+|---------|---------|---------------|--------|
+| `findMany()` | ✅ | ✅ | Fully implemented |
+| `findFirst()` | ✅ | ✅ | Fully implemented |
+| `where` filtering | ✅ | ✅ | All operators working |
+| `limit` / `offset` | ✅ | ✅ | Pagination supported |
+| `with` relations | ✅ | 🚧 | Planned for M5 |
+| `orderBy` | ✅ | 🚧 | Planned for M5 |
+| `columns` selection | ✅ | ❌ | Not applicable - Convex returns full documents |
+
+## Basic Queries
+
+### findMany - Query Multiple Records
+
+```ts title="convex/queries.ts" showLineNumbers {6-8}
+import { query } from './_generated/server';
+import { db } from 'better-convex/orm';
+
+export const getAllUsers = query({
+  handler: async (ctx) => {
+    const users = await db(ctx).query.users.findMany();
+
+    return users;
+  },
+});
+```
+
+**Generated Convex Query:**
+```ts
+// Behind the scenes:
+ctx.db.query("users").collect()
+```
+
+**Type Inference:**
+```ts
+// Return type:
+Array<{
+  _id: Id<'users'>,
+  name: string,
+  email: string,
+  _creationTime: number
+}>
+```
+
+### findFirst - Query Single Record
+
+```ts title="convex/queries.ts" showLineNumbers
+export const getFirstUser = query({
+  handler: async (ctx) => {
+    const user = await db(ctx).query.users.findFirst();
+
+    return user; // null if no users exist
+  },
+});
+```
+
+**Type Inference:**
+```ts
+// Return type:
+{
+  _id: Id<'users'>,
+  name: string,
+  email: string,
+  _creationTime: number
+} | null
+```
+
+## Filtering with `where`
+
+### Basic Filtering
+
+Use Drizzle's filter operators:
+
+```ts title="convex/queries.ts" showLineNumbers {1,7-11}
+import { eq, gt, and } from 'better-convex/orm';
+
+export const getActiveAdmins = query({
+  handler: async (ctx) => {
+    const admins = await db(ctx).query.users.findMany({
+      where: and(
+        eq(users.role, 'admin'),
+        gt(users.lastSeen, Date.now() - 86400000) // Active in last 24h
+      ),
+    });
+
+    return admins;
+  },
+});
+```
+
+**Generated Convex Query:**
+```ts
+// Behind the scenes:
+ctx.db.query("users")
+  .withIndex("role", q => q.eq("role", "admin"))
+  .filter(q => q.gt(q.field("lastSeen"), Date.now() - 86400000))
+  .collect()
+```
+
+### Available Operators
+
+**Category 1: ✅ 100% Compatible**
+
+| Operator | Example | Description |
+|----------|---------|-------------|
+| `eq(field, value)` | `eq(users.role, 'admin')` | Equal to |
+| `ne(field, value)` | `ne(users.status, 'banned')` | Not equal to |
+| `gt(field, value)` | `gt(users.age, 18)` | Greater than |
+| `gte(field, value)` | `gte(users.credits, 100)` | Greater than or equal |
+| `lt(field, value)` | `lt(users.age, 65)` | Less than |
+| `lte(field, value)` | `lte(users.loginCount, 10)` | Less than or equal |
+| `and(...)` | `and(eq(...), gt(...))` | Logical AND |
+| `or(...)` | `or(eq(...), eq(...))` | Logical OR |
+| `not(...)` | `not(eq(...))` | Logical NOT |
+| `isNull(field)` | `isNull(users.deletedAt)` | Is undefined/null |
+| `isNotNull(field)` | `isNotNull(users.email)` | Is not undefined/null |
+
+**Category 2: ⚠️ Limited/Workaround**
+
+| Operator | Drizzle | Better-Convex | Workaround |
+|----------|---------|---------------|------------|
+| `like(field, pattern)` | ✅ | ⚠️ | Use Convex search indexes or post-filter |
+| `ilike(field, pattern)` | ✅ | ⚠️ | Use Convex search indexes or post-filter |
+| `inArray(field, values)` | ✅ | ⚠️ | Use `or(eq(...), eq(...), ...)` |
+
+<Callout icon={<AlertTriangle />}>
+**⚠️ Limitation**: Convex doesn't support SQL LIKE operators. For text search, use [Convex search indexes](/docs/db/filters#search-indexes) or post-filter results.
+</Callout>
+
+### Complex Filtering
+
+```ts title="convex/queries.ts" showLineNumbers
+import { eq, gt, lt, and, or } from 'better-convex/orm';
+
+export const getEligibleUsers = query({
+  handler: async (ctx) => {
+    const users = await db(ctx).query.users.findMany({
+      where: and(
+        or(
+          eq(users.role, 'premium'),
+          eq(users.role, 'admin')
+        ),
+        gt(users.credits, 0),
+        lt(users.loginCount, 100)
+      ),
+    });
+
+    return users;
+  },
+});
+```
+
+### Negative Examples
+
+```ts
+// ❌ WRONG: Using null instead of undefined
+const users = await db(ctx).query.users.findMany({
+  where: eq(users.deletedAt, null), // Type error!
+});
+
+// ✅ CORRECT: Convex uses undefined
+const users = await db(ctx).query.users.findMany({
+  where: isNull(users.deletedAt), // Checks for undefined
+});
+
+// ❌ WRONG: SQL LIKE operator
+const users = await db(ctx).query.users.findMany({
+  where: like(users.name, '%alice%'), // Not supported!
+});
+
+// ✅ CORRECT: Use Convex search index or post-filter
+const users = await db(ctx).query.users.findMany();
+const filtered = users.filter(u => u.name.toLowerCase().includes('alice'));
+```
+
+## Pagination
+
+### Limit
+
+Limit the number of results returned:
+
+```ts title="convex/queries.ts" showLineNumbers {6}
+import { query } from './_generated/server';
+import { db } from 'better-convex/orm';
+
+export const getRecentPosts = query({
+  handler: async (ctx) => {
+    const posts = await db(ctx).query.posts.findMany({
+      limit: 10,
+    });
+
+    return posts;
+  },
+});
+```
+
+### Offset
+
+Skip the first N results:
+
+```ts title="convex/queries.ts" showLineNumbers {7-8}
+import { query } from './_generated/server';
+import { db } from 'better-convex/orm';
+
+export const getPostsPage = query({
+  args: { page: v.number() },
+  handler: async (ctx, args) => {
+    const posts = await db(ctx).query.posts.findMany({
+      limit: 10,
+      offset: (args.page - 1) * 10,
+    });
+
+    return posts;
+  },
+});
+```
+
+### Combined with Filtering
+
+```ts title="convex/queries.ts" showLineNumbers
+export const getPublishedPostsPage = query({
+  args: { page: v.number() },
+  handler: async (ctx, args) => {
+    const posts = await db(ctx).query.posts.findMany({
+      where: eq(posts.published, true),
+      limit: 10,
+      offset: (args.page - 1) * 10,
+    });
+
+    return posts;
+  },
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Pagination**: `limit` and `offset` work for simple pagination. For better performance with large datasets, consider using Convex's native cursor pagination (see Limitations page).
+</Callout>
+
+## Coming Soon (M5)
+
+### Relation Loading with `with:`
+
+The `with:` option for loading related data is planned for M5:
+
+```ts
+// 🚧 NOT YET IMPLEMENTED - Coming in M5
+const usersWithPosts = await db(ctx).query.users.findMany({
+  with: {
+    posts: true, // Will load related posts
+  },
+});
+```
+
+### Order By
+
+The `orderBy` option is planned for M5:
+
+```ts
+// 🚧 NOT YET IMPLEMENTED - Coming in M5
+const posts = await db(ctx).query.posts.findMany({
+  orderBy: desc(posts._creationTime),
+});
+```
+
+**Current Workaround**: Sort results after fetching:
+
+```ts
+const posts = await db(ctx).query.posts.findMany();
+const sorted = posts.sort((a, b) => b._creationTime - a._creationTime);
+```
+
+## Column Selection (Not Supported)
+
+<Callout icon={<AlertTriangle />}>
+**⚠️ Category 2: Limitation** - Convex always returns full documents. You cannot select specific columns like in SQL.
+</Callout>
+
+```ts
+// ❌ NOT SUPPORTED: Column selection
+const users = await db(ctx).query.users.findMany({
+  columns: {
+    name: true,
+    email: true,
+  },
+});
+
+// ✅ WORKAROUND: Map after fetching
+const users = await db(ctx).query.users.findMany();
+const nameAndEmail = users.map(u => ({
+  name: u.name,
+  email: u.email,
+}));
+```
+
+**Why this limitation?**
+
+Convex is document-oriented, not column-oriented like SQL. Every query returns the full document for performance and consistency. The workaround (mapping after fetch) is negligible overhead since Convex queries are already fast.
+
+## Performance Considerations
+
+### Use Indexes for Filtering
+
+Convex automatically creates indexes for relation fields, but you should create indexes for commonly filtered fields:
+
+```ts title="convex/schema.ts"
+import { defineEnt } from 'convex-ents';
+
+const users = defineEnt({
+  name: v.string(),
+  role: v.string(),
+  createdAt: v.number(),
+})
+  .index('role', ['role'])
+  .index('role_createdAt', ['role', 'createdAt']);
+```
+
+**Query with index:**
+```ts
+const admins = await db(ctx).query.users.findMany({
+  where: eq(users.role, 'admin'), // Uses 'role' index!
+});
+```
+
+### Avoid N+1 Queries
+
+Use `with` to load relations in a single query:
+
+```ts
+// ❌ BAD: N+1 query (slow)
+const users = await db(ctx).query.users.findMany();
+for (const user of users) {
+  user.posts = await db(ctx).query.posts.findMany({
+    where: eq(posts.userId, user._id),
+  });
+}
+
+// ✅ GOOD: Load relations with `with` (fast)
+const users = await db(ctx).query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Performance Tip**: Convex's edge-based relations are faster than SQL joins. The `with` option loads relations efficiently using indexed queries.
+</Callout>
+
+## Common Gotchas
+
+| Issue | Solution |
+|-------|----------|
+| **`where: eq(field, null)` type error** | Use `isNull(field)` instead - Convex uses `undefined` |
+| **`like()` operator not working** | Use Convex search indexes or post-filter results |
+| **Slow queries without indexes** | Create indexes for filtered fields |
+| **Can't select specific columns** | Map results after fetching - Convex returns full documents |
+| **`with:` not working** | Relation loading not yet implemented (M5) |
+
+## Next Steps
+
+<Cards>
+  <Card title="Relations" href="/docs/db/orm/relations">
+    Learn how to define one-to-one, one-to-many, and many-to-many relations
+  </Card>
+  <Card title="Schema Definition" href="/docs/db/orm/schema">
+    Deep dive into tables and type inference
+  </Card>
+  <Card title="API Reference" href="/docs/db/orm/api-reference">
+    Complete operator and API reference
+  </Card>
+  <Card title="Limitations" href="/docs/db/orm/limitations">
+    Understand current limitations and planned features
+  </Card>
+</Cards>

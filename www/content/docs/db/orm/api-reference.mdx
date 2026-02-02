@@ -1,0 +1,642 @@
+---
+title: API Reference
+description: Complete API reference for Better-Convex ORM with all functions, operators, and types
+links:
+  doc: https://orm.drizzle.team/docs/overview
+---
+
+import { InfoIcon, CheckCircle, Code } from "lucide-react"
+
+Complete API reference for Better-Convex ORM - every function, operator, and type documented with examples and TypeScript signatures.
+
+## Schema Definition
+
+### convexTable()
+
+```ts
+convexTable<TName extends string, TFields>(
+  name: TName,
+  fields: TFields
+): ConvexTable<TName, TFields>
+```
+
+Define a Convex table with Drizzle-style API.
+
+**Parameters:**
+- `name`: Table name (string)
+- `fields`: Object mapping field names to Convex validators (`v.*`)
+
+**Returns:** ConvexTable instance with full type inference
+
+**Example:**
+```ts
+import { convexTable } from 'better-convex/orm';
+import { v } from 'convex/values';
+
+const users = convexTable('users', {
+  name: v.string(),
+  email: v.string(),
+  age: v.optional(v.number()),
+});
+
+// Inferred type:
+// {
+//   _id: Id<'users'>,
+//   name: string,
+//   email: string,
+//   age?: number,
+//   _creationTime: number
+// }
+```
+
+**Auto-generated fields:**
+- `_id`: `Id<TName>` - Convex document ID
+- `_creationTime`: number - Unix timestamp of creation
+
+### relations()
+
+```ts
+relations<TTable>(
+  table: TTable,
+  callback: (helpers: RelationHelpers) => Relations
+): TableRelations<TTable>
+```
+
+Define relations between tables (identical to Drizzle).
+
+**Parameters:**
+- `table`: The table to define relations for
+- `callback`: Function receiving `{ one, many }` helpers
+
+**Returns:** Table relations configuration
+
+**Example:**
+```ts
+import { relations } from 'better-convex/orm';
+
+const usersRelations = relations(users, ({ many, one }) => ({
+  posts: many(posts),
+  profile: one(profiles),
+}));
+
+const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.userId],
+    references: [users._id],
+  }),
+}));
+```
+
+### one()
+
+```ts
+one<TTarget>(
+  target: TTarget,
+  config?: RelationConfig
+): OneRelation<TTarget>
+```
+
+Define one-to-one or many-to-one relation.
+
+**Parameters:**
+- `target`: Target table
+- `config`: `{ fields: [...], references: [...] }` (required for many-to-one)
+
+**Example:**
+```ts
+one(users, {
+  fields: [posts.userId],
+  references: [users._id],
+})
+```
+
+### many()
+
+```ts
+many<TTarget>(target: TTarget): ManyRelation<TTarget>
+```
+
+Define one-to-many relation.
+
+**Parameters:**
+- `target`: Target table
+
+**Example:**
+```ts
+many(posts) // User has many posts
+```
+
+## Query Operations (M1-M4)
+
+### findMany()
+
+```ts
+db(ctx).query.tableName.findMany(
+  options?: FindManyOptions
+): Promise<Array<TableRecord<T>>>
+```
+
+Query multiple records with optional filtering.
+
+**Options (M1-M4):**
+- `where`: Filter condition using operators (eq, ne, gt, etc.)
+- `limit`: Maximum number of records to return
+- `offset`: Number of records to skip
+
+**Coming in M5:**
+- `with`: Relation loading
+- `orderBy`: Sort order
+
+**Returns:** Promise resolving to array of records with inferred types
+
+**Example:**
+```ts
+const users = await db(ctx).query.users.findMany({
+  where: and(
+    eq(users.role, 'admin'),
+    gt(users.age, 18)
+  ),
+  limit: 10,
+});
+```
+
+### findFirst()
+
+```ts
+db(ctx).query.tableName.findFirst(
+  options?: FindFirstOptions
+): Promise<TableRecord<T> | null>
+```
+
+Query first matching record.
+
+**Options (M1-M4):**
+- `where`: Filter condition
+- `limit`: Limit results before taking first
+
+**Coming in M5:**
+- `with`: Relations to load
+- `orderBy`: Sort order
+
+**Returns:** Promise resolving to first record or `null`
+
+**Example:**
+```ts
+const user = await db(ctx).query.users.findFirst({
+  where: eq(users.email, 'alice@example.com'),
+});
+```
+
+### paginate() (🚧 Coming Soon)
+
+```ts
+// NOT YET IMPLEMENTED - Use limit/offset for now
+db(ctx).query.tableName.paginate(
+  options: PaginateOptions
+): Promise<PaginationResult>
+```
+
+Cursor-based pagination (planned for M5+).
+
+**Workaround:** Use `limit` and `offset` for simple pagination.
+// result.continueCursor - Pass to next paginate() call
+// result.isDone - True if no more pages
+```
+
+## Mutation Operations (🚧 Coming in M5-M6)
+
+<Callout icon={<AlertTriangle />}>
+**Not Yet Implemented**: Mutation operations are planned for M5-M6. Use [native Convex mutations](https://docs.convex.dev/database/writing-data) (`ctx.db.insert`, `ctx.db.patch`, `ctx.db.delete`) for now.
+</Callout>
+
+The following APIs show the **planned design** for M5-M6:
+
+### insert (Planned)
+
+```ts
+// NOT YET IMPLEMENTED
+db(ctx).insert.tableName.values(
+  data: InsertData | InsertData[]
+): Promise<Id<TableName> | Id<TableName>[]>
+```
+
+**Planned Example:**
+```ts
+const userId = await db(ctx).insert.users.values({
+  name: 'Alice',
+  email: 'alice@example.com',
+});
+```
+
+### update (Planned)
+
+```ts
+// NOT YET IMPLEMENTED
+db(ctx).update.tableName
+  .set(data: PartialData)
+  .where(condition: FilterCondition): Promise<void>
+```
+
+**Planned Example:**
+```ts
+await db(ctx).update.users
+  .set({ name: 'Alice Smith' })
+  .where(eq(users._id, userId));
+```
+
+### delete (Planned)
+
+```ts
+// NOT YET IMPLEMENTED
+db(ctx).delete.tableName
+  .where(condition: FilterCondition): Promise<void>
+```
+
+**Planned Example:**
+```ts
+await db(ctx).delete.users
+  .where(eq(users._id, userId));
+```
+
+## Filter Operators
+
+### Comparison Operators
+
+#### eq()
+
+```ts
+eq<T>(field: Field<T>, value: T): FilterCondition
+```
+
+Equal to operator.
+
+**Example:**
+```ts
+where: eq(users.role, 'admin')
+```
+
+#### ne()
+
+```ts
+ne<T>(field: Field<T>, value: T): FilterCondition
+```
+
+Not equal to operator.
+
+**Example:**
+```ts
+where: ne(users.status, 'banned')
+```
+
+#### gt()
+
+```ts
+gt<T>(field: Field<T>, value: T): FilterCondition
+```
+
+Greater than operator.
+
+**Example:**
+```ts
+where: gt(users.age, 18)
+```
+
+#### gte()
+
+```ts
+gte<T>(field: Field<T>, value: T): FilterCondition
+```
+
+Greater than or equal operator.
+
+**Example:**
+```ts
+where: gte(users.credits, 100)
+```
+
+#### lt()
+
+```ts
+lt<T>(field: Field<T>, value: T): FilterCondition
+```
+
+Less than operator.
+
+**Example:**
+```ts
+where: lt(users.age, 65)
+```
+
+#### lte()
+
+```ts
+lte<T>(field: Field<T>, value: T): FilterCondition
+```
+
+Less than or equal operator.
+
+**Example:**
+```ts
+where: lte(users.loginCount, 10)
+```
+
+### Logical Operators
+
+#### and()
+
+```ts
+and(...conditions: FilterCondition[]): FilterCondition
+```
+
+Logical AND operator.
+
+**Example:**
+```ts
+where: and(
+  eq(users.role, 'admin'),
+  gt(users.age, 18),
+  ne(users.banned, true)
+)
+```
+
+#### or()
+
+```ts
+or(...conditions: FilterCondition[]): FilterCondition
+```
+
+Logical OR operator.
+
+**Example:**
+```ts
+where: or(
+  eq(users.role, 'admin'),
+  eq(users.role, 'moderator')
+)
+```
+
+#### not()
+
+```ts
+not(condition: FilterCondition): FilterCondition
+```
+
+Logical NOT operator.
+
+**Example:**
+```ts
+where: not(eq(users.banned, true))
+```
+
+### Null Checks
+
+#### isNull()
+
+```ts
+isNull(field: Field): FilterCondition
+```
+
+Check if field is undefined/null.
+
+**Example:**
+```ts
+where: isNull(users.deletedAt)
+```
+
+#### isNotNull()
+
+```ts
+isNotNull(field: Field): FilterCondition
+```
+
+Check if field is not undefined/null.
+
+**Example:**
+```ts
+where: isNotNull(users.email)
+```
+
+## Ordering Functions (🚧 Coming in M5)
+
+<Callout icon={<AlertTriangle />}>
+**Not Yet Implemented**: `orderBy`, `asc`, and `desc` are planned for M5. Sort results manually after fetching for now.
+</Callout>
+
+The following APIs show the **planned design** for M5:
+
+### orderBy() (Planned)
+
+```ts
+// NOT YET IMPLEMENTED
+orderBy(field: Field | Field[]): OrderByConfig
+```
+
+**Workaround:** Sort after fetching:
+```ts
+const users = await db(ctx).query.users.findMany();
+const sorted = users.sort((a, b) => b._creationTime - a._creationTime);
+```
+
+### asc() / desc() (Planned)
+
+```ts
+// NOT YET IMPLEMENTED
+asc(field: Field): SortOrder
+desc(field: Field): SortOrder
+```
+
+Ascending sort order.
+
+**Example:**
+```ts
+asc(users.name)
+```
+
+### desc()
+
+```ts
+desc(field: Field): SortOrder
+```
+
+Descending sort order.
+
+**Example:**
+```ts
+desc(users._creationTime)
+```
+
+## Type Utilities
+
+### $inferSelect
+
+```ts
+typeof table.$inferSelect
+```
+
+Infer TypeScript type for selected records.
+
+**Example:**
+```ts
+type User = typeof users.$inferSelect;
+// {
+//   _id: Id<'users'>,
+//   name: string,
+//   email: string,
+//   age?: number,
+//   _creationTime: number
+// }
+```
+
+### $inferInsert
+
+```ts
+typeof table.$inferInsert
+```
+
+Infer TypeScript type for insert operations.
+
+**Example:**
+```ts
+type NewUser = typeof users.$inferInsert;
+// {
+//   name: string,
+//   email: string,
+//   age?: number
+// }
+// (No _id or _creationTime - auto-generated)
+```
+
+### InferSelectModel
+
+```ts
+type InferSelectModel<T extends Table>
+```
+
+Extract select type from table (utility type).
+
+**Example:**
+```ts
+import type { InferSelectModel } from 'better-convex/orm';
+
+type User = InferSelectModel<typeof users>;
+```
+
+### InferInsertModel
+
+```ts
+type InferInsertModel<T extends Table>
+```
+
+Extract insert type from table (utility type).
+
+**Example:**
+```ts
+import type { InferInsertModel } from 'better-convex/orm';
+
+type NewUser = InferInsertModel<typeof users>;
+```
+
+## Database Context
+
+### db()
+
+```ts
+db(ctx: QueryCtx | MutationCtx): Database
+```
+
+Create database instance with ORM access.
+
+**Parameters:**
+- `ctx`: QueryCtx from query handler or MutationCtx from mutation handler
+
+**Returns:** Database instance with typed queries and mutations
+
+**Example:**
+```ts
+import { query } from './_generated/server';
+import { db } from 'better-convex/orm';
+
+export const getUsers = query({
+  handler: async (ctx) => {
+    // ctx is QueryCtx
+    return await db(ctx).query.users.findMany();
+  },
+});
+```
+
+## Complete Operator Table
+
+| Operator | Signature | Example | Category |
+|----------|-----------|---------|----------|
+| **eq** | `eq(field, value)` | `eq(users.role, 'admin')` | Comparison |
+| **ne** | `ne(field, value)` | `ne(users.status, 'banned')` | Comparison |
+| **gt** | `gt(field, value)` | `gt(users.age, 18)` | Comparison |
+| **gte** | `gte(field, value)` | `gte(users.credits, 100)` | Comparison |
+| **lt** | `lt(field, value)` | `lt(users.age, 65)` | Comparison |
+| **lte** | `lte(field, value)` | `lte(users.loginCount, 10)` | Comparison |
+| **and** | `and(...conditions)` | `and(eq(...), gt(...))` | Logical |
+| **or** | `or(...conditions)` | `or(eq(...), eq(...))` | Logical |
+| **not** | `not(condition)` | `not(eq(users.banned, true))` | Logical |
+| **isNull** | `isNull(field)` | `isNull(users.deletedAt)` | Null Check |
+| **isNotNull** | `isNotNull(field)` | `isNotNull(users.email)` | Null Check |
+
+## TypeScript Signatures (Complete)
+
+### Core Types
+
+```ts
+// Table definition
+type ConvexTable<TName extends string, TFields> = {
+  _tableName: TName;
+  _fields: TFields;
+  _id: Id<TName>;
+  _creationTime: number;
+  $inferSelect: InferSelect<TFields>;
+  $inferInsert: InferInsert<TFields>;
+};
+
+// Database instance
+type Database = {
+  query: {
+    [tableName: string]: {
+      findMany<TWith>(options?: FindManyOptions<TWith>): Promise<Array<TableWithRelations<T, TWith>>>;
+      findFirst<TWith>(options?: FindFirstOptions<TWith>): Promise<TableWithRelations<T, TWith> | null>;
+      paginate(options: PaginateOptions): Promise<PaginationResult>;
+    };
+  };
+  insert: {
+    [tableName: string]: {
+      values(data: InsertData | InsertData[]): Promise<Id<TableName> | Id<TableName>[]>;
+    };
+  };
+  update: {
+    [tableName: string]: {
+      set(data: PartialData): {
+        where(condition: FilterCondition): Promise<void>;
+      };
+    };
+  };
+  delete: {
+    [tableName: string]: {
+      where(condition: FilterCondition): Promise<void>;
+    };
+  };
+};
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Schema Definition" href="/docs/db/orm/schema">
+    Learn table and relation patterns
+  </Card>
+  <Card title="Querying Data" href="/docs/db/orm/queries">
+    Master query operations
+  </Card>
+  <Card title="Type Safety" href="/docs/db/orm/type-safety">
+    Understand type inference
+  </Card>
+  <Card title="Limitations" href="/docs/db/orm/limitations">
+    Know the edge cases and workarounds
+  </Card>
+</Cards>
