@@ -308,16 +308,18 @@ export type BuildQueryResult<
   ? InferModelFromColumns<TTableConfig['columns']>
   : TConfig extends Record<string, unknown>
     ? Simplify<
-        (TConfig extends { columns: Record<string, boolean> }
-          ? PickColumns<TTableConfig['columns'], TConfig['columns']>
-          : InferModelFromColumns<TTableConfig['columns']>) &
-          (TConfig extends { with: Record<string, unknown> }
+        Merge<
+          TConfig extends { columns: Record<string, boolean> }
+            ? PickColumns<TTableConfig['columns'], TConfig['columns']>
+            : InferModelFromColumns<TTableConfig['columns']>,
+          TConfig extends { with: Record<string, unknown> }
             ? BuildRelationResult<
                 TSchema,
                 TConfig['with'],
                 TTableConfig['relations']
               >
-            : {}) /* Identity type for intersection - Drizzle pattern */
+            : {}
+        >
       >
     : never;
 
