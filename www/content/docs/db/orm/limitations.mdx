@@ -15,7 +15,7 @@ These Drizzle features are SQL-specific and do not map to Convex:
 
 - SQL joins
 - Raw SQL execution
-- Database migrations and SQL constraints
+- Database migrations and SQL-level constraints (checks, cascading actions)
 - Custom SQL data types
 - Table introspection helpers (`getTableConfig`, `getTableColumns`)
 
@@ -54,19 +54,25 @@ const users = await db.query.users.findMany({
 
 - `paginate()` relies on the first `orderBy` field for cursor ordering
 - Sorting without an index falls back to `_creationTime` ordering
-- Add `.index()` on fields used for filter or sort
+- Add `index('...').on(t.field)` on fields used for filter or sort
 
 ```ts
-const posts = convexTable('posts', {
-  title: text().notNull(),
-  numLikes: number().notNull(),
-}).index('by_likes', ['numLikes']);
+const posts = convexTable(
+  'posts',
+  {
+    title: text().notNull(),
+    numLikes: number().notNull(),
+  },
+  (t) => [index('by_likes').on(t.numLikes)]
+);
 ```
 
 ## Constraints And Defaults
 
-- Convex does not enforce SQL constraints (unique, foreign keys, checks)
-- Defaults are not applied automatically at the database layer
+- Unique and foreign keys are enforced only through Better‑Convex ORM mutations
+- Non‑`_id` foreign keys require an index on the referenced columns
+- Check constraints and cascading actions are not enforced
+- Defaults are applied only by Better‑Convex ORM inserts
 - Use application logic or transaction rules to enforce constraints
 
 ## Performance Guidance
@@ -82,11 +88,11 @@ const posts = convexTable('posts', {
 
 | Issue | Cause | Fix |
 |---|---|---|
-| Slow ordering | Missing index | Add `.index()` in schema |
+| Slow ordering | Missing index | Add `index('...').on(t.field)` in schema |
 | `paginate()` order changes | No index on primary sort | Add index on first `orderBy` field |
 | `like` or `ilike` is slow | Post-fetch filtering | Use search indexes |
 | Relations not loading | Missing edges | Export `ormSchema` and `ormEdges` |
-| Missing defaults | Convex does not apply defaults | Set defaults in code |
+| Missing defaults | Direct `ctx.db` bypasses ORM defaults | Use ORM inserts or set defaults in code |
 
 ## Next Steps
 

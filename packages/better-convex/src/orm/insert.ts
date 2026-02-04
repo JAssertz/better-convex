@@ -2,7 +2,10 @@ import type { GenericDatabaseWriter } from 'convex/server';
 import type { ColumnBuilder } from './builders/column-builder';
 import type { FilterExpression } from './filter-expression';
 import {
+  applyDefaults,
   evaluateFilter,
+  enforceForeignKeys,
+  enforceUniqueIndexes,
   getColumnName,
   getTableName,
   selectReturningRow,
@@ -125,7 +128,8 @@ export class ConvexInsertBuilder<
 
     const results: Record<string, unknown>[] = [];
     for (const value of this.valuesList) {
-      const conflictResult = await this.handleConflict(value);
+      const preparedValue = applyDefaults(this.table, value as any);
+      const conflictResult = await this.handleConflict(preparedValue);
 
       if (conflictResult?.status === 'skip') {
         continue;
@@ -139,7 +143,13 @@ export class ConvexInsertBuilder<
       }
 
       const tableName = getTableName(this.table);
-      const id = await this.db.insert(tableName, value as any);
+      await enforceForeignKeys(this.db, this.table, preparedValue as any, {
+        changedFields: new Set(Object.keys(preparedValue as any)),
+      });
+      await enforceUniqueIndexes(this.db, this.table, preparedValue as any, {
+        changedFields: new Set(Object.keys(preparedValue as any)),
+      });
+      const id = await this.db.insert(tableName, preparedValue as any);
 
       if (!this.returningFields) {
         continue;
@@ -219,6 +229,23 @@ export class ConvexInsertBuilder<
     }
 
     const tableName = getTableName(this.table);
+    await enforceForeignKeys(
+      this.db,
+      this.table,
+      { ...(existing as any), ...(updateConfig.set as any) },
+      {
+        changedFields: new Set(Object.keys(updateConfig.set as any)),
+      }
+    );
+    await enforceUniqueIndexes(
+      this.db,
+      this.table,
+      { ...(existing as any), ...(updateConfig.set as any) },
+      {
+        currentId: (existing as any)._id,
+        changedFields: new Set(Object.keys(updateConfig.set as any)),
+      }
+    );
     await this.db.patch(
       tableName,
       (existing as any)._id,

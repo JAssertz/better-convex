@@ -10,13 +10,26 @@ import type {
   ColumnBuilder,
   ColumnBuilderBase,
   ColumnBuilderWithTableName,
+  ForeignKeyAction,
 } from './builders/column-builder';
 import { entityKind } from './builders/column-builder';
 import {
   createSystemFields,
   type SystemFields,
 } from './builders/system-fields';
-import type { ConvexIndexBuilder, ConvexIndexBuilderOn } from './indexes';
+import type {
+  ConvexIndexBuilder,
+  ConvexIndexBuilderOn,
+  ConvexSearchIndexBuilder,
+  ConvexSearchIndexBuilderOn,
+  ConvexVectorIndexBuilder,
+  ConvexVectorIndexBuilderOn,
+} from './indexes';
+import type {
+  ConvexForeignKeyBuilder,
+  ConvexUniqueConstraintBuilder,
+  ConvexUniqueConstraintBuilderOn,
+} from './constraints';
 import { Brand, Columns, TableName } from './symbols';
 
 /**
@@ -83,11 +96,26 @@ type ColumnsWithTableName<TColumns, TName extends string> = {
     : TColumns[K];
 };
 
-export type ConvexTableExtraConfigValue = ConvexIndexBuilder;
+export type ConvexTableExtraConfigValue =
+  | ConvexIndexBuilder
+  | ConvexSearchIndexBuilder
+  | ConvexVectorIndexBuilder
+  | ConvexForeignKeyBuilder
+  | ConvexUniqueConstraintBuilder;
 export type ConvexTableExtraConfig = Record<
   string,
   ConvexTableExtraConfigValue
 >;
+
+type ForeignKeyDefinition = {
+  name?: string;
+  columns: string[];
+  foreignTableName: string;
+  foreignTable?: unknown;
+  foreignColumns: string[];
+  onUpdate?: ForeignKeyAction;
+  onDelete?: ForeignKeyAction;
+};
 
 function isConvexIndexBuilder(value: unknown): value is ConvexIndexBuilder {
   return (
@@ -105,6 +133,83 @@ function isConvexIndexBuilderOn(value: unknown): value is ConvexIndexBuilderOn {
   );
 }
 
+function isConvexUniqueConstraintBuilderOn(
+  value: unknown
+): value is ConvexUniqueConstraintBuilderOn {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { [entityKind]?: string })[entityKind] ===
+      'ConvexUniqueConstraintBuilderOn'
+  );
+}
+
+function isConvexForeignKeyBuilder(
+  value: unknown
+): value is ConvexForeignKeyBuilder {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { [entityKind]?: string })[entityKind] ===
+      'ConvexForeignKeyBuilder'
+  );
+}
+
+function isConvexSearchIndexBuilderOn(
+  value: unknown
+): value is ConvexSearchIndexBuilderOn {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { [entityKind]?: string })[entityKind] ===
+      'ConvexSearchIndexBuilderOn'
+  );
+}
+
+function isConvexUniqueConstraintBuilder(
+  value: unknown
+): value is ConvexUniqueConstraintBuilder {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { [entityKind]?: string })[entityKind] ===
+      'ConvexUniqueConstraintBuilder'
+  );
+}
+
+function isConvexSearchIndexBuilder(
+  value: unknown
+): value is ConvexSearchIndexBuilder {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { [entityKind]?: string })[entityKind] ===
+      'ConvexSearchIndexBuilder'
+  );
+}
+
+function isConvexVectorIndexBuilderOn(
+  value: unknown
+): value is ConvexVectorIndexBuilderOn {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { [entityKind]?: string })[entityKind] ===
+      'ConvexVectorIndexBuilderOn'
+  );
+}
+
+function isConvexVectorIndexBuilder(
+  value: unknown
+): value is ConvexVectorIndexBuilder {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { [entityKind]?: string })[entityKind] ===
+      'ConvexVectorIndexBuilder'
+  );
+}
+
 function getColumnName(column: ColumnBuilderBase): string {
   const config = (column as { config?: { name?: string } }).config;
   if (!config?.name) {
@@ -115,8 +220,73 @@ function getColumnName(column: ColumnBuilderBase): string {
   return config.name;
 }
 
+function getColumnType(column: ColumnBuilderBase): string | undefined {
+  return (column as { config?: { columnType?: string } }).config?.columnType;
+}
+
+function getColumnDimensions(column: ColumnBuilderBase): number | undefined {
+  return (column as { config?: { dimensions?: number } }).config?.dimensions;
+}
+
 function getColumnTableName(column: ColumnBuilderBase): string | undefined {
   return (column as { config?: { tableName?: string } }).config?.tableName;
+}
+
+function getColumnTable(column: ColumnBuilderBase): unknown | undefined {
+  return (column as { config?: { table?: unknown } }).config?.table;
+}
+
+function getUniqueIndexName(
+  tableName: string,
+  fields: string[],
+  explicitName?: string
+): string {
+  if (explicitName) {
+    return explicitName;
+  }
+  return `${tableName}_${fields.join('_')}_unique`;
+}
+
+function assertColumnInTable(
+  column: ColumnBuilderBase,
+  expectedTable: string,
+  context: string
+): string {
+  const tableName = getColumnTableName(column);
+  if (tableName && tableName !== expectedTable) {
+    throw new Error(
+      `${context} references column from '${tableName}', but belongs to '${expectedTable}'.`
+    );
+  }
+  return getColumnName(column);
+}
+
+function assertSearchFieldType(
+  column: ColumnBuilderBase,
+  indexName: string
+): void {
+  const columnType = getColumnType(column) ?? 'unknown';
+  if (columnType !== 'ConvexText') {
+    throw new Error(
+      `Search index '${indexName}' only supports text() columns. Field '${getColumnName(
+        column
+      )}' is type '${columnType}'.`
+    );
+  }
+}
+
+function assertVectorFieldType(
+  column: ColumnBuilderBase,
+  indexName: string
+): void {
+  const columnType = getColumnType(column) ?? 'unknown';
+  if (columnType !== 'ConvexVector') {
+    throw new Error(
+      `Vector index '${indexName}' requires a vector() column. Field '${getColumnName(
+        column
+      )}' is type '${columnType}'.`
+    );
+  }
 }
 
 function applyExtraConfig<T extends TableConfig>(
@@ -134,6 +304,24 @@ function applyExtraConfig<T extends TableConfig>(
       );
     }
 
+    if (isConvexUniqueConstraintBuilderOn(entry)) {
+      throw new Error(
+        `Invalid unique constraint definition on '${table.tableName}'. Did you forget to call .on(...)?`
+      );
+    }
+
+    if (isConvexSearchIndexBuilderOn(entry)) {
+      throw new Error(
+        `Invalid search index definition on '${table.tableName}'. Did you forget to call .on(...)?`
+      );
+    }
+
+    if (isConvexVectorIndexBuilderOn(entry)) {
+      throw new Error(
+        `Invalid vector index definition on '${table.tableName}'. Did you forget to call .on(...)?`
+      );
+    }
+
     if (isConvexIndexBuilder(entry)) {
       const { name, columns, unique, where } = entry.config;
 
@@ -147,17 +335,131 @@ function applyExtraConfig<T extends TableConfig>(
         // Convex does not enforce unique indexes, but we accept the syntax for Drizzle parity.
       }
 
-      const fields = columns.map((column) => {
+      const fields = columns.map((column) =>
+        assertColumnInTable(column, table.tableName, `Index '${name}'`)
+      );
+
+      table.addIndex(name, fields);
+      if (unique) {
+        table.addUniqueIndex(name, fields, false);
+      }
+      continue;
+    }
+
+    if (isConvexUniqueConstraintBuilder(entry)) {
+      const { name, columns, nullsNotDistinct } = entry.config;
+      const fields = columns.map((column) =>
+        assertColumnInTable(column, table.tableName, 'Unique constraint')
+      );
+      const indexName = getUniqueIndexName(table.tableName, fields, name);
+      table.addIndex(indexName, fields);
+      table.addUniqueIndex(indexName, fields, nullsNotDistinct);
+      continue;
+    }
+
+    if (isConvexForeignKeyBuilder(entry)) {
+      const { name, columns, foreignColumns, onDelete, onUpdate } = entry.config;
+      if (columns.length === 0 || foreignColumns.length === 0) {
+        throw new Error(
+          `Foreign key on '${table.tableName}' requires at least one column.`
+        );
+      }
+      if (columns.length !== foreignColumns.length) {
+        throw new Error(
+          `Foreign key on '${table.tableName}' must specify matching columns and foreignColumns.`
+        );
+      }
+
+      const localFields = columns.map((column) =>
+        assertColumnInTable(column, table.tableName, 'Foreign key')
+      );
+
+      const foreignTableName = getColumnTableName(foreignColumns[0]);
+      if (!foreignTableName) {
+        throw new Error(
+          `Foreign key on '${table.tableName}' references a column without a table.`
+        );
+      }
+
+      const foreignTable = getColumnTable(foreignColumns[0]);
+      const foreignFields = foreignColumns.map((column) => {
         const tableName = getColumnTableName(column);
-        if (tableName && tableName !== table.tableName) {
+        if (tableName && tableName !== foreignTableName) {
           throw new Error(
-            `Index '${name}' references column from '${tableName}', but belongs to '${table.tableName}'.`
+            `Foreign key on '${table.tableName}' mixes foreign columns from '${foreignTableName}' and '${tableName}'.`
           );
         }
         return getColumnName(column);
       });
 
-      table.index(name, fields);
+      table.addForeignKey({
+        name,
+        columns: localFields,
+        foreignTableName,
+        foreignTable: foreignTable as any,
+        foreignColumns: foreignFields,
+        onDelete,
+        onUpdate,
+      });
+      continue;
+    }
+
+    if (isConvexSearchIndexBuilder(entry)) {
+      const { name, searchField, filterFields, staged } = entry.config;
+
+      const searchFieldName = assertColumnInTable(
+        searchField,
+        table.tableName,
+        `Search index '${name}'`
+      );
+      assertSearchFieldType(searchField, name);
+
+      const filterFieldNames = filterFields.map((field) =>
+        assertColumnInTable(field, table.tableName, `Search index '${name}'`)
+      );
+
+      table.addSearchIndex(name, {
+        searchField: searchFieldName,
+        filterFields: filterFieldNames,
+        staged,
+      });
+      continue;
+    }
+
+    if (isConvexVectorIndexBuilder(entry)) {
+      const { name, vectorField, dimensions, filterFields, staged } =
+        entry.config;
+
+      if (dimensions === undefined) {
+        throw new Error(
+          `Vector index '${name}' is missing dimensions. Call .dimensions(n) before using.`
+        );
+      }
+
+      const vectorFieldName = assertColumnInTable(
+        vectorField,
+        table.tableName,
+        `Vector index '${name}'`
+      );
+      assertVectorFieldType(vectorField, name);
+
+      const columnDimensions = getColumnDimensions(vectorField);
+      if (columnDimensions !== undefined && columnDimensions !== dimensions) {
+        throw new Error(
+          `Vector index '${name}' dimensions (${dimensions}) do not match vector column '${vectorFieldName}' dimensions (${columnDimensions}).`
+        );
+      }
+
+      const filterFieldNames = filterFields.map((field) =>
+        assertColumnInTable(field, table.tableName, `Vector index '${name}'`)
+      );
+
+      table.addVectorIndex(name, {
+        vectorField: vectorFieldName,
+        dimensions,
+        filterFields: filterFieldNames,
+        staged,
+      });
       continue;
     }
 
@@ -188,6 +490,12 @@ class ConvexTableImpl<T extends TableConfig> {
    * These satisfy structural typing requirements for defineSchema()
    */
   private indexes: any[] = [];
+  private uniqueIndexes: {
+    name: string;
+    fields: string[];
+    nullsNotDistinct: boolean;
+  }[] = [];
+  private foreignKeys: ForeignKeyDefinition[] = [];
   private stagedDbIndexes: any[] = [];
   private searchIndexes: any[] = [];
   private stagedSearchIndexes: any[] = [];
@@ -218,6 +526,8 @@ class ConvexTableImpl<T extends TableConfig> {
         (builder as any).config.name = columnName;
         // Track table name for relation typing and runtime introspection
         (builder as any).config.tableName = name;
+        // Track table instance for constraint enforcement
+        (builder as any).config.table = this;
         return [columnName, builder];
       })
     ) as T['columns'];
@@ -228,24 +538,128 @@ class ConvexTableImpl<T extends TableConfig> {
     // Use factory to create validator from columns
     // This extracts .convexValidator from each builder and creates v.object({...})
     this.validator = createValidatorFromColumns(namedColumns as any);
+
+    for (const [columnName, builder] of Object.entries(namedColumns)) {
+      const config = (builder as any).config as
+        | {
+            isUnique?: boolean;
+            uniqueName?: string;
+            uniqueNulls?: string;
+            foreignKeyConfigs?: {
+              ref: () => ColumnBuilderBase;
+              config: { name?: string; onUpdate?: ForeignKeyAction; onDelete?: ForeignKeyAction };
+            }[];
+            referenceTable?: string;
+          }
+        | undefined;
+
+      if (config?.isUnique) {
+        const indexName = getUniqueIndexName(
+          name,
+          [columnName],
+          config.uniqueName
+        );
+        const nullsNotDistinct = config.uniqueNulls === 'not distinct';
+        this.addIndex(indexName, [columnName]);
+        this.addUniqueIndex(indexName, [columnName], nullsNotDistinct);
+      }
+
+      if (
+        config?.referenceTable &&
+        (!config.foreignKeyConfigs || config.foreignKeyConfigs.length === 0)
+      ) {
+        this.addForeignKey({
+          name: undefined,
+          columns: [columnName],
+          foreignTableName: config.referenceTable,
+          foreignColumns: ['_id'],
+        });
+      }
+
+      if (config?.foreignKeyConfigs?.length) {
+        for (const foreignConfig of config.foreignKeyConfigs) {
+          const foreignColumn = foreignConfig.ref();
+          const foreignTableName = getColumnTableName(foreignColumn);
+          if (!foreignTableName) {
+            throw new Error(
+              `Foreign key on '${name}' references a column without a table.`
+            );
+          }
+
+          const foreignTable = getColumnTable(foreignColumn);
+          const foreignColumnName = getColumnName(foreignColumn);
+          this.addForeignKey({
+            name: foreignConfig.config.name,
+            columns: [columnName],
+            foreignTableName,
+            foreignTable: foreignTable as any,
+            foreignColumns: [foreignColumnName],
+            onDelete: foreignConfig.config.onDelete,
+            onUpdate: foreignConfig.config.onUpdate,
+          });
+        }
+      }
+    }
   }
 
   /**
-   * Add index to table
-   * Chainable method following Convex pattern
+   * Internal: add index to table from builder extraConfig
    *
-   * @example
-   * convexTable('users', { email: text() }).index('by_email', ['email'])
    */
-  index<IndexName extends string>(name: IndexName, fields: string[]): this {
+  addIndex<IndexName extends string>(name: IndexName, fields: string[]): void {
     this.indexes.push({ indexDescriptor: name, fields });
-    return this;
   }
 
   /**
-   * Add search index to table (Convex-compatible)
+   * Internal: add unique index metadata for runtime enforcement
    */
-  searchIndex<
+  addUniqueIndex<IndexName extends string>(
+    name: IndexName,
+    fields: string[],
+    nullsNotDistinct: boolean
+  ): void {
+    this.uniqueIndexes.push({ name, fields, nullsNotDistinct });
+  }
+
+  /**
+   * Internal: expose unique index metadata for mutation enforcement
+   */
+  getUniqueIndexes(): {
+    name: string;
+    fields: string[];
+    nullsNotDistinct: boolean;
+  }[] {
+    return this.uniqueIndexes;
+  }
+
+  /**
+   * Internal: expose index metadata for runtime enforcement
+   */
+  getIndexes(): { name: string; fields: string[] }[] {
+    return this.indexes.map((entry: { indexDescriptor: string; fields: string[] }) => ({
+      name: entry.indexDescriptor,
+      fields: entry.fields,
+    }));
+  }
+
+  /**
+   * Internal: add foreign key metadata for runtime enforcement
+   */
+  addForeignKey(definition: ForeignKeyDefinition): void {
+    this.foreignKeys.push(definition);
+  }
+
+  /**
+   * Internal: expose foreign key metadata for mutation enforcement
+   */
+  getForeignKeys(): ForeignKeyDefinition[] {
+    return this.foreignKeys;
+  }
+
+  /**
+   * Internal: add search index to table from builder extraConfig
+   */
+  addSearchIndex<
     IndexName extends string,
     SearchField extends string,
     FilterField extends string = never,
@@ -256,7 +670,7 @@ class ConvexTableImpl<T extends TableConfig> {
       filterFields?: FilterField[];
       staged?: boolean;
     }
-  ): this {
+  ): void {
     const entry = {
       indexDescriptor: name,
       searchField: config.searchField,
@@ -267,13 +681,12 @@ class ConvexTableImpl<T extends TableConfig> {
     } else {
       this.searchIndexes.push(entry);
     }
-    return this;
   }
 
   /**
-   * Add vector index to table (Convex-compatible)
+   * Internal: add vector index to table from builder extraConfig
    */
-  vectorIndex<
+  addVectorIndex<
     IndexName extends string,
     VectorField extends string,
     FilterField extends string = never,
@@ -285,7 +698,7 @@ class ConvexTableImpl<T extends TableConfig> {
       filterFields?: FilterField[];
       staged?: boolean;
     }
-  ): this {
+  ): void {
     const entry = {
       indexDescriptor: name,
       vectorField: config.vectorField,
@@ -297,7 +710,36 @@ class ConvexTableImpl<T extends TableConfig> {
     } else {
       this.vectorIndexes.push(entry);
     }
-    return this;
+  }
+
+  /**
+   * Legacy chainable index API is not supported.
+   * Use index('name').on(...) in convexTable extraConfig instead.
+   */
+  index(_name: string, _fields: string[]): never {
+    throw new Error(
+      'table.index() is not supported. Use index(name).on(...) in convexTable extraConfig.'
+    );
+  }
+
+  /**
+   * Legacy chainable searchIndex API is not supported.
+   * Use searchIndex('name').on(...) in convexTable extraConfig instead.
+   */
+  searchIndex(): never {
+    throw new Error(
+      'table.searchIndex() is not supported. Use searchIndex(name).on(...) in convexTable extraConfig.'
+    );
+  }
+
+  /**
+   * Legacy chainable vectorIndex API is not supported.
+   * Use vectorIndex('name').on(...).dimensions(n) in convexTable extraConfig instead.
+   */
+  vectorIndex(): never {
+    throw new Error(
+      'table.vectorIndex() is not supported. Use vectorIndex(name).on(...).dimensions(n) in convexTable extraConfig.'
+    );
   }
 
   /**
@@ -375,7 +817,7 @@ export interface ConvexTable<
   validator: Validator<any, any, any>;
   tableName: T['name'];
 
-  // Note: index(), searchIndex(), vectorIndex() methods inherited from TableDefinition
+  // Note: chainable index methods are intentionally unsupported; use builders in extraConfig.
 }
 
 /**
@@ -414,9 +856,10 @@ export type ConvexTableWithColumns<T extends TableConfig> = ConvexTable<T> & {
  * type User = InferSelectModel<typeof users>;
  * type NewUser = InferInsertModel<typeof users>;
  *
- * // Chainable indexes
- * const usersWithIndex = convexTable('users', { email: text() })
- *   .index('by_email', ['email']);
+ * // Indexes
+ * const usersWithIndex = convexTable('users', { email: text() }, (t) => [
+ *   index('by_email').on(t.email),
+ * ]);
  */
 export function convexTable<TName extends string, TColumns>(
   name: TName,
@@ -433,6 +876,9 @@ export function convexTable<TName extends string, TColumns>(
 
   // Create system fields (_id, _creationTime)
   const systemFields = createSystemFields(name);
+  for (const builder of Object.values(systemFields)) {
+    (builder as any).config.table = rawTable;
+  }
 
   // Following Drizzle pattern: Object.assign to attach columns AND system fields as properties
   const table = Object.assign(rawTable, rawTable[Columns], systemFields);

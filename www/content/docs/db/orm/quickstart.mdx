@@ -114,7 +114,7 @@ export const getPublishedPosts = query({
 |---|---|
 | `createDatabase` type errors | Pass `ormSchema` + `ormEdges`, not raw tables |
 | Relations not loading | Ensure `defineRelations()` and `extractRelationsConfig()` are used |
-| Slow `orderBy` | Add `.index()` for the first order field |
+| Slow `orderBy` | Add `index('...').on(t.field)` in `convexTable` extraConfig |
 | `columns` doesn’t reduce reads | Projection is post‑fetch |
 
 ## Next Steps

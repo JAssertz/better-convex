@@ -17,9 +17,27 @@ import type { Simplify } from '../../internal/types';
 
 /**
  * Core data types supported by column builders
- * Maps to Convex types: string, number (float64), boolean, bigint (int64)
+ * Maps to Convex types: string, number (float64), boolean, bigint (int64), vector
  */
-export type ColumnDataType = 'string' | 'number' | 'boolean' | 'bigint';
+export type ColumnDataType =
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'bigint'
+  | 'vector';
+
+export type ForeignKeyAction =
+  | 'cascade'
+  | 'restrict'
+  | 'no action'
+  | 'set null'
+  | 'set default';
+
+export interface ColumnReferenceConfig {
+  name?: string;
+  onUpdate?: ForeignKeyAction;
+  onDelete?: ForeignKeyAction;
+}
 
 /**
  * Base configuration for all column builders
@@ -31,7 +49,7 @@ export interface ColumnBuilderBaseConfig<
   TColumnType extends string,
 > {
   name: string;
-  dataType: TDataType; // 'string' | 'number' | 'boolean' | 'bigint'
+  dataType: TDataType; // 'string' | 'number' | 'boolean' | 'bigint' | 'vector'
   columnType: TColumnType; // 'ConvexText' | 'ConvexInteger' | etc.
   data: unknown; // Actual TypeScript type (string, number, boolean, bigint)
   driverParam: unknown; // Driver-specific parameter type (for Drizzle compatibility)
@@ -45,10 +63,19 @@ export interface ColumnBuilderBaseConfig<
 export interface ColumnBuilderRuntimeConfig<TData> {
   name: string;
   tableName?: string;
+  table?: unknown;
+  referenceTable?: string;
   notNull: boolean;
   default: TData | undefined;
   hasDefault: boolean;
   primaryKey: boolean;
+  isUnique: boolean;
+  uniqueName?: string;
+  uniqueNulls?: 'distinct' | 'not distinct';
+  foreignKeyConfigs: {
+    ref: () => ColumnBuilderBase;
+    config: ColumnReferenceConfig;
+  }[];
   dataType: string;
   columnType: string;
 }
@@ -72,6 +99,7 @@ export type ColumnBuilderTypeConfig<
     notNull: T extends { notNull: infer U } ? U : boolean; // Conditional inference
     hasDefault: T extends { hasDefault: infer U } ? U : boolean; // Conditional inference
     isPrimaryKey: T extends { isPrimaryKey: infer U } ? U : boolean; // Conditional inference (Drizzle uses 'identity' but we use isPrimaryKey)
+    isUnique: T extends { isUnique: infer U } ? U : boolean;
     enumValues: T['enumValues'];
   } & TTypeConfig
 >;
@@ -140,6 +168,10 @@ export abstract class ColumnBuilder<
       default: undefined,
       hasDefault: false,
       primaryKey: false,
+      isUnique: false,
+      uniqueName: undefined,
+      uniqueNulls: undefined,
+      foreignKeyConfigs: [],
       dataType,
       columnType,
     } as ColumnBuilderRuntimeConfig<T['data']> & TRuntimeConfig;
@@ -172,6 +204,29 @@ export abstract class ColumnBuilder<
     this.config.primaryKey = true;
     this.config.notNull = true;
     return this as IsPrimaryKey<NotNull<this>>;
+  }
+
+  /**
+   * Mark column as UNIQUE
+   * Mirrors Drizzle column unique API
+   */
+  unique(
+    name?: string,
+    config?: { nulls: 'distinct' | 'not distinct' }
+  ): IsUnique<this> {
+    this.config.isUnique = true;
+    this.config.uniqueName = name;
+    this.config.uniqueNulls = config?.nulls;
+    return this as IsUnique<this>;
+  }
+
+  /**
+   * Define a foreign key reference
+   * Mirrors Drizzle column references() API
+   */
+  references(ref: () => ColumnBuilderBase, config: ColumnReferenceConfig = {}) {
+    this.config.foreignKeyConfigs.push({ ref, config });
+    return this;
   }
 
   /**
@@ -208,6 +263,15 @@ export type ColumnBuilderWithTableName<
 > = T & {
   _: {
     tableName: TTableName;
+  };
+};
+
+/**
+ * Brand a builder as UNIQUE
+ */
+export type IsUnique<T extends ColumnBuilderBase> = T & {
+  _: {
+    isUnique: true;
   };
 };
 

@@ -59,6 +59,8 @@ const users = convexTable('users', {
 | `bigint | null` | `bigint()` |
 | `Id<'users'> | null` | `id('users')` |
 | `Id<'users'>` | `id('users').notNull()` |
+| `number[] | null` | `vector(1536)` |
+| `number[]` | `vector(1536).notNull()` |
 
 ## Relations
 
@@ -102,24 +104,53 @@ const posts = convexTable(
 ### Search Indexes
 
 ```ts
-posts.searchIndex('by_text', {
-  searchField: 'title',
-  filterFields: ['authorId'],
-});
+import { convexTable, text, id, searchIndex } from 'better-convex/orm';
+
+const posts = convexTable(
+  'posts',
+  {
+    title: text().notNull(),
+    authorId: id('users'),
+  },
+  (t) => [searchIndex('by_text').on(t.title).filter(t.authorId)]
+);
 ```
 
 ### Vector Indexes (wip)
 
-Better‑Convex mirrors Convex’s `vectorIndex` API, but you must define a vector field compatible with Convex (array of `float64`). Array builders are not yet part of the ORM surface.
+```ts
+import { convexTable, id, vector, vectorIndex } from 'better-convex/orm';
+
+const posts = convexTable(
+  'posts',
+  {
+    authorId: id('users'),
+    embedding: vector(1536).notNull(),
+  },
+  (t) => [
+    vectorIndex('embedding_vec')
+      .on(t.embedding)
+      .dimensions(1536)
+      .filter(t.authorId),
+  ]
+);
+```
+
+Better‑Convex mirrors Convex’s vector search API with Drizzle‑style builders. Use `vector(dimensions)` for embedding fields.
+
+**Common errors:**
+- Missing `.on(...)` → "Did you forget to call .on(...)?"
+- Missing `.dimensions(n)` on vector indexes → "missing dimensions"
 
 ## Constraints And Defaults
 
-- Convex does not enforce SQL constraints (unique, foreign keys, checks)
-- Defaults are not applied automatically at the database layer
-- Enforce constraints in mutation logic or validation
+- Defaults set with `.default(...)` are applied by Better‑Convex inserts
+- `unique()` and column `.unique()` are enforced at runtime (ORM mutations only)
+- `foreignKey()` and column `.references()` are enforced at runtime (ORM mutations only)
+- Check constraints are not enforced
 
 <Callout icon={<AlertTriangle />}>
-**Unique constraints** are not built into Convex. If you need uniqueness, implement checks in mutation logic or use application‑level enforcement.
+**Unique and foreign key constraints** are enforced only by ORM mutations. Direct `ctx.db` writes bypass these checks. For non‑`_id` foreign keys, add an index on the referenced columns.
 </Callout>
 
 ## Common Gotchas
@@ -129,7 +160,7 @@ Better‑Convex mirrors Convex’s `vectorIndex` API, but you must define a vect
 | Defining `_id` manually | Convex creates `_id` automatically |
 | Fields unexpectedly nullable | Use `.notNull()` |
 | Relations not loading | Define both sides and export `ormEdges` |
-| Slow ordering | Add `.index()` for the primary `orderBy` field |
+| Slow ordering | Add `index('...').on(t.field)` for the primary `orderBy` field |
 
 ## Next Steps
 

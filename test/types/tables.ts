@@ -9,14 +9,19 @@ import {
   bigint,
   boolean,
   convexTable,
+  foreignKey,
   type InferInsertModel,
   type InferSelectModel,
   id,
   index,
   integer,
   number,
+  searchIndex,
   text,
+  unique,
   uniqueIndex,
+  vector,
+  vectorIndex,
 } from 'better-convex/orm';
 import type { GenericId } from 'convex/values';
 import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
@@ -122,6 +127,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
     bigintField: bigint(),
     idField: id('other').notNull(),
     numberField: number(),
+    vectorField: vector(1536),
   });
 
   type Result = InferSelectModel<typeof entities>;
@@ -138,6 +144,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
         bigintField: bigint | null;
         idField: GenericId<'other'>;
         numberField: number | null;
+        vectorField: number[] | null;
       }
     >
   >;
@@ -176,6 +183,94 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
   >;
 }
 
+// Test 6c: Search/vector index builders in extraConfig
+{
+  const posts = convexTable(
+    'posts',
+    {
+      text: text().notNull(),
+      type: text().notNull(),
+      embedding: vector(1536).notNull(),
+    },
+    (t) => [
+      searchIndex('text_search').on(t.text).filter(t.type),
+      vectorIndex('embedding_vec')
+        .on(t.embedding)
+        .dimensions(1536)
+        .filter(t.type),
+    ]
+  );
+
+  type Result = InferSelectModel<typeof posts>;
+
+  Expect<
+    Equal<
+      Result,
+      {
+        _id: GenericId<'posts'>;
+        _creationTime: number;
+        text: string;
+        type: string;
+        embedding: number[];
+      }
+    >
+  >;
+}
+
+// Test 6d: unique() constraint + column unique()
+{
+  const users = convexTable(
+    'users',
+    {
+      email: text().notNull().unique(),
+      handle: text().unique('handle_unique', { nulls: 'not distinct' }),
+    },
+    (t) => [unique('unique_email').on(t.email)]
+  );
+
+  type Result = InferSelectModel<typeof users>;
+
+  Expect<
+    Equal<
+      Result,
+      {
+        _id: GenericId<'users'>;
+        _creationTime: number;
+        email: string;
+        handle: string | null;
+      }
+    >
+  >;
+}
+
+// Test 6e: foreignKey() constraint typing
+{
+  const users = convexTable('users', {
+    slug: text().notNull(),
+  });
+
+  const memberships = convexTable(
+    'memberships',
+    {
+      userSlug: text().notNull(),
+    },
+    (t) => [foreignKey({ columns: [t.userSlug], foreignColumns: [users.slug] })]
+  );
+
+  type Result = InferSelectModel<typeof memberships>;
+
+  Expect<
+    Equal<
+      Result,
+      {
+        _id: GenericId<'memberships'>;
+        _creationTime: number;
+        userSlug: string;
+      }
+    >
+  >;
+}
+
 convexTable(
   'users',
   {
@@ -183,6 +278,52 @@ convexTable(
   },
   // @ts-expect-error - index() must be followed by .on(...)
   () => [index('missing_on')]
+);
+
+convexTable(
+  'users',
+  {
+    name: text().notNull(),
+  },
+  // @ts-expect-error - searchIndex() must be followed by .on(...)
+  () => [searchIndex('missing_on')]
+);
+
+convexTable(
+  'users',
+  {
+    embedding: vector(1536),
+  },
+  // @ts-expect-error - vectorIndex() must be followed by .on(...)
+  () => [vectorIndex('missing_on')]
+);
+
+convexTable(
+  'users',
+  {
+    name: text().notNull(),
+  },
+  // @ts-expect-error - unique() must be followed by .on(...)
+  () => [unique('missing_on')]
+);
+
+convexTable(
+  'users',
+  {
+    slug: text().notNull(),
+  },
+  // @ts-expect-error - foreignKey() requires at least one column
+  () => [foreignKey({ columns: [], foreignColumns: [] })]
+);
+
+convexTable(
+  'users',
+  {
+    slug: text().notNull(),
+    other: text().notNull(),
+  },
+  // @ts-expect-error - foreignColumns must match columns length
+  (t) => [foreignKey({ columns: [t.slug], foreignColumns: [t.slug, t.other] })]
 );
 
 // @ts-expect-error - index().on requires at least one column
@@ -335,6 +476,22 @@ index('missing_columns').on();
   type AuthorIdType = Post['authorId'];
 
   Expect<Equal<AuthorIdType, GenericId<'users'>>>;
+}
+
+// Test 15b: references() keeps column type
+{
+  const users = convexTable('users', {
+    slug: text().notNull(),
+  });
+
+  const profiles = convexTable('profiles', {
+    userSlug: text().references(() => users.slug),
+  });
+
+  type Profile = InferSelectModel<typeof profiles>;
+  type UserSlugType = Profile['userSlug'];
+
+  Expect<Equal<UserSlugType, string | null>>;
 }
 
 // Test 16: bigint() nullable type

@@ -1,0 +1,165 @@
+import { describe, expect, it } from 'vitest';
+import {
+  convexTable,
+  createDatabase,
+  defineRelations,
+  defineSchema,
+  extractRelationsConfig,
+  foreignKey,
+  id,
+  index,
+  eq,
+  text,
+} from 'better-convex/orm';
+import { convexTest } from '../setup.testing';
+
+const users = convexTable(
+  'fk_users',
+  {
+    name: text().notNull(),
+    slug: text().notNull(),
+  },
+  (t) => [index('by_slug').on(t.slug)]
+);
+
+const profiles = convexTable('fk_profiles', {
+  userId: id('fk_users'),
+});
+
+const memberships = convexTable(
+  'fk_memberships',
+  {
+    userSlug: text(),
+  },
+  (t) => [foreignKey({ columns: [t.userSlug], foreignColumns: [users.slug] })]
+);
+
+const profileSlugs = convexTable('fk_profile_slugs', {
+  userSlug: text().references(() => users.slug),
+});
+
+const teams = convexTable('fk_teams', {
+  slug: text().notNull(),
+});
+
+const teamMembers = convexTable(
+  'fk_team_members',
+  {
+    teamSlug: text().notNull(),
+  },
+  (t) => [foreignKey({ columns: [t.teamSlug], foreignColumns: [teams.slug] })]
+);
+
+const rawSchema = {
+  fk_users: users,
+  fk_profiles: profiles,
+  fk_memberships: memberships,
+  fk_profile_slugs: profileSlugs,
+  fk_teams: teams,
+  fk_team_members: teamMembers,
+};
+
+const schema = defineSchema(rawSchema);
+const relations = defineRelations(rawSchema);
+const edges = extractRelationsConfig(relations);
+
+const withCtx = async <T>(fn: (ctx: { table: ReturnType<typeof createDatabase> }) => Promise<T>) => {
+  const t = convexTest(schema);
+  let result: T | undefined;
+  await t.run(async (baseCtx) => {
+    const table = createDatabase(baseCtx.db, relations, edges);
+    result = await fn({ table });
+  });
+  return result as T;
+};
+
+describe('foreign key enforcement', () => {
+  it('enforces _id references on insert', async () =>
+    withCtx(async ({ table }) => {
+      const [user] = await table
+        .insert(users)
+        .values({ name: 'Ada', slug: 'ada' })
+        .returning();
+
+      await table
+        .insert(profiles)
+        .values({ userId: user._id })
+        .returning();
+
+      await expect(
+        table.insert(profiles).values({ userId: 'missing' as any })
+      ).rejects.toThrow(/foreign/i);
+    }));
+
+  it('enforces _id references on update when changed', async () =>
+    withCtx(async ({ table }) => {
+      const [user] = await table
+        .insert(users)
+        .values({ name: 'Ada', slug: 'ada' })
+        .returning();
+
+      const [profile] = await table
+        .insert(profiles)
+        .values({ userId: user._id })
+        .returning();
+
+      await expect(
+        table
+          .update(profiles)
+          .set({ userId: 'missing' as any })
+          .where(eq(profiles._id, profile._id))
+          .returning()
+      ).rejects.toThrow(/foreign/i);
+    }));
+
+  it('allows null foreign keys', async () =>
+    withCtx(async ({ table }) => {
+      await table.insert(profiles).values({ userId: null });
+    }));
+
+  it('requires index for non-_id references', async () =>
+    withCtx(async ({ table }) => {
+      await table
+        .insert(teams)
+        .values({ slug: 'alpha' })
+        .returning();
+
+      await expect(
+        table.insert(teamMembers).values({ teamSlug: 'alpha' })
+      ).rejects.toThrow(/index/i);
+    }));
+
+  it('enforces non-_id references when index exists', async () =>
+    withCtx(async ({ table }) => {
+      await table
+        .insert(users)
+        .values({ name: 'Ada', slug: 'ada' })
+        .returning();
+
+      await table
+        .insert(memberships)
+        .values({ userSlug: 'ada' })
+        .returning();
+
+      await expect(
+        table.insert(memberships).values({ userSlug: 'missing' })
+      ).rejects.toThrow(/foreign/i);
+    }));
+
+  it('enforces column references', async () =>
+    withCtx(async ({ table }) => {
+      await table
+        .insert(users)
+        .values({ name: 'Ada', slug: 'ada' })
+        .returning();
+
+      await table
+        .insert(profileSlugs)
+        .values({ userSlug: 'ada' })
+        .returning();
+
+      await expect(
+        table.insert(profileSlugs).values({ userSlug: 'missing' })
+      ).rejects.toThrow(/foreign/i);
+    }));
+});

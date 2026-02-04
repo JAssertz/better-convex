@@ -166,7 +166,7 @@ const users = await db.query.users.findMany({
 
 ## Performance Tips
 
-- Add `.index()` for fields used in filters or primary ordering
+- Add `index('...').on(t.field)` for fields used in filters or primary ordering
 - Use `paginate()` for large lists
 - Prefer `with` over per‑row queries to avoid N+1
 

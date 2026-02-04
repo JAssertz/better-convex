@@ -22,11 +22,12 @@ This guide compares Drizzle v1 and Better-Convex ORM side-by-side. It focuses on
 - Fields are nullable by default (`text()` yields `string | null`)
 - `columns` projection and string operators run post-fetch
 - Relation filters and ordering for `many()` run post-fetch
+- Unique and foreign keys are enforced by ORM mutations, not SQL
 - Cursor pagination uses the first `orderBy` field and requires indexes for stable ordering
 
 **Not available in Convex:**
 - SQL joins and raw SQL execution
-- Database migrations and constraints
+- Database migrations and SQL-level constraints (checks, cascading actions)
 - Custom SQL data types
 - Table introspection helpers (`getTableConfig`, `getTableColumns`)
 
@@ -213,7 +214,7 @@ This guide compares Drizzle v1 and Better-Convex ORM side-by-side. It focuses on
 | **`id` vs `_id`** | Convex uses `_id` for primary keys |
 | **Nullable fields** | Types include `null` unless `.notNull()` |
 | **No SQL joins** | Use `with` relation loading |
-| **Missing index for ordering** | Add `.index()` in schema |
+| **Missing index for ordering** | Add `index('...').on(t.field)` in schema |
 | **Custom SQL types** | Use app-level encoding |
 
 ## Next Steps

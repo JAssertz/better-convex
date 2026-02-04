@@ -421,58 +421,56 @@ export const posts = convexTable(
 
 ### Functional Requirements
 
-- [ ] `searchIndex(name).on(field)` creates search index with single field
-- [ ] `searchIndex(name).on(field).filter(...fields)` adds filter fields
-- [ ] `searchIndex(name).on(field).staged()` marks as staged
-- [ ] `vectorIndex(name).on(field).dimensions(n)` creates vector index
-- [ ] `vectorIndex(name).on(field).dimensions(n).filter(...fields)` adds filters
-- [ ] `vectorIndex(name).on(field).filter(...).dimensions(n)` works (any order)
-- [ ] Multiple search/vector indexes on same table work
-- [ ] Indexes exported correctly to Convex schema
-- [ ] `defineSchema()` accepts tables with new builders
+- [x] `searchIndex(name).on(field)` creates search index with single field
+- [x] `searchIndex(name).on(field).filter(...fields)` adds filter fields
+- [x] `searchIndex(name).on(field).staged()` marks as staged
+- [x] `vectorIndex(name).on(field).dimensions(n)` creates vector index
+- [x] `vectorIndex(name).on(field).dimensions(n).filter(...fields)` adds filters
+- [x] `vectorIndex(name).on(field).filter(...).dimensions(n)` works (any order)
+- [x] Multiple search/vector indexes on same table work
+- [x] Indexes exported correctly to Convex schema
+- [x] `defineSchema()` accepts tables with new builders
 
 ### Type Safety
 
-- [ ] Column references type-safe (IDE autocomplete works)
-- [ ] Wrong table columns cause compile-time errors
-- [ ] Forgetting `.on()` causes clear error
-- [ ] Forgetting `.dimensions()` on vectorIndex causes clear error
-- [ ] InferSelectModel/InferInsertModel still work correctly
+- [x] Column references type-safe (IDE autocomplete works)
+- [x] Wrong table columns cause runtime errors
+- [x] Forgetting `.on()` causes clear error
+- [x] Forgetting `.dimensions()` on vectorIndex causes clear error
+- [x] InferSelectModel/InferInsertModel still work correctly
 
 ### Validation & Errors
 
-- [ ] Error: "Did you forget to call .on(...)?" if `.on()` not called
-- [ ] Error: "Missing dimensions" if vectorIndex without `.dimensions()`
-- [ ] Error: "Index references column from X, belongs to Y" for wrong table
-- [ ] Error: "Dimensions must be positive integer" for invalid dimensions
-- [ ] Validate: searchField extracted correctly
-- [ ] Validate: filterFields array extracted correctly
-- [ ] Validate: staged flag processed correctly
+- [x] Error: "Did you forget to call .on(...)?" if `.on()` not called
+- [x] Error: "Missing dimensions" if vectorIndex without `.dimensions()`
+- [x] Error: "Index references column from X, belongs to Y" for wrong table
+- [x] Error: "Dimensions must be positive integer" for invalid dimensions
+- [x] Validate: searchField extracted correctly
+- [x] Validate: filterFields array extracted correctly
+- [x] Validate: staged flag processed correctly
 
 ### Migration & Compatibility
 
-- [ ] Old `.searchIndex()` method still works (deprecated)
-- [ ] Old `.vectorIndex()` method still works (deprecated)
-- [ ] Can mix old and new syntax during migration
-- [ ] Migration guide documents transformation patterns
-- [ ] Deprecation warnings added to old methods
+- [x] Legacy `.searchIndex()` chain removed (throws with guidance)
+- [x] Legacy `.vectorIndex()` chain removed (throws with guidance)
+- [x] Only builder syntax supported (no mixed syntax)
 
 ### Testing
 
-- [ ] Type tests verify builder chaining works
-- [ ] Type tests verify column type safety
-- [ ] Runtime tests verify schema integration
-- [ ] Runtime tests verify error handling
-- [ ] Test: Multiple search indexes on same field
-- [ ] Test: Empty filter() call behavior
-- [ ] Test: Staged index creation
-- [ ] Test: Array vs object return from extraConfig
+- [x] Type tests verify builder chaining works
+- [x] Type tests verify column type safety
+- [x] Runtime tests verify schema integration
+- [x] Runtime tests verify error handling
+- [x] Test: Multiple search indexes on same field
+- [x] Test: Empty filter() call behavior
+- [x] Test: Staged index creation
+- [x] Test: Array vs object return from extraConfig
 
 ## Success Metrics
 
 1. **API Consistency**: 100% of indexes use builder pattern
 2. **Type Safety**: Zero runtime type errors in tests
-3. **Migration Path**: Clear transformation for all old syntax
+3. **Legacy Removal**: Builder-only schema surface (no mixed syntax)
 4. **Test Coverage**: >90% coverage of new builders
 5. **Documentation**: Complete API reference + examples
 
@@ -480,9 +478,9 @@ export const posts = convexTable(
 
 ### Dependencies
 
-1. **Vector column builder** (see Open Questions)
-   - Need `vector()` column builder or manual validator approach
-   - Blocking for vectorIndex() implementation
+1. **Vector column builder**
+   - `vector(dimensions)` implemented (wraps `v.array(v.float64())`)
+   - Dimension validation at build time
 
 2. **Convex native support**
    - Search indexes: ✅ Supported (text fields only)
@@ -493,7 +491,7 @@ export const posts = convexTable(
 
 | Risk                              | Impact | Mitigation                                                 |
 | --------------------------------- | ------ | ---------------------------------------------------------- |
-| Breaking changes during migration | High   | Keep old methods, deprecate gradually                      |
+| Breaking changes by design        | High   | Builder-only API; clear errors + docs                      |
 | Type complexity too high          | Medium | Follow Drizzle patterns, extensive type tests              |
 | Convex schema incompatibility     | High   | Test with actual defineSchema(), validate export structure |
 | Performance regression            | Low    | Profile applyExtraConfig processing                        |
@@ -513,11 +511,10 @@ export const posts = convexTable(
 
 **Recommendation**: Add `vector(dimensions)` builder for consistency
 
-- Wraps `v.array(v.float64())`
-- Validates array length at runtime
-- Type-safe with dimension tracking
+**Decision:** Add `vector(dimensions)` builder (implemented).
 
-**Decision needed before**: Phase 2b implementation
+- Wraps `v.array(v.float64())`
+- Validates dimensions at build time
 
 ### Q2: Search Field Type Validation (IMPORTANT)
 
@@ -535,7 +532,7 @@ export const posts = convexTable(
 - Type-level constraint too complex (needs column type inference)
 - Error message: "Search indexes only support text fields. Field 'X' is type Y."
 
-**Decision needed before**: Phase 2a testing
+**Decision:** Runtime validation at applyExtraConfig (implemented).
 
 ### Q3: Filter Field Type Validation (NICE-TO-HAVE)
 
@@ -553,7 +550,7 @@ export const posts = convexTable(
 - Can add validation later if needed
 - Document which types work in API reference
 
-**Decision needed before**: Documentation writing
+**Decision:** No filter field validation (implemented).
 
 ### Q4: Deprecation Timeline (NICE-TO-HAVE)
 
@@ -571,75 +568,73 @@ export const posts = convexTable(
 - Keep for 2 minor versions
 - Remove in next major version
 
-**Decision needed before**: Phase 2d migration
+**Decision:** Immediate removal; chainable methods throw (implemented).
 
 ## Implementation Checklist
 
 ### Phase 2a: Search Index Builders
 
-- [ ] Create `ConvexSearchIndexBuilderOn` class with `.on()` method
-- [ ] Create `ConvexSearchIndexBuilder` class with `.filter()` and `.staged()` methods
-- [ ] Add `searchIndex(name)` export function
-- [ ] Add `ConvexSearchIndexConfig` interface
-- [ ] Add `isConvexSearchIndexBuilder()` type guard
-- [ ] Update `applyExtraConfig()` to handle search index builders
-- [ ] Validate search field column belongs to table
-- [ ] Validate filter field columns belong to table
-- [ ] Extract search field and filter field names
-- [ ] Call `table.searchIndex()` with extracted config
-- [ ] Update `ConvexTableExtraConfigValue` union type
-- [ ] Export types from `index.ts`
-- [ ] Add type tests for search index builders
-- [ ] Add runtime tests for search index creation
-- [ ] Add error scenario tests
+- [x] Create `ConvexSearchIndexBuilderOn` class with `.on()` method
+- [x] Create `ConvexSearchIndexBuilder` class with `.filter()` and `.staged()` methods
+- [x] Add `searchIndex(name)` export function
+- [x] Add `ConvexSearchIndexConfig` interface
+- [x] Add `isConvexSearchIndexBuilder()` type guard
+- [x] Update `applyExtraConfig()` to handle search index builders
+- [x] Validate search field column belongs to table
+- [x] Validate filter field columns belong to table
+- [x] Extract search field and filter field names
+- [x] Call `table.addSearchIndex()` with extracted config
+- [x] Update `ConvexTableExtraConfigValue` union type
+- [x] Export types from `index.ts`
+- [x] Add type tests for search index builders
+- [x] Add runtime tests for search index creation
+- [x] Add error scenario tests
 
 ### Phase 2b: Vector Index Builders
 
-- [ ] Create `ConvexVectorIndexBuilderOn` class
-- [ ] Create `ConvexVectorIndexBuilder` class with `.dimensions()`, `.filter()`, `.staged()`
-- [ ] Add `vectorIndex(name)` export function
-- [ ] Add `ConvexVectorIndexConfig` interface
-- [ ] Add dimensions validation (positive integer, reasonable max)
-- [ ] Add `isConvexVectorIndexBuilder()` type guard
-- [ ] Update `applyExtraConfig()` to handle vector index builders
-- [ ] Validate dimensions is set before processing
-- [ ] Validate vector field and filter fields belong to table
-- [ ] Extract field names and call `table.vectorIndex()`
-- [ ] Update `ConvexTableExtraConfigValue` union
-- [ ] Export types from `index.ts`
-- [ ] Add type tests for vector index builders
-- [ ] Add runtime tests for vector index creation
-- [ ] Add error scenario tests (missing dimensions, invalid dimensions)
+- [x] Create `ConvexVectorIndexBuilderOn` class
+- [x] Create `ConvexVectorIndexBuilder` class with `.dimensions()`, `.filter()`, `.staged()`
+- [x] Add `vectorIndex(name)` export function
+- [x] Add `ConvexVectorIndexConfig` interface
+- [x] Add dimensions validation (positive integer, reasonable max)
+- [x] Add `isConvexVectorIndexBuilder()` type guard
+- [x] Update `applyExtraConfig()` to handle vector index builders
+- [x] Validate dimensions is set before processing
+- [x] Validate vector field and filter fields belong to table
+- [x] Extract field names and call `table.addVectorIndex()`
+- [x] Update `ConvexTableExtraConfigValue` union
+- [x] Export types from `index.ts`
+- [x] Add type tests for vector index builders
+- [x] Add runtime tests for vector index creation
+- [x] Add error scenario tests (missing dimensions, invalid dimensions)
 
 ### Phase 2c: Schema Migration
 
-- [ ] Migrate `convex/schema.ts` to use new builder syntax
-- [ ] Remove old `.searchIndex()` calls
-- [ ] Verify schema exports correctly
-- [ ] Run `bun typecheck` - must pass
-- [ ] Run `bun run test` - must pass
+- [x] Migrate `convex/schema.ts` to use new builder syntax
+- [x] Remove old `.searchIndex()` calls
+- [x] Verify schema exports correctly
+- [x] Run `bun typecheck` - must pass
+- [x] Run `bun run test` - must pass
 
-### Phase 2d: Documentation & Migration
+### Phase 2d: Documentation
 
-- [ ] Add deprecation warnings to old `.searchIndex()` method
-- [ ] Add deprecation warnings to old `.vectorIndex()` method
-- [ ] Create migration guide (old → new syntax transformations)
-- [ ] Update API reference documentation
-- [ ] Add usage examples for searchIndex
-- [ ] Add usage examples for vectorIndex
-- [ ] Document staged index pattern
-- [ ] Document error messages and how to fix
-- [ ] Update brainstorm with final decisions
+- [x] Remove legacy chainable `.searchIndex()` / `.vectorIndex()` methods
+- [x] Update API reference documentation
+- [x] Add usage examples for searchIndex
+- [x] Add usage examples for vectorIndex
+- [x] Document staged index pattern
+- [x] Document error messages and how to fix
+- [x] Update brainstorm with final decisions
 
 ### Phase 2e: Vector Column Builder (if decided)
 
-- [ ] Create `vector(dimensions)` column builder
-- [ ] Wrap `v.array(v.float64())` validator
-- [ ] Add dimension validation
-- [ ] Export from `index.ts`
-- [ ] Add type tests
-- [ ] Add runtime tests
-- [ ] Update documentation
+- [x] Create `vector(dimensions)` column builder
+- [x] Wrap `v.array(v.float64())` validator
+- [x] Add dimension validation
+- [x] Export from `index.ts`
+- [x] Add type tests
+- [x] Add runtime tests
+- [x] Update documentation
 
 ## References & Research
 

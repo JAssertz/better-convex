@@ -49,6 +49,7 @@ export class ConvexIdBuilder<
     private tableName: string
   ) {
     super(name, 'string', 'ConvexId');
+    this.config.referenceTable = tableName;
   }
 
   /**

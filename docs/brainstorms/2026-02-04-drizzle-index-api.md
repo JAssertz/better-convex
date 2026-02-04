@@ -1,7 +1,7 @@
 ---
 date: 2026-02-04
 topic: drizzle-index-api
-status: in-progress
+status: implemented
 ---
 
 # Drizzle v1 Index API Migration
@@ -269,11 +269,15 @@ searchIndex('name')
 
 **Recommendation:** Separate `.filter()` method for consistency with potential future Drizzle patterns
 
+**Decision:** Keep `.filter()` as a separate method (implemented).
+
 ### 2. Backward Compatibility
 
 **Question:** Should we keep the old `.index(name, fields)` method during transition?
 
 **Current decision:** No - full migration means removing old API. Users update schemas in one pass.
+
+**Decision:** Old chainable index/search/vector methods removed; runtime throws with builder guidance.
 
 **Trade-off:**
 - ✅ Clean codebase, one clear way

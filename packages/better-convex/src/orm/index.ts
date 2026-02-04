@@ -66,8 +66,11 @@ export type {
   ConvexNumberBuilderInitial,
   ConvexTextBuilder,
   ConvexTextBuilderInitial,
+  ConvexVectorBuilder,
+  ConvexVectorBuilderInitial,
   DrizzleEntity,
   HasDefault,
+  IsUnique,
   IsPrimaryKey,
   NotNull,
   SystemFields,
@@ -81,6 +84,7 @@ export {
   integer,
   number,
   text,
+  vector,
 } from './builders';
 export type { DatabaseWithMutations, DatabaseWithQuery } from './database';
 // M3: Database Context
@@ -125,9 +129,26 @@ export {
 export {
   type ConvexIndexBuilder,
   type ConvexIndexBuilderOn,
+  type ConvexSearchIndexBuilder,
+  type ConvexSearchIndexBuilderOn,
+  type ConvexSearchIndexConfig,
+  type ConvexVectorIndexBuilder,
+  type ConvexVectorIndexBuilderOn,
+  type ConvexVectorIndexConfig,
   index,
+  searchIndex,
   uniqueIndex,
+  vectorIndex,
 } from './indexes';
+export {
+  type ConvexForeignKeyBuilder,
+  type ConvexForeignKeyConfig,
+  type ConvexUniqueConstraintBuilder,
+  type ConvexUniqueConstraintBuilderOn,
+  type ConvexUniqueConstraintConfig,
+  foreignKey,
+  unique,
+} from './constraints';
 export { ConvexInsertBuilder } from './insert';
 // M5: OrderBy
 export { asc, desc } from './order-by';

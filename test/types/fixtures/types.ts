@@ -23,6 +23,7 @@ export type PostRow = {
   text: string;
   numLikes: number;
   type: string;
+  embedding: number[] | null;
   title: string | null;
   content: string | null;
   createdAt: number | null;

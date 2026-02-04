@@ -19,6 +19,8 @@ convexTable<TName extends string, TColumns>(
   columns: TColumns,
   extraConfig?: (t) => [
     index('by_field').on(t.someField),
+    searchIndex('by_text').on(t.title),
+    vectorIndex('embedding_vec').on(t.embedding).dimensions(1536),
   ]
 ): ConvexTable<TableConfig<TName, TColumns>>
 ```
@@ -54,31 +56,99 @@ const posts = convexTable(
 );
 ```
 
-### `table.index()` (legacy)
+### `unique()`
 
 ```ts
-table.index(name: string, fields: string[]): table
+import { unique } from 'better-convex/orm';
+
+const users = convexTable(
+  'users',
+  {
+    firstName: text(),
+    lastName: text(),
+  },
+  (t) => [unique('full_name').on(t.firstName, t.lastName)]
+);
 ```
 
-### `table.searchIndex()`
+Use `.nullsNotDistinct()` to treat `null` as a value (PG parity).
+
+### `foreignKey()`
 
 ```ts
-table.searchIndex(name: string, config: {
-  searchField: string;
-  filterFields?: string[];
-  staged?: boolean;
-}): table
+import { foreignKey } from 'better-convex/orm';
+
+const memberships = convexTable(
+  'memberships',
+  {
+    userSlug: text().notNull(),
+  },
+  (t) => [foreignKey({ columns: [t.userSlug], foreignColumns: [users.slug] })]
+);
 ```
 
-### `table.vectorIndex()` (wip)
+Use `.onUpdate()` / `.onDelete()` for Drizzle API parity (no cascading behavior).
+For non‑`_id` foreign keys, add an index on the referenced columns.
+
+### `searchIndex()`
 
 ```ts
-table.vectorIndex(name: string, config: {
-  vectorField: string;
-  dimensions: number;
-  filterFields?: string[];
-  staged?: boolean;
-}): table
+import { searchIndex } from 'better-convex/orm';
+
+const posts = convexTable(
+  'posts',
+  {
+    title: text().notNull(),
+    authorId: id('users'),
+  },
+  (t) => [searchIndex('by_title').on(t.title).filter(t.authorId)]
+);
+```
+
+Use `.staged()` to stage a search index for later activation.
+
+### `vectorIndex()`
+
+```ts
+import { vector, vectorIndex } from 'better-convex/orm';
+
+const posts = convexTable(
+  'posts',
+  {
+    authorId: id('users'),
+    embedding: vector(1536).notNull(),
+  },
+  (t) => [
+    vectorIndex('embedding_vec')
+      .on(t.embedding)
+      .dimensions(1536)
+      .filter(t.authorId),
+  ]
+);
+```
+
+Vector indexes require `.dimensions(n)` and can be staged with `.staged()`.
+
+### `vector()`
+
+```ts
+vector(1536)
+vector('embedding', 768)
+```
+
+### Column Modifiers
+
+```ts
+const users = convexTable('users', {
+  slug: text().notNull(),
+});
+
+text().notNull()
+text().default('member')
+text().unique()
+text().unique('handle_unique', { nulls: 'not distinct' })
+id('users').references(() => users._id)
+text().references(() => users.slug, { onDelete: 'cascade' })
 ```
 
 ### `defineRelations()`

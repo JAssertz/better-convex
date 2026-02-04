@@ -28,6 +28,7 @@ export {
   type DrizzleEntity,
   entityKind,
   type HasDefault,
+  type IsUnique,
   type IsPrimaryKey,
   type NotNull,
 } from './column-builder';
@@ -58,3 +59,9 @@ export {
   type ConvexTextBuilderInitial,
   text,
 } from './text';
+// Vector builder (Convex vector search)
+export {
+  ConvexVectorBuilder,
+  type ConvexVectorBuilderInitial,
+  vector,
+} from './vector';

@@ -2,6 +2,8 @@ import type { GenericDatabaseWriter } from 'convex/server';
 import type { FilterExpression } from './filter-expression';
 import {
   evaluateFilter,
+  enforceForeignKeys,
+  enforceUniqueIndexes,
   getTableName,
   selectReturningRow,
   toConvexFilter,
@@ -92,6 +94,23 @@ export class ConvexUpdateBuilder<
     const results: Record<string, unknown>[] = [];
 
     for (const row of rows) {
+      await enforceForeignKeys(
+        this.db,
+        this.table,
+        { ...(row as any), ...(this.setValues as any) },
+        {
+          changedFields: new Set(Object.keys(this.setValues as any)),
+        }
+      );
+      await enforceUniqueIndexes(
+        this.db,
+        this.table,
+        { ...(row as any), ...(this.setValues as any) },
+        {
+          currentId: (row as any)._id,
+          changedFields: new Set(Object.keys(this.setValues as any)),
+        }
+      );
       await this.db.patch(tableName, (row as any)._id, this.setValues as any);
 
       if (!this.returningFields) {

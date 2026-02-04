@@ -8,7 +8,10 @@ import {
   index,
   integer,
   number,
+  searchIndex,
   text,
+  vector,
+  vectorIndex,
 } from 'better-convex/orm';
 
 // ============================================================================
@@ -42,10 +45,17 @@ export const posts = convexTable(
     published: boolean(),
     authorId: id('users'),
     createdAt: number(),
+    embedding: vector(1536),
   },
-  (t) => [index('numLikesAndType').on(t.type, t.numLikes)]
+  (t) => [
+    index('numLikesAndType').on(t.type, t.numLikes),
+    searchIndex('text_search').on(t.text).filter(t.type),
+    vectorIndex('embedding_vec')
+      .on(t.embedding)
+      .dimensions(1536)
+      .filter(t.type),
+  ]
 );
-posts.searchIndex('text', { searchField: 'text', filterFields: ['type'] });
 
 export const comments = convexTable('comments', {
   postId: id('posts').notNull(),

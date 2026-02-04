@@ -1,3 +1,4 @@
+import type { GenericDatabaseWriter } from 'convex/server';
 import type { ColumnBuilder } from './builders/column-builder';
 import type {
   BinaryExpression,
@@ -7,8 +8,22 @@ import type {
   UnaryExpression,
 } from './filter-expression';
 import { isFieldReference } from './filter-expression';
-import { TableName } from './symbols';
+import { Columns, TableName } from './symbols';
 import type { ConvexTable } from './table';
+
+type UniqueIndexDefinition = {
+  name: string;
+  fields: string[];
+  nullsNotDistinct: boolean;
+};
+
+type ForeignKeyDefinition = {
+  name?: string;
+  columns: string[];
+  foreignColumns: string[];
+  foreignTableName: string;
+  foreignTable?: ConvexTable<any>;
+};
 
 export function getTableName(table: ConvexTable<any>): string {
   const name =
@@ -21,12 +36,233 @@ export function getTableName(table: ConvexTable<any>): string {
   return name;
 }
 
+export function getUniqueIndexes(
+  table: ConvexTable<any>
+): UniqueIndexDefinition[] {
+  const fromMethod = (table as any).getUniqueIndexes?.();
+  if (Array.isArray(fromMethod)) {
+    return fromMethod;
+  }
+  const fromField = (table as any).uniqueIndexes;
+  return Array.isArray(fromField) ? fromField : [];
+}
+
+export function getForeignKeys(table: ConvexTable<any>): ForeignKeyDefinition[] {
+  const fromMethod = (table as any).getForeignKeys?.();
+  if (Array.isArray(fromMethod)) {
+    return fromMethod;
+  }
+  const fromField = (table as any).foreignKeys;
+  return Array.isArray(fromField) ? fromField : [];
+}
+
+function getIndexes(table: ConvexTable<any>): { name: string; fields: string[] }[] {
+  const fromMethod = (table as any).getIndexes?.();
+  if (Array.isArray(fromMethod)) {
+    return fromMethod;
+  }
+  const fromField = (table as any).indexes;
+  if (!Array.isArray(fromField)) {
+    return [];
+  }
+  return fromField.map((entry: { indexDescriptor: string; fields: string[] }) => ({
+    name: entry.indexDescriptor,
+    fields: entry.fields,
+  }));
+}
+
+function findIndexForColumns(
+  indexes: { name: string; fields: string[] }[],
+  columns: string[]
+): string | null {
+  for (const index of indexes) {
+    if (index.fields.length < columns.length) {
+      continue;
+    }
+    let matches = true;
+    for (let i = 0; i < columns.length; i++) {
+      if (index.fields[i] !== columns[i]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) {
+      return index.name;
+    }
+  }
+  return null;
+}
+
 export function getColumnName(column: ColumnBuilder<any, any, any>): string {
   const name = (column as any).config?.name ?? (column as any)?._?.name;
   if (!name) {
     throw new Error('Column builder is missing a column name');
   }
   return name;
+}
+
+export function applyDefaults<TValue extends Record<string, unknown>>(
+  table: ConvexTable<any>,
+  value: TValue
+): TValue {
+  const columns = (table as any)[Columns] as
+    | Record<string, ColumnBuilder<any, any, any>>
+    | undefined;
+  if (!columns) {
+    return value;
+  }
+
+  const result = { ...value } as TValue;
+  for (const [columnName, builder] of Object.entries(columns)) {
+    const config = (builder as any).config as
+      | { hasDefault?: boolean; default?: unknown }
+      | undefined;
+    if (!config?.hasDefault) {
+      continue;
+    }
+    if ((result as any)[columnName] !== undefined) {
+      continue;
+    }
+    (result as any)[columnName] = config.default;
+  }
+  return result;
+}
+
+export async function enforceUniqueIndexes(
+  db: GenericDatabaseWriter<any>,
+  table: ConvexTable<any>,
+  candidate: Record<string, unknown>,
+  options?: { currentId?: unknown; changedFields?: Set<string> }
+): Promise<void> {
+  const uniqueIndexes = getUniqueIndexes(table);
+  if (uniqueIndexes.length === 0) {
+    return;
+  }
+
+  const tableName = getTableName(table);
+  const changedFields = options?.changedFields;
+
+  for (const index of uniqueIndexes) {
+    if (changedFields && !index.fields.some((field) => changedFields.has(field))) {
+      continue;
+    }
+
+    const entries = index.fields.map((field) => [field, candidate[field]]);
+    const hasNullish = entries.some(
+      ([, value]) => value === undefined || value === null
+    );
+    if (hasNullish && !index.nullsNotDistinct) {
+      continue;
+    }
+
+    const existing = await db
+      .query(tableName)
+      .withIndex(index.name, (q: any) => {
+        let builder = q.eq(entries[0][0], entries[0][1]);
+        for (let i = 1; i < entries.length; i++) {
+          builder = builder.eq(entries[i][0], entries[i][1]);
+        }
+        return builder;
+      })
+      .unique();
+
+    if (
+      existing !== null &&
+      (options?.currentId === undefined ||
+        (existing as any)._id !== options.currentId)
+    ) {
+      throw new Error(
+        `Unique index '${index.name}' violation on '${tableName}'.`
+      );
+    }
+  }
+}
+
+export async function enforceForeignKeys(
+  db: GenericDatabaseWriter<any>,
+  table: ConvexTable<any>,
+  candidate: Record<string, unknown>,
+  options?: { changedFields?: Set<string> }
+): Promise<void> {
+  const foreignKeys = getForeignKeys(table);
+  if (foreignKeys.length === 0) {
+    return;
+  }
+
+  const tableName = getTableName(table);
+  const changedFields = options?.changedFields;
+
+  for (const foreignKey of foreignKeys) {
+    if (
+      changedFields &&
+      !foreignKey.columns.some((field) => changedFields.has(field))
+    ) {
+      continue;
+    }
+
+    const entries = foreignKey.columns.map(
+      (field) => [field, candidate[field]] as [string, unknown]
+    );
+    const hasNullish = entries.some(
+      ([, value]) => value === undefined || value === null
+    );
+    if (hasNullish) {
+      continue;
+    }
+
+    if (
+      foreignKey.foreignColumns.length === 1 &&
+      foreignKey.foreignColumns[0] === '_id'
+    ) {
+      const foreignId = entries[0]?.[1];
+      const existing = await db.get(foreignId as any);
+      if (!existing) {
+        throw new Error(
+          `Foreign key violation on '${tableName}': missing document in '${foreignKey.foreignTableName}'.`
+        );
+      }
+      continue;
+    }
+
+    if (!foreignKey.foreignTable) {
+      throw new Error(
+        `Foreign key on '${tableName}' requires indexed foreign columns on '${foreignKey.foreignTableName}'.`
+      );
+    }
+
+    const indexName = findIndexForColumns(
+      getIndexes(foreignKey.foreignTable),
+      foreignKey.foreignColumns
+    );
+
+    if (!indexName) {
+      throw new Error(
+        `Foreign key on '${tableName}' requires index on '${foreignKey.foreignTableName}(${foreignKey.foreignColumns.join(
+          ', '
+        )})'.`
+      );
+    }
+
+    const foreignRow = await db
+      .query(foreignKey.foreignTableName)
+      .withIndex(indexName, (q: any) => {
+        let builder = q.eq(foreignKey.foreignColumns[0], entries[0][1]);
+        for (let i = 1; i < entries.length; i++) {
+          builder = builder.eq(
+            foreignKey.foreignColumns[i],
+            entries[i][1]
+          );
+        }
+        return builder;
+      })
+      .first();
+
+    if (!foreignRow) {
+      throw new Error(
+        `Foreign key violation on '${tableName}': missing document in '${foreignKey.foreignTableName}'.`
+      );
+    }
+  }
 }
 
 export function getSelectionColumnName(value: unknown): string {
