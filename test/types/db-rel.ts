@@ -133,17 +133,6 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
       comments: Array<{
         text: string;
         author: {
-          _id: UserId;
-          _creationTime: number;
-          name: string;
-          email: string;
-          height: number | null;
-          age: number | null;
-          status: string | null;
-          role: string | null;
-          deletedAt: number | null;
-          cityId: CityId | null;
-          homeCityId: CityId | null;
           city: {
             _id: CityId;
             _creationTime: number;

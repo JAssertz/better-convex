@@ -229,7 +229,7 @@ type PgTableExtraConfigValue =
   | ForeignKeyBuilder
   | PrimaryKeyBuilder
   | UniqueConstraintBuilder
-  | PgPolicy;
+  | RlsPolicy;
 
 type PgTableExtraConfig = Record<string, PgTableExtraConfigValue>;
 

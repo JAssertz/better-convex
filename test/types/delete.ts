@@ -5,9 +5,9 @@ import {
   extractRelationsConfig,
 } from 'better-convex/orm';
 import type { GenericDatabaseWriter } from 'convex/server';
-import type { GenericId } from 'convex/values';
+import { UserRow } from './fixtures/types';
 import { users } from './tables-rel';
-import { type Equal, Expect } from './utils';
+import { type Equal, Expect, IsAny, Not } from './utils';
 
 const schemaConfig = buildSchema({ users });
 const edgeMetadata = extractRelationsConfig(schemaConfig);
@@ -36,19 +36,7 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
 {
   const result = await db.delete(users).returning();
 
-  type Expected = Array<{
-    _id: GenericId<'users'>;
-    _creationTime: number;
-    name: string;
-    email: string;
-    height: number | null;
-    age: number | null;
-    status: string | null;
-    role: string | null;
-    deletedAt: number | null;
-    cityId: GenericId<'cities'> | null;
-    homeCityId: GenericId<'cities'> | null;
-  }>;
+  type Expected = UserRow[];
 
   Expect<Equal<Expected, typeof result>>;
 }
@@ -72,6 +60,44 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
     .returning()
     // @ts-expect-error - returning already called
     .returning();
+}
+
+// ============================================================================
+// NEGATIVE TYPE TESTS
+// ============================================================================
+
+// where() should enforce column value types
+{
+  db.delete(users)
+    // @ts-expect-error - age expects number
+    .where(eq(users.age, 'not-a-number'));
+}
+
+// where() requires an argument
+{
+  db.delete(users)
+    // @ts-expect-error - where() requires a filter expression
+    .where();
+}
+
+// returning selection must use column builders
+{
+  db.delete(users).returning({
+    name: users.name,
+    // @ts-expect-error - returning selection must be a column builder
+    invalid: 'nope',
+  });
+}
+
+// ============================================================================
+// ANY-PROTECTION TESTS
+// ============================================================================
+
+// Returning row type should not be any
+{
+  const result = await db.delete(users).returning();
+  type Row = (typeof result)[number];
+  Expect<Not<IsAny<Row>>>;
 }
 
 export {};

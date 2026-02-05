@@ -2,16 +2,30 @@ import {
   buildSchema,
   createDatabase,
   extractRelationsConfig,
+  type InsertValue,
 } from 'better-convex/orm';
 import type { GenericDatabaseWriter } from 'convex/server';
 import type { GenericId } from 'convex/values';
+import { UserRow } from './fixtures/types';
 import { users } from './tables-rel';
-import { type Equal, Expect } from './utils';
+import { type Equal, Expect, IsAny, Not } from './utils';
 
 const schemaConfig = buildSchema({ users });
 const edgeMetadata = extractRelationsConfig(schemaConfig);
 const mockDb = {} as GenericDatabaseWriter<any>;
 const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
+
+const baseUserInsert = {
+  name: 'Alice',
+  email: 'alice@example.com',
+  height: null,
+  status: null,
+  role: null,
+  deletedAt: null,
+  age: null,
+  cityId: null,
+  homeCityId: null,
+} satisfies InsertValue<typeof users>;
 
 // ============================================================================
 // INSERT TYPE TESTS
@@ -20,15 +34,7 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
 // Test 1: insert without returning
 {
   const result = await db.insert(users).values({
-    name: 'Alice',
-    email: 'alice@example.com',
-    height: null,
-    status: null,
-    role: null,
-    deletedAt: null,
-    age: null,
-    cityId: null,
-    homeCityId: null,
+    ...baseUserInsert,
   });
 
   Expect<Equal<undefined, typeof result>>;
@@ -39,31 +45,11 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
   const result = await db
     .insert(users)
     .values({
-      name: 'Alice',
-      email: 'alice@example.com',
-      height: null,
-      status: null,
-      role: null,
-      deletedAt: null,
-      age: null,
-      cityId: null,
-      homeCityId: null,
+      ...baseUserInsert,
     })
     .returning();
 
-  type Expected = Array<{
-    _id: GenericId<'users'>;
-    _creationTime: number;
-    name: string;
-    email: string;
-    height: number | null;
-    status: string | null;
-    role: string | null;
-    deletedAt: number | null;
-    age: number | null;
-    cityId: GenericId<'cities'> | null;
-    homeCityId: GenericId<'cities'> | null;
-  }>;
+  type Expected = UserRow[];
 
   Expect<Equal<Expected, typeof result>>;
 }
@@ -73,15 +59,7 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
   const result = await db
     .insert(users)
     .values({
-      name: 'Alice',
-      email: 'alice@example.com',
-      height: null,
-      status: null,
-      role: null,
-      deletedAt: null,
-      age: null,
-      cityId: null,
-      homeCityId: null,
+      ...baseUserInsert,
     })
     .returning({
       name: users.name,
@@ -101,32 +79,12 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
   const result = await db
     .insert(users)
     .values({
-      name: 'Alice',
-      email: 'alice@example.com',
-      height: null,
-      status: null,
-      role: null,
-      deletedAt: null,
-      age: null,
-      cityId: null,
-      homeCityId: null,
+      ...baseUserInsert,
     })
     .onConflictDoNothing({ target: users.name })
     .returning();
 
-  type Expected = Array<{
-    _id: GenericId<'users'>;
-    _creationTime: number;
-    name: string;
-    email: string;
-    height: number | null;
-    status: string | null;
-    role: string | null;
-    deletedAt: number | null;
-    age: number | null;
-    cityId: GenericId<'cities'> | null;
-    homeCityId: GenericId<'cities'> | null;
-  }>;
+  type Expected = UserRow[];
 
   Expect<Equal<Expected, typeof result>>;
 }
@@ -136,15 +94,7 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
   const result = await db
     .insert(users)
     .values({
-      name: 'Alice',
-      email: 'alice@example.com',
-      height: null,
-      status: null,
-      role: null,
-      deletedAt: null,
-      age: null,
-      cityId: null,
-      homeCityId: null,
+      ...baseUserInsert,
     })
     .onConflictDoUpdate({
       target: users.name,
@@ -165,19 +115,158 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
 {
   db.insert(users)
     .values({
-      name: 'Alice',
-      email: 'alice@example.com',
-      height: null,
-      status: null,
-      role: null,
-      deletedAt: null,
-      age: null,
-      cityId: null,
-      homeCityId: null,
+      ...baseUserInsert,
     })
     .returning()
     // @ts-expect-error - returning already called
     .returning();
+}
+
+// ============================================================================
+// NEGATIVE TYPE TESTS
+// ============================================================================
+
+// Missing required notNull field (name)
+{
+  db.insert(users).values(
+    // @ts-expect-error - name is required
+    {
+      email: 'alice@example.com',
+    }
+  );
+}
+
+// values() requires an argument
+{
+  // @ts-expect-error - values() requires at least one value
+  db.insert(users).values(undefined);
+  // @ts-expect-error - values() requires an argument
+  db.insert(users).values();
+}
+
+// Missing required notNull field (email)
+{
+  db.insert(users).values(
+    // @ts-expect-error - email is required
+    {
+      name: 'Alice',
+    }
+  );
+}
+
+// Extra property should be rejected
+{
+  db.insert(users).values({
+    ...baseUserInsert,
+    // @ts-expect-error - extra field not allowed
+    nope: 123,
+  });
+}
+
+// Wrong type for name
+{
+  db.insert(users).values({
+    ...baseUserInsert,
+    // @ts-expect-error - name must be string
+    name: 123,
+  });
+}
+
+// Wrong type for cityId
+{
+  db.insert(users).values({
+    ...baseUserInsert,
+    // @ts-expect-error - cityId must be GenericId<'cities'> | null
+    cityId: 'not-an-id',
+  });
+}
+
+// onConflictDoNothing target must be a column builder
+{
+  db.insert(users)
+    .values({ ...baseUserInsert })
+    .onConflictDoNothing({
+      // @ts-expect-error - target must be a column builder
+      target: 'name',
+    });
+}
+
+// onConflictDoUpdate requires target
+{
+  db.insert(users)
+    .values({ ...baseUserInsert })
+    .onConflictDoUpdate(
+      // @ts-expect-error - target is required
+      {
+        set: { name: 'Updated' },
+      }
+    );
+}
+
+// onConflictDoUpdate requires set
+{
+  db.insert(users)
+    .values({ ...baseUserInsert })
+    .onConflictDoUpdate(
+      // @ts-expect-error - set is required
+      {
+        target: users.name,
+      }
+    );
+}
+
+// onConflictDoUpdate set must use valid fields and types
+{
+  db.insert(users)
+    .values({ ...baseUserInsert })
+    .onConflictDoUpdate({
+      target: users.name,
+      set: {
+        // @ts-expect-error - invalid field in set
+        nope: 'value',
+      },
+    });
+
+  db.insert(users)
+    .values({ ...baseUserInsert })
+    .onConflictDoUpdate({
+      target: users.name,
+      set: {
+        // @ts-expect-error - age expects number | null
+        age: 'not-a-number',
+      },
+    });
+}
+
+// returning selection must use column builders
+{
+  db.insert(users)
+    .values({ ...baseUserInsert })
+    .returning({
+      name: users.name,
+      // @ts-expect-error - returning selection must be a column builder
+      invalid: 'nope',
+    });
+}
+
+// ============================================================================
+// ANY-PROTECTION TESTS
+// ============================================================================
+
+// InsertValue should not be any
+{
+  type Insert = InsertValue<typeof users>;
+  Expect<Not<IsAny<Insert>>>;
+}
+
+// Returning row type should not be any
+{
+  const result = await db
+    .insert(users)
+    .values({ ...baseUserInsert })
+    .returning();
+  type Row = (typeof result)[number];
+  Expect<Not<IsAny<Row>>>;
 }
 
 export {};

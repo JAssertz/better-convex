@@ -1,17 +1,17 @@
-import { describe, expect, it } from 'vitest';
 import {
   convexTable,
-  createDatabase,
+  type DatabaseWithMutations,
   defineRelations,
   defineSchema,
+  eq,
   extractRelationsConfig,
   foreignKey,
   id,
   index,
-  eq,
   text,
 } from 'better-convex/orm';
-import { convexTest } from '../setup.testing';
+import { describe, expect, it } from 'vitest';
+import { withTableCtx } from '../setup.testing';
 
 const users = convexTable(
   'fk_users',
@@ -63,15 +63,9 @@ const schema = defineSchema(rawSchema);
 const relations = defineRelations(rawSchema);
 const edges = extractRelationsConfig(relations);
 
-const withCtx = async <T>(fn: (ctx: { table: ReturnType<typeof createDatabase> }) => Promise<T>) => {
-  const t = convexTest(schema);
-  let result: T | undefined;
-  await t.run(async (baseCtx) => {
-    const table = createDatabase(baseCtx.db, relations, edges);
-    result = await fn({ table });
-  });
-  return result as T;
-};
+const withCtx = async <T>(
+  fn: (ctx: { table: DatabaseWithMutations<typeof relations> }) => Promise<T>
+) => withTableCtx(schema, relations, edges, async ({ table }) => fn({ table }));
 
 describe('foreign key enforcement', () => {
   it('enforces _id references on insert', async () =>
@@ -81,10 +75,7 @@ describe('foreign key enforcement', () => {
         .values({ name: 'Ada', slug: 'ada' })
         .returning();
 
-      await table
-        .insert(profiles)
-        .values({ userId: user._id })
-        .returning();
+      await table.insert(profiles).values({ userId: user._id }).returning();
 
       await expect(
         table.insert(profiles).values({ userId: 'missing' as any })
@@ -119,10 +110,7 @@ describe('foreign key enforcement', () => {
 
   it('requires index for non-_id references', async () =>
     withCtx(async ({ table }) => {
-      await table
-        .insert(teams)
-        .values({ slug: 'alpha' })
-        .returning();
+      await table.insert(teams).values({ slug: 'alpha' }).returning();
 
       await expect(
         table.insert(teamMembers).values({ teamSlug: 'alpha' })
@@ -136,10 +124,7 @@ describe('foreign key enforcement', () => {
         .values({ name: 'Ada', slug: 'ada' })
         .returning();
 
-      await table
-        .insert(memberships)
-        .values({ userSlug: 'ada' })
-        .returning();
+      await table.insert(memberships).values({ userSlug: 'ada' }).returning();
 
       await expect(
         table.insert(memberships).values({ userSlug: 'missing' })
@@ -153,10 +138,7 @@ describe('foreign key enforcement', () => {
         .values({ name: 'Ada', slug: 'ada' })
         .returning();
 
-      await table
-        .insert(profileSlugs)
-        .values({ userSlug: 'ada' })
-        .returning();
+      await table.insert(profileSlugs).values({ userSlug: 'ada' }).returning();
 
       await expect(
         table.insert(profileSlugs).values({ userSlug: 'missing' })

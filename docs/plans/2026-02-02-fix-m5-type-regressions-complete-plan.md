@@ -60,7 +60,6 @@ export function convexTable<
 export type PgTableWithColumns<T extends TableConfig> =
   & PgTable<T>
   & { [Key in keyof T['columns']]: T['columns'][Key] }
-  & { enableRLS: () => Omit<PgTableWithColumns<T>, 'enableRLS'> };
 
 // They use Object.assign at runtime too
 const table = Object.assign(rawTable, builtColumns);

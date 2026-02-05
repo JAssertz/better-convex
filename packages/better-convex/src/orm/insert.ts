@@ -3,14 +3,19 @@ import type { ColumnBuilder } from './builders/column-builder';
 import type { FilterExpression } from './filter-expression';
 import {
   applyDefaults,
-  evaluateFilter,
+  enforceCheckConstraints,
   enforceForeignKeys,
   enforceUniqueIndexes,
+  evaluateFilter,
   getColumnName,
+  getOrmContext,
+  getTableColumns,
   getTableName,
+  getUniqueIndexes,
   selectReturningRow,
 } from './mutation-utils';
 import { QueryPromise } from './query-promise';
+import { canInsertRow, evaluateUpdateDecision } from './rls/evaluator';
 import type { ConvexTable } from './table';
 import type {
   InsertValue,
@@ -129,6 +134,22 @@ export class ConvexInsertBuilder<
     const results: Record<string, unknown>[] = [];
     for (const value of this.valuesList) {
       const preparedValue = applyDefaults(this.table, value as any);
+      const ormContext = getOrmContext(this.db);
+      const rls = ormContext?.rls;
+      const tableName = getTableName(this.table);
+
+      if (
+        !canInsertRow({
+          table: this.table,
+          row: preparedValue as any,
+          rls,
+        })
+      ) {
+        throw new Error(
+          `RLS policy violation for insert on table "${tableName}"`
+        );
+      }
+
       const conflictResult = await this.handleConflict(preparedValue);
 
       if (conflictResult?.status === 'skip') {
@@ -142,7 +163,7 @@ export class ConvexInsertBuilder<
         continue;
       }
 
-      const tableName = getTableName(this.table);
+      enforceCheckConstraints(this.table, preparedValue as any);
       await enforceForeignKeys(this.db, this.table, preparedValue as any, {
         changedFields: new Set(Object.keys(preparedValue as any)),
       });
@@ -196,7 +217,12 @@ export class ConvexInsertBuilder<
         ? [config.target]
         : [];
 
-    const existing = await this.findConflictRow(value, targetColumns);
+    const existing =
+      targetColumns.length > 0
+        ? await this.findConflictRow(value, targetColumns)
+        : action === 'nothing'
+          ? await this.findAnyUniqueConflictRow(value)
+          : null;
     if (!existing) {
       return;
     }
@@ -229,28 +255,65 @@ export class ConvexInsertBuilder<
     }
 
     const tableName = getTableName(this.table);
+    const ormContext = getOrmContext(this.db);
+    const rls = ormContext?.rls;
+
+    const onUpdateSet: Record<string, unknown> = {};
+    for (const [columnName, builder] of Object.entries(
+      getTableColumns(this.table)
+    )) {
+      if (columnName in (updateConfig.set as any)) {
+        continue;
+      }
+      const onUpdateFn = (builder as any).config?.onUpdateFn;
+      if (typeof onUpdateFn === 'function') {
+        onUpdateSet[columnName] = onUpdateFn();
+      }
+    }
+
+    const effectiveSet = {
+      ...onUpdateSet,
+      ...(updateConfig.set as any),
+    };
+
+    const updateDecision = evaluateUpdateDecision({
+      table: this.table,
+      existingRow: existing as any,
+      updatedRow: { ...(existing as any), ...(effectiveSet as any) },
+      rls,
+    });
+
+    if (!updateDecision.allowed) {
+      if (updateDecision.usingAllowed && !updateDecision.withCheckAllowed) {
+        throw new Error(
+          `RLS policy violation for update on table "${tableName}"`
+        );
+      }
+      return { status: 'updated', row: null };
+    }
+
     await enforceForeignKeys(
       this.db,
       this.table,
-      { ...(existing as any), ...(updateConfig.set as any) },
+      (() => {
+        const candidate = { ...(existing as any), ...(effectiveSet as any) };
+        enforceCheckConstraints(this.table, candidate);
+        return candidate;
+      })(),
       {
-        changedFields: new Set(Object.keys(updateConfig.set as any)),
+        changedFields: new Set(Object.keys(effectiveSet as any)),
       }
     );
     await enforceUniqueIndexes(
       this.db,
       this.table,
-      { ...(existing as any), ...(updateConfig.set as any) },
+      { ...(existing as any), ...(effectiveSet as any) },
       {
         currentId: (existing as any)._id,
-        changedFields: new Set(Object.keys(updateConfig.set as any)),
+        changedFields: new Set(Object.keys(effectiveSet as any)),
       }
     );
-    await this.db.patch(
-      tableName,
-      (existing as any)._id,
-      updateConfig.set as any
-    );
+    await this.db.patch(tableName, (existing as any)._id, effectiveSet as any);
     const updated = this.returningFields
       ? await this.db.get((existing as any)._id)
       : null;
@@ -289,5 +352,45 @@ export class ConvexInsertBuilder<
 
     const row = await query.first();
     return row ? (row as any) : null;
+  }
+
+  private async findAnyUniqueConflictRow(
+    value: InsertValue<TTable>
+  ): Promise<Record<string, unknown> | null> {
+    const uniqueIndexes = getUniqueIndexes(this.table);
+    if (uniqueIndexes.length === 0) {
+      return null;
+    }
+
+    const tableName = getTableName(this.table);
+
+    for (const index of uniqueIndexes) {
+      const entries = index.fields.map(
+        (field) => [field, (value as any)[field]] as [string, unknown]
+      );
+      const hasNullish = entries.some(
+        ([, entryValue]) => entryValue === undefined || entryValue === null
+      );
+      if (hasNullish && !index.nullsNotDistinct) {
+        continue;
+      }
+
+      const existing = await this.db
+        .query(tableName)
+        .withIndex(index.name, (q: any) => {
+          let builder = q.eq(entries[0][0], entries[0][1]);
+          for (let i = 1; i < entries.length; i++) {
+            builder = builder.eq(entries[i][0], entries[i][1]);
+          }
+          return builder;
+        })
+        .unique();
+
+      if (existing !== null) {
+        return existing as any;
+      }
+    }
+
+    return null;
   }
 }

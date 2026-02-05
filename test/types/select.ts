@@ -1,6 +1,7 @@
 import {
   convexTable,
   createDatabase,
+  defineRelations,
   extractRelationsConfig,
   type InferInsertModel,
   type InferSelectModel,
@@ -21,7 +22,7 @@ import {
   relations,
   users,
 } from './tables-rel';
-import { type Equal, Expect } from './utils';
+import { type Equal, Expect, IsAny, Not } from './utils';
 
 // Build schema following Better Convex pattern
 const schemaConfig = relations;
@@ -59,6 +60,16 @@ void schemaRelationKeyBad;
 // Mock database reader for type testing
 const mockDb = {} as GenericDatabaseReader<any>;
 const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
+
+// ============================================================================
+// DATABASE TYPE TESTS (Convex-backend inspired)
+// ============================================================================
+
+// Invalid table access on db.query should error
+{
+  // @ts-expect-error - table does not exist on schema
+  db.query.nonExistentTable;
+}
 
 // ============================================================================
 // WHERE CLAUSE TYPE TESTS
@@ -311,27 +322,28 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
 }
 
 // Test 11: Exclude columns with false
-// TODO(M5): Enable once column exclusion implemented
-// Column exclusion (columns: { age: false }) is not yet implemented
-// _selectColumns only handles include === true, not include === false
-// {
-//   const result = await db.query.users.findMany({
-//     columns: {
-//       age: false,
-//     },
-//   });
-//
-//   type Expected = Array<{
-//     _id: string;
-//     _creationTime: number;
-//     name: string;
-//     email: string;
-//     cityId: GenericId<'cities'>;
-//     homeCityId: GenericId<'cities'> | null;
-//   }>;
-//
-//   Expect<Equal<Expected, typeof result>>;
-// }
+{
+  const result = await db.query.users.findMany({
+    columns: {
+      age: false,
+    },
+  });
+
+  type Expected = Array<Omit<UserRow, 'age'>>;
+
+  Expect<Equal<Expected, typeof result>>;
+}
+
+// Test 11b: Empty columns returns no table columns
+{
+  const result = await db.query.users.findMany({
+    columns: {},
+  });
+
+  type Expected = Array<{}>;
+
+  Expect<Equal<Expected, typeof result>>;
+}
 
 // ============================================================================
 // COMBINED WHERE + RELATIONS TYPE TESTS
@@ -369,6 +381,85 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
 //
 //   Expect<Equal<Expected, typeof result>>;
 // }
+
+// Test 12b: one() relation with where is nullable (even if optional false)
+{
+  const authors = convexTable('authors_where', {
+    name: text().notNull(),
+  });
+
+  const books = convexTable('books_where', {
+    authorId: id('authors_where').notNull(),
+    title: text().notNull(),
+  });
+
+  const relationsWhere = defineRelations({ authors, books }, (r) => ({
+    authors: {
+      books: r.many.books(),
+    },
+    books: {
+      author: r.one.authors({
+        from: r.books.authorId,
+        to: r.authors._id,
+        optional: false,
+      }),
+    },
+  }));
+
+  const edgesWhere = extractRelationsConfig(relationsWhere);
+  const dbWhere = createDatabase(mockDb, relationsWhere, edgesWhere);
+
+  const result = await dbWhere.query.books.findMany({
+    with: {
+      author: {
+        where: { name: 'Alice' },
+      },
+    },
+  });
+
+  type AuthorRow = InferSelectModel<typeof authors>;
+  type Row = (typeof result)[number];
+
+  Expect<Equal<Row['author'], AuthorRow | null>>;
+}
+
+// Test 12c: columns {} in relations keeps nested relations only
+{
+  const result = await db.query.users.findMany({
+    with: {
+      posts: {
+        columns: {},
+        with: {
+          author: true,
+        },
+      },
+    },
+  });
+
+  type Post = (typeof result)[number]['posts'][number];
+  type ExpectedPost = {
+    author: UserRow | null;
+  };
+
+  Expect<Equal<Post, ExpectedPost>>;
+}
+
+// Test 12d: offset in nested relations preserves types
+{
+  const result = await db.query.users.findMany({
+    with: {
+      posts: {
+        offset: 1,
+        limit: 2,
+      },
+    },
+  });
+
+  type Post = (typeof result)[number]['posts'][number];
+  type ExpectedPost = InferSelectModel<typeof posts>;
+
+  Expect<Equal<Post, ExpectedPost>>;
+}
 
 // ============================================================================
 // FINDFIRST RESULT TYPE TESTS
@@ -549,6 +640,39 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
   Expect<Equal<Expected, typeof result>>;
 }
 
+// Test: startsWith operator
+{
+  const result = await db.query.users.findMany({
+    where: { email: { startsWith: 'a' } },
+  });
+
+  type Expected = UserRow[];
+
+  Expect<Equal<Expected, typeof result>>;
+}
+
+// Test: endsWith operator
+{
+  const result = await db.query.users.findMany({
+    where: { email: { endsWith: '@example.com' } },
+  });
+
+  type Expected = UserRow[];
+
+  Expect<Equal<Expected, typeof result>>;
+}
+
+// Test: contains operator
+{
+  const result = await db.query.users.findMany({
+    where: { name: { contains: 'ice' } },
+  });
+
+  type Expected = UserRow[];
+
+  Expect<Equal<Expected, typeof result>>;
+}
+
 // ============================================================================
 // M5 ORDERBY EXTENDED TESTS
 // ============================================================================
@@ -588,13 +712,12 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
 
   type Insert = InferInsertModel<typeof posts>;
 
-  // Note: In Better Convex, default doesn't make fields optional
   Expect<
     Equal<
       Insert,
       {
         title: string;
-        status: string; // Required, not optional (Better Convex convention)
+        status?: string; // Defaults make fields optional (Drizzle parity)
       }
     >
   >;
@@ -653,6 +776,12 @@ db.query.users.findMany({
   orderBy: (users, { asc }) => asc(users.invalidField),
 });
 
+// Invalid orderBy direction
+db.query.users.findMany({
+  // @ts-expect-error - orderBy direction must be 'asc' | 'desc'
+  orderBy: { age: 'up' },
+});
+
 // Invalid operator for field type
 db.query.users.findMany({
   // @ts-expect-error - Argument of type 'number' is not assignable to parameter of type 'string'
@@ -663,6 +792,18 @@ db.query.users.findMany({
 db.query.users.findMany({
   // @ts-expect-error - Type 'string' is not assignable to type 'number'
   where: { age: { in: ['not', 'numbers'] } },
+});
+
+// inArray expects array
+db.query.users.findMany({
+  // @ts-expect-error - 'in' expects an array of values
+  where: { age: { in: 123 } },
+});
+
+// like operator expects string pattern
+db.query.users.findMany({
+  // @ts-expect-error - like expects a string pattern
+  where: { name: { like: 123 } },
 });
 
 // FilterOperators use 'raw' mode - eq should NOT accept null
@@ -730,6 +871,14 @@ db.query.users.findMany({
   },
 });
 
+// Columns values must be boolean
+db.query.users.findMany({
+  columns: {
+    // @ts-expect-error - columns values must be boolean
+    name: 'yes',
+  },
+});
+
 // Where in nested one() relation (allowed)
 db.query.posts.findMany({
   with: {
@@ -745,6 +894,16 @@ db.query.posts.findMany({
     author: {
       // @ts-expect-error - limit is only allowed on many() relations
       limit: 10,
+    },
+  },
+});
+
+// Invalid nested relation option type
+db.query.users.findMany({
+  with: {
+    posts: {
+      // @ts-expect-error - limit must be a number
+      limit: '10',
     },
   },
 });
@@ -917,6 +1076,124 @@ db.query.users.findMany({
       }
     >
   >;
+}
+
+// ============================================================================
+// PAGINATE TYPE TESTS
+// ============================================================================
+
+// Paginate returns page + cursor metadata
+{
+  const result = await db.query.users.paginate(
+    { where: { name: 'Alice' } },
+    { cursor: null, numItems: 10 }
+  );
+
+  type Expected = {
+    page: UserRow[];
+    continueCursor: string | null;
+    isDone: boolean;
+  };
+
+  Expect<Equal<typeof result, Expected>>;
+}
+
+// Paginate config should not accept limit/offset
+db.query.users.paginate(
+  // @ts-expect-error - limit is not allowed in paginate config
+  { limit: 10 },
+  { cursor: null, numItems: 5 }
+);
+
+// Paginate requires numItems when options provided
+db.query.users.paginate(
+  {},
+  // @ts-expect-error - numItems is required
+  { cursor: null }
+);
+
+// ============================================================================
+// EXTRAS TYPE TESTS (runtime-computed fields)
+// ============================================================================
+
+// Extras appear on result rows with inferred types (function return types + constants)
+{
+  const result = await db.query.users.findMany({
+    extras: {
+      nameUpper: (row) => row.name.toUpperCase(),
+      constant: 123,
+    },
+  });
+
+  type Row = (typeof result)[number];
+
+  Expect<Equal<Row['nameUpper'], string>>;
+  Expect<Equal<Row['constant'], number>>;
+}
+
+// Extras are preserved even when columns selection is empty
+{
+  const result = await db.query.users.findMany({
+    columns: {},
+    extras: {
+      nameUpper: (row) => row.name.toUpperCase(),
+    },
+  });
+
+  type Row = (typeof result)[number];
+
+  Expect<
+    Equal<
+      Row,
+      {
+        nameUpper: string;
+      }
+    >
+  >;
+}
+
+// Nested extras work inside `with`
+{
+  const result = await db.query.users.findMany({
+    with: {
+      posts: {
+        extras: {
+          textLength: (row) => row.text.length,
+        },
+      },
+    },
+  });
+
+  type Post = (typeof result)[number]['posts'][number];
+  Expect<Equal<Post['textLength'], number>>;
+}
+
+// ============================================================================
+// ANY-PROTECTION TESTS
+// ============================================================================
+
+// findMany row type should not be any
+{
+  const result = await db.query.users.findMany();
+  type Row = (typeof result)[number];
+  Expect<Not<IsAny<Row>>>;
+}
+
+// findFirst row type should not be any
+{
+  const result = await db.query.users.findFirst();
+  type Row = NonNullable<typeof result>;
+  Expect<Not<IsAny<Row>>>;
+}
+
+// paginate row type should not be any
+{
+  const result = await db.query.users.paginate(
+    {},
+    { cursor: null, numItems: 1 }
+  );
+  type Row = (typeof result)['page'][number];
+  Expect<Not<IsAny<Row>>>;
 }
 
 export {};

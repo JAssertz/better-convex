@@ -115,5 +115,78 @@ describe('M3 Query Builder', () => {
       expect(result[0]).toHaveProperty('name');
       expect(result[0]).not.toHaveProperty('email');
     });
+
+    it('should exclude columns when all selections are false', async ({
+      ctx,
+    }) => {
+      await ctx.db.insert('users', {
+        name: 'Alice',
+        email: 'alice@example.com',
+      });
+
+      const db = ctx.table;
+      const result = await db.query.users.findMany({
+        columns: { email: false },
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toHaveProperty('name');
+      expect(result[0]).not.toHaveProperty('email');
+    });
+
+    it('should return no table columns when columns is empty', async ({
+      ctx,
+    }) => {
+      await ctx.db.insert('users', {
+        name: 'Alice',
+        email: 'alice@example.com',
+      });
+
+      const db = ctx.table;
+      const result = await db.query.users.findMany({
+        columns: {},
+      });
+
+      expect(result).toHaveLength(1);
+      expect(Object.keys(result[0])).toHaveLength(0);
+    });
+  });
+
+  describe('Extras', () => {
+    it('should compute extras on results', async ({ ctx }) => {
+      await ctx.db.insert('users', {
+        name: 'Alice',
+        email: 'alice@example.com',
+      });
+
+      const db = ctx.table;
+      const result = await db.query.users.findMany({
+        extras: {
+          nameUpper: (row) => row.name.toUpperCase(),
+        },
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].nameUpper).toBe('ALICE');
+    });
+
+    it('should preserve extras when columns is empty', async ({ ctx }) => {
+      await ctx.db.insert('users', {
+        name: 'Alice',
+        email: 'alice@example.com',
+      });
+
+      const db = ctx.table;
+      const result = await db.query.users.findMany({
+        columns: {},
+        extras: {
+          nameUpper: (row) => row.name.toUpperCase(),
+        },
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toHaveProperty('nameUpper', 'ALICE');
+      expect(Object.keys(result[0])).toEqual(['nameUpper']);
+    });
   });
 });

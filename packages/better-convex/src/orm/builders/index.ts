@@ -17,6 +17,12 @@ export {
   ConvexBooleanBuilder,
   type ConvexBooleanBuilderInitial,
 } from './boolean';
+// Bytes builder
+export {
+  bytes,
+  ConvexBytesBuilder,
+  type ConvexBytesBuilderInitial,
+} from './bytes';
 // Base classes
 export {
   ColumnBuilder,
@@ -28,11 +34,18 @@ export {
   type DrizzleEntity,
   entityKind,
   type HasDefault,
-  type IsUnique,
   type IsPrimaryKey,
+  type IsUnique,
   type NotNull,
 } from './column-builder';
 export { ConvexColumnBuilder } from './convex-column-builder';
+// Custom builder
+export {
+  ConvexCustomBuilder,
+  type ConvexCustomBuilderInitial,
+  custom,
+  json,
+} from './custom';
 // ID builder (Convex-specific)
 export {
   ConvexIdBuilder,
@@ -59,6 +72,11 @@ export {
   type ConvexTextBuilderInitial,
   text,
 } from './text';
+export {
+  ConvexTextEnumBuilder,
+  type ConvexTextEnumBuilderInitial,
+  textEnum,
+} from './text-enum';
 // Vector builder (Convex vector search)
 export {
   ConvexVectorBuilder,

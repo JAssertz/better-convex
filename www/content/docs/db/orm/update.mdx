@@ -1,0 +1,59 @@
+---
+title: Update
+description: Update rows with Drizzle-style builders (Better-Convex ORM)
+links:
+  doc: https://orm.drizzle.team/docs/update
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+Better-Convex ORM provides a Drizzle-style `update()` builder for Convex mutations.
+
+## Basic Update
+
+```ts title="convex/mutations.ts"
+import { mutation } from './_generated/server';
+import { v } from 'convex/values';
+import { createDatabase, eq } from 'better-convex/orm';
+import { ormSchema, ormEdges, users } from './schema';
+
+export const renameUser = mutation({
+  args: { userId: v.id('users'), name: v.string() },
+  handler: async (ctx, args) => {
+    const db = createDatabase(ctx.db, ormSchema, ormEdges);
+
+    await db
+      .update(users)
+      .set({ name: args.name })
+      .where(eq(users._id, args.userId));
+  },
+});
+```
+
+## Returning
+
+```ts
+const updated = await db
+  .update(users)
+  .set({ name: 'Mr. Dan' })
+  .where(eq(users.email, 'dan@example.com'))
+  .returning();
+
+const ids = await db
+  .update(users)
+  .set({ name: 'Mr. Dan' })
+  .where(eq(users.email, 'dan@example.com'))
+  .returning({ id: users._id });
+```
+
+## Drizzle Differences
+
+<Callout icon={<AlertTriangle />}>
+- SQL-only features like `limit`, `orderBy`, `UPDATE ... FROM`, and `WITH` clauses are not applicable
+- Values of `undefined` are not supported by Convex documents; omit keys instead
+</Callout>
+
+<Callout icon={<InfoIcon />}>
+Unique constraints, foreign keys, and RLS policies are enforced at runtime for ORM mutations. Direct `ctx.db.patch(...)` bypasses these checks.
+</Callout>
+

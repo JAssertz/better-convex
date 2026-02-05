@@ -1,12 +1,19 @@
 import type { GenericDatabaseWriter } from 'convex/server';
 import type { FilterExpression } from './filter-expression';
 import {
+  applyIncomingForeignKeyActionsOnDelete,
+  type CascadeMode,
+  type DeleteMode,
   evaluateFilter,
+  getOrmContext,
   getTableName,
+  hardDeleteRow,
   selectReturningRow,
+  softDeleteRow,
   toConvexFilter,
 } from './mutation-utils';
 import { QueryPromise } from './query-promise';
+import { canDeleteRow } from './rls/evaluator';
 import type { ConvexTable } from './table';
 import type {
   MutationResult,
@@ -31,6 +38,9 @@ export class ConvexDeleteBuilder<
 
   private whereExpression?: FilterExpression<boolean>;
   private returningFields?: TReturning;
+  private deleteMode: DeleteMode = 'hard';
+  private cascadeMode?: CascadeMode;
+  private scheduledDelayMs?: number;
 
   constructor(
     private db: GenericDatabaseWriter<any>,
@@ -61,6 +71,25 @@ export class ConvexDeleteBuilder<
     return this as any;
   }
 
+  soft(): this {
+    this.deleteMode = 'soft';
+    return this;
+  }
+
+  scheduled(config: { delayMs: number }): this {
+    if (!Number.isFinite(config.delayMs) || config.delayMs < 0) {
+      throw new Error('scheduled() delayMs must be a non-negative number.');
+    }
+    this.deleteMode = 'scheduled';
+    this.scheduledDelayMs = config.delayMs;
+    return this;
+  }
+
+  cascade(config: { mode: CascadeMode }): this {
+    this.cascadeMode = config.mode;
+    return this;
+  }
+
   async execute(): Promise<MutationResult<TTable, TReturning>> {
     const tableName = getTableName(this.table);
     let query = this.db.query(tableName);
@@ -80,7 +109,35 @@ export class ConvexDeleteBuilder<
 
     const results: Record<string, unknown>[] = [];
 
+    const ormContext = getOrmContext(this.db);
+    const rls = ormContext?.rls;
+    const foreignKeyGraph = ormContext?.foreignKeyGraph;
+    if (!foreignKeyGraph) {
+      throw new Error(
+        'Foreign key actions require using createDatabase(...) with a schema.'
+      );
+    }
+
+    const cascadeMode: CascadeMode =
+      this.cascadeMode ??
+      (this.deleteMode === 'soft' || this.deleteMode === 'scheduled'
+        ? 'soft'
+        : 'hard');
+
+    const visited = new Set<string>();
+
     for (const row of rows) {
+      if (
+        !canDeleteRow({
+          table: this.table,
+          row: row as Record<string, unknown>,
+          rls,
+        })
+      ) {
+        continue;
+      }
+
+      visited.add(`${tableName}:${(row as any)._id}`);
       if (this.returningFields) {
         if (this.returningFields === true) {
           results.push(row as any);
@@ -90,7 +147,53 @@ export class ConvexDeleteBuilder<
           );
         }
       }
-      await this.db.delete((row as any)._id);
+
+      await applyIncomingForeignKeyActionsOnDelete(
+        this.db,
+        this.table,
+        row as Record<string, unknown>,
+        {
+          graph: foreignKeyGraph,
+          deleteMode: this.deleteMode,
+          cascadeMode,
+          visited,
+        }
+      );
+
+      if (this.deleteMode === 'soft') {
+        await softDeleteRow(
+          this.db,
+          this.table,
+          row as Record<string, unknown>
+        );
+        continue;
+      }
+
+      if (this.deleteMode === 'scheduled') {
+        await softDeleteRow(
+          this.db,
+          this.table,
+          row as Record<string, unknown>
+        );
+        if (!ormContext?.scheduler || !ormContext.scheduledDelete) {
+          throw new Error(
+            'scheduled() requires createDatabase(..., { scheduler, scheduledDelete }).'
+          );
+        }
+        const delayMs = this.scheduledDelayMs ?? 0;
+        await ormContext.scheduler.runAfter(
+          delayMs,
+          ormContext.scheduledDelete,
+          {
+            table: tableName,
+            id: (row as any)._id,
+            cascadeMode: 'hard',
+          }
+        );
+        continue;
+      }
+
+      await hardDeleteRow(this.db, tableName, row as Record<string, unknown>);
     }
 
     if (!this.returningFields) {

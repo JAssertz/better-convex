@@ -1,0 +1,226 @@
+---
+title: Column Types
+description: Better-Convex column builders (Drizzle-style) and their TypeScript types
+links:
+  doc: https://orm.drizzle.team/docs/column-types/pg
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+Better-Convex ORM uses Drizzle-style column builders to describe your document shape and generate end-to-end TypeScript inference.
+
+<Callout icon={<AlertTriangle />}>
+Better-Convex documents a **Convex subset** of Drizzle’s PostgreSQL column types. SQL-specific types (timestamps, decimals, database enums, etc.) are not available. For Convex-native arbitrary values, use `custom()` / `json()` and validate shape with `convex/values` validators.
+</Callout>
+
+## Column Names
+
+In Drizzle, you can optionally provide a database column name (`text('email')`) that can differ from the TypeScript key.
+
+In Better-Convex, the **TypeScript key is the document field name**:
+
+```ts
+import { convexTable, text } from 'better-convex/orm';
+
+export const users = convexTable('users', {
+  email: text().notNull(),
+});
+```
+
+Column builders still accept an optional `name` parameter for Drizzle parity, but it’s usually unnecessary in Convex schemas.
+
+## Type Rules (Select vs Insert)
+
+Better-Convex mirrors Drizzle’s core inference rules:
+
+- **Select** (`$inferSelect`, `InferSelectModel`): fields are `T | null` unless `.notNull()` is set
+- **Insert** (`$inferInsert`, `InferInsertModel`): required if `.notNull()` and **no** `.default()`, `$defaultFn()`, or `$onUpdateFn()`, otherwise optional
+
+```ts
+import { convexTable, text, integer, InferInsertModel, InferSelectModel } from 'better-convex/orm';
+
+const posts = convexTable('posts', {
+  title: text().notNull(),
+  status: text().notNull().default('draft'),
+  viewCount: integer(),
+});
+
+type Post = InferSelectModel<typeof posts>;
+//   ^? { _id, _creationTime, title: string, status: string, viewCount: number | null }
+
+type NewPost = InferInsertModel<typeof posts>;
+//   ^? { title: string; status?: string | undefined; viewCount?: number | undefined }
+```
+
+## Column Hooks (Defaults and Type Overrides)
+
+Better-Convex supports Drizzle v1-style column hooks for common patterns like timestamps and JSON blobs.
+
+```ts
+import { convexTable, json, number, text } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  email: text().notNull(),
+  createdAt: number().notNull().$defaultFn(() => Date.now()),
+  updatedAt: number().notNull().$onUpdateFn(() => Date.now()),
+  metadata: json<Record<string, unknown>>(),
+});
+```
+
+- `$type<T>()` is a type-only override (no runtime validation).
+- `$defaultFn(fn)` / `$default(fn)` runs on insert when the value is omitted.
+- `$onUpdateFn(fn)` / `$onUpdate(fn)` runs on update when the field is not explicitly set (and can also fill missing values on insert).
+
+These hooks run only through Better-Convex ORM mutations. Direct `ctx.db` writes bypass them.
+
+## Builder Reference
+
+### `text()`
+
+Represents a string field.
+
+```ts
+import { convexTable, text } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  name: text().notNull(), // string
+  bio: text(),            // string | null
+});
+```
+
+### `textEnum(values)`
+
+Defines an enum-like string field, validated at runtime and inferred as a string union in TypeScript.
+
+```ts
+import { convexTable, textEnum } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  role: textEnum(['admin', 'member'] as const).notNull(),
+});
+```
+
+### `integer()` / `number()`
+
+Represents a numeric field.
+
+In Convex, both `integer()` and `number()` map to the same underlying type (`v.number()` / Float64).
+
+```ts
+import { convexTable, integer, number } from 'better-convex/orm';
+
+const events = convexTable('events', {
+  retries: integer().notNull(),
+  score: number(),
+});
+```
+
+### `boolean()`
+
+Represents a boolean field.
+
+```ts
+import { convexTable, boolean } from 'better-convex/orm';
+
+const flags = convexTable('flags', {
+  enabled: boolean().notNull(),
+  beta: boolean(),
+});
+```
+
+### `bigint()`
+
+Represents a 64-bit integer field.
+
+In Convex, `bigint()` maps to `v.int64()` and uses JavaScript `bigint`.
+
+```ts
+import { convexTable, bigint } from 'better-convex/orm';
+
+const ledger = convexTable('ledger', {
+  balance: bigint().notNull(),
+});
+```
+
+### `bytes()`
+
+Represents a binary field (`ArrayBuffer`).
+
+```ts
+import { bytes, convexTable } from 'better-convex/orm';
+
+const files = convexTable('files', {
+  data: bytes().notNull(),
+});
+```
+
+### `id('table')`
+
+Represents a reference to another table (`Id<'table'>`).
+
+```ts
+import { convexTable, id, text } from 'better-convex/orm';
+
+const posts = convexTable('posts', {
+  title: text().notNull(),
+  authorId: id('users').notNull(),
+});
+```
+
+<Callout icon={<InfoIcon />}>
+`id('users')` is a typed reference. It does **not** create a SQL foreign key constraint. Use `.references()` or `foreignKey()` for ORM-enforced foreign keys.
+</Callout>
+
+### `vector(dimensions)`
+
+Represents an embedding vector (`number[]`) and is used with `vectorIndex()`.
+
+```ts
+import { convexTable, vector } from 'better-convex/orm';
+
+const posts = convexTable('posts', {
+  embedding: vector(1536).notNull(),
+});
+```
+
+### `custom(validator)`
+
+Use `custom()` to wrap any Convex validator and get end-to-end TypeScript inference.
+
+```ts
+import { convexTable, custom } from 'better-convex/orm';
+import { v } from 'convex/values';
+
+const events = convexTable('events', {
+  payload: custom(
+    v.object({
+      type: v.string(),
+      data: v.any(),
+    })
+  ),
+});
+```
+
+### `json<T>()`
+
+`json<T>()` is a convenience wrapper around `custom(v.any()).$type<T>()`.
+
+```ts
+import { convexTable, json } from 'better-convex/orm';
+
+const posts = convexTable('posts', {
+  metadata: json<{ tags: string[] }>(),
+});
+```
+
+`json()` is **not** SQL `jsonb`. It’s a Convex `v.any()` value with a TypeScript type annotation.
+
+## Not Supported
+
+These Drizzle (SQL) column type categories don’t map to Convex documents and are not supported:
+
+- SQL timestamps/dates and database-side timezone semantics
+- SQL decimals/numerics
+- SQL database enums (use `textEnum(...)`)
+- SQL arrays (beyond `vector(...)` embeddings)
+- Custom SQL types

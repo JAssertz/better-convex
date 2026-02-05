@@ -3,16 +3,21 @@ import {
   createDatabase,
   eq,
   extractRelationsConfig,
+  type UpdateSet,
 } from 'better-convex/orm';
 import type { GenericDatabaseWriter } from 'convex/server';
-import type { GenericId } from 'convex/values';
+import { UserRow } from './fixtures/types';
 import { users } from './tables-rel';
-import { type Equal, Expect } from './utils';
+import { type Equal, Expect, IsAny, Not } from './utils';
 
 const schemaConfig = buildSchema({ users });
 const edgeMetadata = extractRelationsConfig(schemaConfig);
 const mockDb = {} as GenericDatabaseWriter<any>;
 const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
+
+const baseUpdate = {
+  name: 'Alice',
+} satisfies UpdateSet<typeof users>;
 
 // ============================================================================
 // UPDATE TYPE TESTS
@@ -20,7 +25,7 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
 
 // Test 1: update without returning
 {
-  const result = await db.update(users).set({ name: 'Alice' });
+  const result = await db.update(users).set({ ...baseUpdate });
 
   Expect<Equal<undefined, typeof result>>;
 }
@@ -29,7 +34,7 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
 {
   const result = await db
     .update(users)
-    .set({ name: 'Alice' })
+    .set({ ...baseUpdate })
     .where(eq(users.name, 'Alice'));
 
   Expect<Equal<undefined, typeof result>>;
@@ -37,30 +42,24 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
 
 // Test 3: update returning all
 {
-  const result = await db.update(users).set({ name: 'Alice' }).returning();
+  const result = await db
+    .update(users)
+    .set({ ...baseUpdate })
+    .returning();
 
-  type Expected = Array<{
-    _id: GenericId<'users'>;
-    _creationTime: number;
-    name: string;
-    email: string;
-    height: number | null;
-    age: number | null;
-    status: string | null;
-    role: string | null;
-    deletedAt: number | null;
-    cityId: GenericId<'cities'> | null;
-    homeCityId: GenericId<'cities'> | null;
-  }>;
+  type Expected = UserRow[];
 
   Expect<Equal<Expected, typeof result>>;
 }
 
 // Test 4: update returning partial
 {
-  const result = await db.update(users).set({ name: 'Alice' }).returning({
-    name: users.name,
-  });
+  const result = await db
+    .update(users)
+    .set({ ...baseUpdate })
+    .returning({
+      name: users.name,
+    });
 
   type Expected = Array<{
     name: string;
@@ -72,10 +71,91 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
 // Test 5: returning() cannot be called twice
 {
   db.update(users)
-    .set({ name: 'Alice' })
+    .set({ ...baseUpdate })
     .returning()
     // @ts-expect-error - returning already called
     .returning();
+}
+
+// ============================================================================
+// NEGATIVE TYPE TESTS
+// ============================================================================
+
+// set() should reject unknown fields
+{
+  db.update(users).set({
+    // @ts-expect-error - unknown field
+    nope: 'value',
+  });
+}
+
+// set() requires an argument
+{
+  // @ts-expect-error - set() requires values
+  db.update(users).set();
+}
+
+// set() should enforce value types
+{
+  db.update(users).set({
+    // @ts-expect-error - name must be string
+    name: 123,
+  });
+}
+
+// set() should not accept null for notNull field
+{
+  db.update(users).set({
+    // @ts-expect-error - name cannot be null
+    name: null,
+  });
+}
+
+// where() should enforce column value types
+{
+  db.update(users)
+    .set({ ...baseUpdate })
+    // @ts-expect-error - age expects number
+    .where(eq(users.age, 'not-a-number'));
+}
+
+// where() requires an argument
+{
+  db.update(users)
+    .set({ ...baseUpdate })
+    // @ts-expect-error - where() requires a filter expression
+    .where();
+}
+
+// returning selection must use column builders
+{
+  db.update(users)
+    .set({ ...baseUpdate })
+    .returning({
+      name: users.name,
+      // @ts-expect-error - returning selection must be a column builder
+      invalid: 'nope',
+    });
+}
+
+// ============================================================================
+// ANY-PROTECTION TESTS
+// ============================================================================
+
+// UpdateSet should not be any
+{
+  type Set = UpdateSet<typeof users>;
+  Expect<Not<IsAny<Set>>>;
+}
+
+// Returning row type should not be any
+{
+  const result = await db
+    .update(users)
+    .set({ ...baseUpdate })
+    .returning();
+  type Row = (typeof result)[number];
+  Expect<Not<IsAny<Row>>>;
 }
 
 export {};

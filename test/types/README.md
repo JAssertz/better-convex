@@ -124,7 +124,7 @@ Current coverage (Phases 0-5 complete):
 - ⏸️ Relation loading: Deferred to Phase 4
 - ⏸️ Column exclusion: Deferred to M5+
 
-**Progress**: 141 assertions / 144 target = **98% toward 65% Drizzle parity**
+**Progress**: 164 assertions / 144 target = **114% toward 65% Drizzle parity**
 
 ## Methodology
 
@@ -154,14 +154,14 @@ Current coverage (Phases 0-5 complete):
 # Count all Expect<Equal<> assertions in test files
 grep -r "Expect<Equal<" convex/test-types/*.ts | wc -l
 
-# Result: 141 assertions (60 baseline + 81 new from Phases 0-7)
+# Result: 164 assertions (60 baseline + 104 new)
 ```
 
 **Step 4: Calculate Progress**
 ```
 Progress = (Current / Target) × 100
-         = (141 / 144) × 100
-         = 97.9% ≈ 98%
+         = (164 / 144) × 100
+         = 113.9% ≈ 114%
 ```
 
 ### How to Mirror Drizzle for New Milestones

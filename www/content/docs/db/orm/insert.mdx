@@ -1,0 +1,113 @@
+---
+title: Insert
+description: Insert rows with Drizzle-style builders (Better-Convex ORM)
+links:
+  doc: https://orm.drizzle.team/docs/insert
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+Better-Convex ORM provides a Drizzle-style `insert()` builder for Convex mutations.
+
+## Basic Insert
+
+```ts title="convex/mutations.ts"
+import { mutation } from './_generated/server';
+import { v } from 'convex/values';
+import { createDatabase } from 'better-convex/orm';
+import { ormSchema, ormEdges, users } from './schema';
+
+export const createUser = mutation({
+  args: { email: v.string(), name: v.string() },
+  handler: async (ctx, args) => {
+    const db = createDatabase(ctx.db, ormSchema, ormEdges);
+
+    await db.insert(users).values({
+      email: args.email,
+      name: args.name,
+    });
+  },
+});
+```
+
+If you need the insert type for a table:
+
+```ts
+type NewUser = typeof users.$inferInsert;
+```
+
+## Returning
+
+`returning()` always returns an array.
+
+```ts
+const [user] = await db
+  .insert(users)
+  .values({ email: 'ada@example.com', name: 'Ada' })
+  .returning();
+
+const [partial] = await db
+  .insert(users)
+  .values({ email: 'grace@example.com', name: 'Grace' })
+  .returning({ id: users._id, email: users.email });
+```
+
+<Callout icon={<InfoIcon />}>
+Without `returning()`, the insert result is `void`.
+</Callout>
+
+## Insert Multiple Rows
+
+```ts
+await db.insert(users).values([
+  { email: 'a@example.com', name: 'A' },
+  { email: 'b@example.com', name: 'B' },
+]);
+```
+
+## Upserts and Conflicts
+
+Better-Convex mirrors Drizzle’s `onConflictDoNothing()` / `onConflictDoUpdate()` surface, enforced at runtime.
+
+### On conflict do nothing
+
+```ts
+await db
+  .insert(users)
+  .values({ email: 'ada@example.com', name: 'Ada' })
+  .onConflictDoNothing({ target: users.email });
+```
+
+You can also omit `target` to skip inserts on **any** unique conflict:
+
+```ts
+await db
+  .insert(users)
+  .values({ email: 'ada@example.com', name: 'Ada' })
+  .onConflictDoNothing();
+```
+
+### On conflict do update
+
+```ts
+await db
+  .insert(users)
+  .values({ email: 'ada@example.com', name: 'Ada' })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: 'Ada Lovelace' },
+  });
+```
+
+<Callout icon={<AlertTriangle />}>
+`onConflictDoNothing()` can be called with no args to skip inserts on any unique conflict (based on the table’s unique constraints/indexes).
+
+`onConflictDoUpdate()` requires a `target` and a backing unique constraint/index (`uniqueIndex()`, `.unique()`, `unique()`).
+</Callout>
+
+## Constraint & RLS Enforcement
+
+- Unique and foreign keys are enforced at runtime for ORM mutations
+- RLS policies (if configured) apply to inserts and upserts
+
+Direct `ctx.db.insert(...)` bypasses these checks.

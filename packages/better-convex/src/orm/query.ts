@@ -23,6 +23,8 @@ import {
   arrayContains,
   arrayOverlaps,
   column,
+  contains,
+  endsWith,
   eq,
   gt,
   gte,
@@ -40,10 +42,13 @@ import {
   notInArray,
   notLike,
   or,
+  startsWith,
 } from './filter-expression';
 import { asc, desc } from './order-by';
 import { QueryPromise } from './query-promise';
 import type { RelationsFieldFilter, RelationsFilter } from './relations';
+import { filterSelectRows } from './rls/evaluator';
+import type { RlsContext } from './rls/types';
 import { Columns } from './symbols';
 import type {
   DBQueryConfig,
@@ -89,9 +94,22 @@ export class GelRelationalQuery<
     >,
     private mode: 'many' | 'first' | 'paginate',
     private _allEdges?: EdgeMetadata[], // M6.5 Phase 2: All edges for nested loading
+    private rls?: RlsContext,
     private paginationOpts?: { cursor: string | null; numItems: number } // M6.5 Phase 4: Cursor pagination options
   ) {
     super();
+  }
+
+  private _applyRlsSelectFilter(
+    rows: any[],
+    tableConfig?: TableRelationalConfig
+  ): any[] {
+    if (!rows.length || !tableConfig) return rows;
+    return filterSelectRows({
+      table: tableConfig.table as any,
+      rows,
+      rls: this.rls,
+    });
   }
 
   private _isColumnBuilder(
@@ -500,6 +518,30 @@ export class GelRelationalQuery<
           results.push(!this._matchLike(fieldValue, value, true));
           continue;
         }
+        case 'startsWith': {
+          if (typeof fieldValue !== 'string' || typeof value !== 'string') {
+            results.push(false);
+            continue;
+          }
+          results.push(fieldValue.startsWith(value));
+          continue;
+        }
+        case 'endsWith': {
+          if (typeof fieldValue !== 'string' || typeof value !== 'string') {
+            results.push(false);
+            continue;
+          }
+          results.push(fieldValue.endsWith(value));
+          continue;
+        }
+        case 'contains': {
+          if (typeof fieldValue !== 'string' || typeof value !== 'string') {
+            results.push(false);
+            continue;
+          }
+          results.push(fieldValue.includes(value));
+          continue;
+        }
         case 'eq':
           results.push(fieldValue === value);
           continue;
@@ -808,6 +850,15 @@ export class GelRelationalQuery<
           continue;
         case 'notIlike':
           parts.push(notIlike(columnRef, value));
+          continue;
+        case 'startsWith':
+          parts.push(startsWith(columnRef, value));
+          continue;
+        case 'endsWith':
+          parts.push(endsWith(columnRef, value));
+          continue;
+        case 'contains':
+          parts.push(contains(columnRef, value));
           continue;
         case 'eq':
           parts.push(eq(columnRef, value));
@@ -1168,6 +1219,8 @@ export class GelRelationalQuery<
 
       let pageRows = paginationResult.page;
 
+      pageRows = this._applyRlsSelectFilter(pageRows, this.tableConfig);
+
       if (whereFilter) {
         pageRows = await this._applyRelationsFilterToRows(
           pageRows,
@@ -1193,10 +1246,21 @@ export class GelRelationalQuery<
         );
       }
 
+      if ((this.config as any).extras) {
+        pageWithRelations = this._applyExtras(
+          pageWithRelations,
+          (this.config as any).extras,
+          this._getColumns(this.tableConfig),
+          this.config.with as Record<string, unknown> | undefined,
+          this.tableConfig.name
+        );
+      }
+
       // Apply column selection if configured
       const selectedPage = this._selectColumns(
         pageWithRelations,
-        (this.config as any).columns
+        (this.config as any).columns,
+        this._getColumns(this.tableConfig)
       );
 
       return {
@@ -1248,6 +1312,8 @@ export class GelRelationalQuery<
       );
     }
 
+    rows = this._applyRlsSelectFilter(rows, this.tableConfig);
+
     if (whereFilter) {
       rows = await this._applyRelationsFilterToRows(
         rows,
@@ -1280,10 +1346,21 @@ export class GelRelationalQuery<
       );
     }
 
+    if ((this.config as any).extras) {
+      rowsWithRelations = this._applyExtras(
+        rowsWithRelations,
+        (this.config as any).extras,
+        this._getColumns(this.tableConfig),
+        this.config.with as Record<string, unknown> | undefined,
+        this.tableConfig.name
+      );
+    }
+
     // Apply column selection if configured
     const selectedRows = this._selectColumns(
       rowsWithRelations,
-      (this.config as any).columns
+      (this.config as any).columns,
+      this._getColumns(this.tableConfig)
     );
 
     // Return based on mode
@@ -1702,6 +1779,10 @@ export class GelRelationalQuery<
     const targetTableConfig = this._getTableConfigByDbName(edge.targetTable);
     const relationDefinition = tableConfig.relations[relationName];
 
+    if (targetTableConfig) {
+      targets = this._applyRlsSelectFilter(targets, targetTableConfig);
+    }
+
     if (relationDefinition?.where && targetTableConfig) {
       targets = targets.filter((target) =>
         this._evaluateTableFilter(
@@ -1756,6 +1837,21 @@ export class GelRelationalQuery<
       );
     }
 
+    if (
+      relationConfig &&
+      typeof relationConfig === 'object' &&
+      'extras' in relationConfig &&
+      targetTableConfig
+    ) {
+      targets = this._applyExtras(
+        targets,
+        (relationConfig as any).extras,
+        this._getColumns(targetTableConfig),
+        (relationConfig as any).with,
+        targetTableConfig.name
+      );
+    }
+
     // Create key → record mapping for O(1) lookup
     const targetsByKey = new Map<string, any>();
     for (const target of targets) {
@@ -1765,10 +1861,32 @@ export class GelRelationalQuery<
       }
     }
 
+    let selectedTargetsByKey = targetsByKey;
+    if (
+      relationConfig &&
+      typeof relationConfig === 'object' &&
+      'columns' in relationConfig &&
+      targetTableConfig
+    ) {
+      const selectedTargets = this._selectColumns(
+        targets,
+        (relationConfig as any).columns,
+        this._getColumns(targetTableConfig)
+      );
+      const selectedByKey = new Map<string, any>();
+      for (let i = 0; i < targets.length; i += 1) {
+        const key = this._buildRelationKey(targets[i], targetFields);
+        if (key) {
+          selectedByKey.set(key, selectedTargets[i]);
+        }
+      }
+      selectedTargetsByKey = selectedByKey;
+    }
+
     // Map relations back to parent rows
     for (const row of rows) {
       const key = this._buildRelationKey(row, sourceFields);
-      row[relationName] = key ? (targetsByKey.get(key) ?? null) : null;
+      row[relationName] = key ? (selectedTargetsByKey.get(key) ?? null) : null;
     }
   }
 
@@ -1863,6 +1981,10 @@ export class GelRelationalQuery<
     const targetTableConfig = this._getTableConfigByDbName(edge.targetTable);
     const relationDefinition = tableConfig.relations[relationName];
 
+    if (targetTableConfig) {
+      targets = this._applyRlsSelectFilter(targets, targetTableConfig);
+    }
+
     if (relationDefinition?.where && targetTableConfig) {
       targets = targets.filter((target) =>
         this._evaluateTableFilter(
@@ -1942,6 +2064,43 @@ export class GelRelationalQuery<
       );
     }
 
+    if (
+      relationConfig &&
+      typeof relationConfig === 'object' &&
+      'extras' in relationConfig &&
+      targetTableConfig
+    ) {
+      targets = this._applyExtras(
+        targets,
+        (relationConfig as any).extras,
+        this._getColumns(targetTableConfig),
+        (relationConfig as any).with,
+        targetTableConfig.name
+      );
+    }
+
+    let selectedTargets: any[] | undefined;
+    let selectedTargetsByKey: Map<string, any> | undefined;
+    if (
+      relationConfig &&
+      typeof relationConfig === 'object' &&
+      'columns' in relationConfig &&
+      targetTableConfig
+    ) {
+      selectedTargets = this._selectColumns(
+        targets,
+        (relationConfig as any).columns,
+        this._getColumns(targetTableConfig)
+      );
+      selectedTargetsByKey = new Map<string, any>();
+      for (let i = 0; i < targets.length; i += 1) {
+        const key = this._buildRelationKey(targets[i], targetFields);
+        if (key) {
+          selectedTargetsByKey.set(key, selectedTargets[i]);
+        }
+      }
+    }
+
     // M6.5 Phase 3: Extract limit for per-parent limiting
     const perParentLimit =
       relationConfig &&
@@ -1953,6 +2112,27 @@ export class GelRelationalQuery<
       throw new Error('Only numeric limit is supported in Better Convex ORM.');
     }
 
+    const perParentOffset =
+      relationConfig &&
+      typeof relationConfig === 'object' &&
+      'offset' in relationConfig
+        ? (relationConfig as any).offset
+        : undefined;
+    if (perParentOffset !== undefined && typeof perParentOffset !== 'number') {
+      throw new Error('Only numeric offset is supported in Better Convex ORM.');
+    }
+
+    const applyOffsetAndLimit = (items: any[]): any[] => {
+      let result = items;
+      if (perParentOffset !== undefined && perParentOffset > 0) {
+        result = result.slice(perParentOffset);
+      }
+      if (perParentLimit !== undefined) {
+        result = result.slice(0, perParentLimit);
+      }
+      return result;
+    };
+
     if (edge.through) {
       const targetOrder = new Map<string, number>();
       targets.forEach((target, index) => {
@@ -1960,10 +2140,12 @@ export class GelRelationalQuery<
         if (key) targetOrder.set(key, index);
       });
 
-      const targetsByKey = new Map<string, any>();
-      for (const target of targets) {
-        const key = this._buildRelationKey(target, targetFields);
-        if (key) targetsByKey.set(key, target);
+      const targetsByKey = selectedTargetsByKey ?? new Map<string, any>();
+      if (!selectedTargetsByKey) {
+        for (const target of targets) {
+          const key = this._buildRelationKey(target, targetFields);
+          if (key) targetsByKey.set(key, target);
+        }
       }
 
       // Map targets per source row using through table
@@ -1988,36 +2170,27 @@ export class GelRelationalQuery<
             const bKey = this._buildRelationKey(b, targetFields) ?? '';
             return (targetOrder.get(aKey) ?? 0) - (targetOrder.get(bKey) ?? 0);
           });
-        row[relationName] = relatedTargets;
-      }
-
-      // For through relations, apply per-parent limit after mapping
-      if (perParentLimit !== undefined && typeof perParentLimit === 'number') {
-        for (const row of rows) {
-          if (Array.isArray(row[relationName])) {
-            row[relationName] = row[relationName].slice(0, perParentLimit);
-          }
-        }
+        row[relationName] = applyOffsetAndLimit(relatedTargets);
       }
     } else {
       // Group targets by parent key
       const byParentKey = new Map<string, any[]>();
-      for (const target of targets) {
+      const targetsForMapping = selectedTargets ?? targets;
+      for (let i = 0; i < targets.length; i += 1) {
+        const target = targets[i];
+        const mappedTarget = targetsForMapping[i];
         const parentKey = this._buildRelationKey(target, targetFields);
         if (!parentKey) continue;
         if (!byParentKey.has(parentKey)) {
           byParentKey.set(parentKey, []);
         }
-        byParentKey.get(parentKey)!.push(target);
+        byParentKey.get(parentKey)!.push(mappedTarget);
       }
 
-      // M6.5 Phase 3: Apply per-parent limit
-      // Each parent gets up to N children, not N children total
-      if (perParentLimit !== undefined && typeof perParentLimit === 'number') {
+      // M6.5 Phase 3: Apply per-parent offset/limit
+      if (perParentOffset !== undefined || perParentLimit !== undefined) {
         for (const [parentKey, children] of byParentKey.entries()) {
-          if (children.length > perParentLimit) {
-            byParentKey.set(parentKey, children.slice(0, perParentLimit));
-          }
+          byParentKey.set(parentKey, applyOffsetAndLimit(children));
         }
       }
 
@@ -2029,25 +2202,119 @@ export class GelRelationalQuery<
     }
   }
 
+  private _applyExtras(
+    rows: any[],
+    extrasConfig: unknown,
+    tableColumns: Record<string, ColumnBuilder<any, any, any>>,
+    withConfig: Record<string, unknown> | undefined,
+    tableName: string
+  ): any[] {
+    if (!extrasConfig || rows.length === 0) {
+      return rows;
+    }
+
+    const resolvedExtras =
+      typeof extrasConfig === 'function'
+        ? extrasConfig(tableColumns)
+        : extrasConfig;
+
+    if (!this._isRecord(resolvedExtras)) {
+      return rows;
+    }
+
+    const entries = Object.entries(resolvedExtras);
+    if (entries.length === 0) {
+      return rows;
+    }
+
+    for (const [key] of entries) {
+      if (key in tableColumns) {
+        throw new Error(
+          `extras.${key} conflicts with a column on table '${tableName}'.`
+        );
+      }
+      if (withConfig && key in withConfig) {
+        throw new Error(
+          `extras.${key} conflicts with a relation on table '${tableName}'.`
+        );
+      }
+    }
+
+    for (const row of rows) {
+      for (const [key, definition] of entries) {
+        row[key] =
+          typeof definition === 'function' ? definition(row) : definition;
+      }
+    }
+
+    return rows;
+  }
+
   /**
    * Select specific columns from rows
    * Phase 5 implementation
    */
   private _selectColumns(
     rows: any[],
-    columnsConfig?: Record<string, boolean>
+    columnsConfig?: Record<string, boolean>,
+    tableColumns?: Record<string, ColumnBuilder<any, any, any>>
   ): any[] {
     if (!columnsConfig) {
       // No column selection - return all columns
       return rows;
     }
 
-    // Pick only selected columns
+    const columnKeys = tableColumns
+      ? new Set(Object.keys(tableColumns))
+      : undefined;
+    const entries = Object.entries(columnsConfig).filter(
+      ([, value]) => value !== undefined
+    );
+    const hasTrue = entries.some(([, value]) => value === true);
+
+    if (entries.length === 0) {
+      return rows.map((row) => {
+        if (!columnKeys) return {};
+        const selected: any = {};
+        for (const key of Object.keys(row)) {
+          if (!columnKeys.has(key)) {
+            selected[key] = row[key];
+          }
+        }
+        return selected;
+      });
+    }
+
+    if (hasTrue) {
+      const includeKeys = entries
+        .filter(([, value]) => value === true)
+        .map(([key]) => key);
+      return rows.map((row) => {
+        const selected: any = {};
+        for (const key of includeKeys) {
+          if (key in row) {
+            selected[key] = row[key];
+          }
+        }
+        if (columnKeys) {
+          for (const key of Object.keys(row)) {
+            if (!columnKeys.has(key)) {
+              selected[key] = row[key];
+            }
+          }
+        }
+        return selected;
+      });
+    }
+
+    const excludeKeys = entries
+      .filter(([, value]) => value === false)
+      .map(([key]) => key);
     return rows.map((row) => {
-      const selected: any = {};
-      for (const [key, include] of Object.entries(columnsConfig)) {
-        if (include && key in row) {
-          selected[key] = row[key];
+      const selected = { ...row };
+      for (const key of excludeKeys) {
+        if (!columnKeys || columnKeys.has(key)) {
+          delete selected[key];
         }
       }
       return selected;

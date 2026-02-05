@@ -1,8 +1,9 @@
 import {
   type ColumnBuilderBase,
-  type ForeignKeyAction,
   entityKind,
+  type ForeignKeyAction,
 } from './builders/column-builder';
+import type { FilterExpression } from './filter-expression';
 
 export type ConvexConstraintColumn = ColumnBuilderBase;
 
@@ -101,4 +102,31 @@ export function foreignKey<TColumns extends ConvexForeignKeyColumns>(
   config: ConvexForeignKeyConfig<TColumns>
 ): ConvexForeignKeyBuilder {
   return new ConvexForeignKeyBuilder(config);
+}
+
+export interface ConvexCheckConfig {
+  name: string;
+  expression: FilterExpression<boolean>;
+}
+
+export class ConvexCheckBuilder {
+  static readonly [entityKind] = 'ConvexCheckBuilder';
+  readonly [entityKind] = 'ConvexCheckBuilder';
+
+  declare _: {
+    brand: 'ConvexCheckBuilder';
+  };
+
+  config: ConvexCheckConfig;
+
+  constructor(name: string, expression: FilterExpression<boolean>) {
+    this.config = { name, expression };
+  }
+}
+
+export function check(
+  name: string,
+  expression: FilterExpression<boolean>
+): ConvexCheckBuilder {
+  return new ConvexCheckBuilder(name, expression);
 }

@@ -15,9 +15,9 @@ These Drizzle features are SQL-specific and do not map to Convex:
 
 - SQL joins
 - Raw SQL execution
-- Database migrations and SQL-level constraints (checks, cascading actions)
+- RQB SQL-only features: `RAW` filters and SQL placeholders in `where`/`limit`/`offset` are not supported at runtime
+- Database migrations and database-side constraints/triggers
 - Custom SQL data types
-- Table introspection helpers (`getTableConfig`, `getTableColumns`)
 
 ## Post-Fetch Behavior
 
@@ -34,6 +34,15 @@ const users = await db.query.users.findMany({
 ```ts
 const users = await db.query.users.findMany({
   where: { email: { ilike: '%@example.com' } },
+});
+```
+
+**Extras (computed fields)**
+```ts
+const users = await db.query.users.findMany({
+  extras: {
+    emailDomain: (row) => row.email.split('@')[1]!,
+  },
 });
 ```
 
@@ -69,11 +78,17 @@ const posts = convexTable(
 
 ## Constraints And Defaults
 
-- Unique and foreign keys are enforced only through Better‑Convex ORM mutations
-- Non‑`_id` foreign keys require an index on the referenced columns
-- Check constraints and cascading actions are not enforced
-- Defaults are applied only by Better‑Convex ORM inserts
-- Use application logic or transaction rules to enforce constraints
+- Unique, foreign keys, and `check()` constraints are enforced only through Better‑Convex ORM mutations
+- Foreign key actions require an index on the referencing columns
+- Check constraints follow SQL-like NULL semantics: the check fails only when the expression is `false` (and passes on `unknown`)
+- Defaults are applied only by Better‑Convex ORM inserts/updates (`.default(...)`, `$defaultFn(...)`, `$onUpdateFn(...)`)
+- Direct `ctx.db` writes bypass all ORM enforcement
+
+## Soft & Scheduled Deletes
+
+- Soft/scheduled deletes are **optional helpers** and not part of Drizzle v1
+- Soft deletes require a `deletionTime` field in your table
+- Scheduled deletes require `createDatabase(..., { scheduler, scheduledDelete })`
 
 ## Performance Guidance
 
@@ -93,6 +108,17 @@ const posts = convexTable(
 | `like` or `ilike` is slow | Post-fetch filtering | Use search indexes |
 | Relations not loading | Missing edges | Export `ormSchema` and `ormEdges` |
 | Missing defaults | Direct `ctx.db` bypasses ORM defaults | Use ORM inserts or set defaults in code |
+
+## Schema Introspection
+
+Better-Convex exposes Drizzle-style helpers for runtime schema metadata:
+
+```ts
+import { getTableColumns, getTableConfig } from 'better-convex/orm';
+
+const columns = getTableColumns(users); // includes _id/_creationTime
+const config = getTableConfig(users);   // indexes/unique/fks/rls/checks
+```
 
 ## Next Steps
 

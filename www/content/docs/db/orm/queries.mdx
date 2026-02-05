@@ -2,7 +2,7 @@
 title: Querying Data
 description: Query tables with findMany, findFirst, filtering, and relation loading
 links:
-  doc: https://orm.drizzle.team/docs/rqb
+  doc: https://orm.drizzle.team/docs/rqb-v2
 ---
 
 import { InfoIcon, CheckCircle, AlertTriangle } from "lucide-react"
@@ -57,6 +57,10 @@ const admins = await db.query.users.findMany({
 });
 ```
 
+<Callout icon={<AlertTriangle />}>
+SQL-only RQB features like `RAW` filters and `sql.placeholder(...)` are not supported in Convex. `extras` is supported, but computed post-fetch (no SQL computed fields).
+</Callout>
+
 ### Core Operators
 
 | Operator | Example | Description |
@@ -102,11 +106,38 @@ const users = await db.query.users.findMany({
 });
 ```
 
+### Relation Filters
+
+You can filter by relation existence or by nested relation conditions.
+
+```ts
+// Users with at least one post
+const users = await db.query.users.findMany({
+  where: { posts: true },
+});
+
+// Users with posts whose title starts with "A"
+const users2 = await db.query.users.findMany({
+  where: { posts: { title: { like: 'A%' } } },
+});
+```
+
 ## Ordering
 
 ```ts
 const posts = await db.query.posts.findMany({
   orderBy: { _creationTime: 'desc', title: 'asc' },
+});
+```
+
+You can also use callback syntax (Drizzle-style) with `asc`/`desc` helpers:
+
+```ts
+const posts2 = await db.query.posts.findMany({
+  orderBy: (posts, { desc, asc }) => [
+    desc(posts._creationTime),
+    asc(posts.title),
+  ],
 });
 ```
 
@@ -142,6 +173,7 @@ const users = await db.query.users.findMany({
   with: {
     posts: {
       limit: 5,
+      offset: 2,
       orderBy: { _creationTime: 'desc' },
     },
   },
@@ -150,6 +182,10 @@ const users = await db.query.users.findMany({
 
 <Callout icon={<InfoIcon />}>
 Relation filters for `many()` are applied post‑fetch. Nested `with` has a depth limit to prevent infinite recursion.
+</Callout>
+
+<Callout icon={<InfoIcon />}>
+`limit` and `offset` in `with` apply per parent relation, not globally.
 </Callout>
 
 ## Column Selection
@@ -163,6 +199,20 @@ const users = await db.query.users.findMany({
 <Callout icon={<AlertTriangle />}>
 `columns` is a post‑fetch projection. Convex still reads full documents.
 </Callout>
+
+## Extras (Computed Fields)
+
+`extras` lets you attach computed properties to rows at query time.
+
+```ts
+const users = await db.query.users.findMany({
+  extras: {
+    emailDomain: (row) => row.email.split('@')[1]!,
+  },
+});
+```
+
+Extras are computed in JavaScript after fetching documents (and after `with` relations are loaded). They can’t be used in `where`/`orderBy` and should be treated as post-fetch helpers.
 
 ## Performance Tips
 

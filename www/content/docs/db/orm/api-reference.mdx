@@ -19,6 +19,8 @@ convexTable<TName extends string, TColumns>(
   columns: TColumns,
   extraConfig?: (t) => [
     index('by_field').on(t.someField),
+    uniqueIndex('by_unique').on(t.someField),
+    check('check_name', gt(t.someField, 0)),
     searchIndex('by_text').on(t.title),
     vectorIndex('embedding_vec').on(t.embedding).dimensions(1536),
   ]
@@ -37,6 +39,20 @@ const users = convexTable('users', {
 **Auto‑generated fields**
 - `_id: Id<TName>`
 - `_creationTime: number`
+
+### `convexTable.withRLS()`
+
+```ts
+convexTable.withRLS(name, columns, (t) => [
+  rlsPolicy('policy_name', {
+    for: 'select',
+    using: (ctx) => eq(t.ownerId, ctx.viewerId),
+  }),
+])
+```
+
+Enables RLS for the table. If RLS is enabled and no permissive policies apply,
+access is denied by default.
 
 ### `index()` / `uniqueIndex()`
 
@@ -87,8 +103,27 @@ const memberships = convexTable(
 );
 ```
 
-Use `.onUpdate()` / `.onDelete()` for Drizzle API parity (no cascading behavior).
-For non‑`_id` foreign keys, add an index on the referenced columns.
+Use `.onUpdate()` / `.onDelete()` to configure foreign key actions.
+Actions are enforced at runtime by Better-Convex ORM mutations.
+
+For `cascade` / `set null` / `set default`, add an index on the referencing columns.
+Without an index, Better-Convex will throw when it detects referencing rows.
+
+### `check()`
+
+```ts
+import { check, convexTable, gt, integer } from 'better-convex/orm';
+
+const users = convexTable(
+  'users',
+  {
+    age: integer(),
+  },
+  (t) => [check('adult_age', gt(t.age, 18))]
+);
+```
+
+Checks are enforced at runtime by Better-Convex ORM mutations and follow SQL-like NULL semantics (the check fails only when the expression is `false`).
 
 ### `searchIndex()`
 
@@ -145,10 +180,34 @@ const users = convexTable('users', {
 
 text().notNull()
 text().default('member')
+text().$type<'admin' | 'member'>()
+number().$defaultFn(() => Date.now())
+number().$onUpdateFn(() => Date.now())
 text().unique()
 text().unique('handle_unique', { nulls: 'not distinct' })
 id('users').references(() => users._id)
 text().references(() => users.slug, { onDelete: 'cascade' })
+```
+
+### `rlsPolicy()`
+
+```ts
+rlsPolicy(name, {
+  as: 'permissive' | 'restrictive',
+  for: 'all' | 'select' | 'insert' | 'update' | 'delete',
+  to: 'public' | 'current_user' | RlsRole | string | Array<...>,
+  using: (ctx, t) => FilterExpression<boolean>,
+  withCheck: (ctx, t) => FilterExpression<boolean>,
+})
+```
+
+`using` controls read/update/delete visibility. `withCheck` controls insert/update
+values. When omitted, `withCheck` falls back to `using`.
+
+### `rlsRole()`
+
+```ts
+rlsRole('admin', { createRole: true }).existing();
 ```
 
 ### `defineRelations()`
@@ -186,6 +245,19 @@ createDatabase(db, ormSchema, ormEdges)
 
 Creates a typed query/mutation client. If `db` is a writer context, mutation methods are available.
 
+**RLS options**
+
+```ts
+createDatabase(db, ormSchema, ormEdges, {
+  rls: {
+    ctx,
+    roleResolver: (ctx) => ctx.roles ?? [],
+  },
+})
+```
+
+Use `db.skipRules.table` for an explicit bypass of RLS.
+
 ## Query Builder
 
 ### `findMany()`
@@ -207,6 +279,7 @@ await db.query.users.findMany({
 - `limit`, `offset`
 - `with`: relation loading
 - `columns`: post‑fetch projection
+- `extras`: post‑fetch computed fields
 
 ### `findFirst()`
 
@@ -258,6 +331,24 @@ await db
 await db.delete(users).where(eq(users._id, userId));
 ```
 
+**Delete helpers**
+```ts
+// Soft delete (sets deletionTime)
+await db.delete(users).where(eq(users._id, userId)).soft();
+
+// Cascade behavior for FK actions
+await db.delete(users).where(eq(users._id, userId)).cascade({ mode: 'hard' });
+
+// Scheduled delete (soft now, hard later)
+await db
+  .delete(users)
+  .where(eq(users._id, userId))
+  .scheduled({ delayMs: 60_000 });
+```
+
+Scheduled deletes require passing `{ scheduler, scheduledDelete }` to `createDatabase`
+and exposing `scheduledDeleteFactory(schema, edges)` as an internal mutation.
+
 ### `returning()`
 
 ```ts
@@ -308,8 +399,16 @@ users.$inferSelect
 users.$inferInsert
 ```
 
+## Introspection Helpers
+
+```ts
+getTableColumns(users) // includes _id/_creationTime
+getTableConfig(users)  // indexes/unique/fks/rls/checks
+```
+
 ## Notes
 
 - `columns` projection is post‑fetch
 - String operators are post‑fetch
+- `extras` are computed post‑fetch
 - `paginate()` uses the first `orderBy` field for cursor ordering

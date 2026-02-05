@@ -10,6 +10,7 @@ import type { GenericDatabaseReader } from 'convex/server';
 import type { KnownKeysOnly } from '../internal/types';
 import type { EdgeMetadata } from './extractRelationsConfig';
 import { GelRelationalQuery } from './query';
+import type { RlsContext } from './rls/types';
 import type {
   BuildQueryResult,
   DBQueryConfig,
@@ -51,7 +52,8 @@ export class RelationalQueryBuilder<
     private tableConfig: TTableConfig,
     private edgeMetadata: EdgeMetadata[],
     private db: GenericDatabaseReader<any>,
-    private allEdges?: EdgeMetadata[] // M6.5 Phase 2: All edges for nested loading
+    private allEdges?: EdgeMetadata[], // M6.5 Phase 2: All edges for nested loading
+    private rls?: RlsContext
   ) {}
 
   /**
@@ -73,7 +75,8 @@ export class RelationalQueryBuilder<
     config?: KnownKeysOnly<
       TConfig,
       DBQueryConfig<'many', true, TSchema, TTableConfig>
-    >
+    > &
+      DBQueryConfig<'many', true, TSchema, TTableConfig>
   ): GelRelationalQuery<
     TSchema,
     TTableConfig,
@@ -92,7 +95,8 @@ export class RelationalQueryBuilder<
         ? (config as DBQueryConfig<'many', true, TSchema, TTableConfig>)
         : ({} as DBQueryConfig<'many', true, TSchema, TTableConfig>),
       'many',
-      this.allEdges // M6.5 Phase 2: Pass all edges for nested loading
+      this.allEdges, // M6.5 Phase 2: Pass all edges for nested loading
+      this.rls
     );
   }
 
@@ -119,7 +123,8 @@ export class RelationalQueryBuilder<
     config?: KnownKeysOnly<
       TConfig,
       Omit<DBQueryConfig<'many', true, TSchema, TTableConfig>, 'limit'>
-    >
+    > &
+      Omit<DBQueryConfig<'many', true, TSchema, TTableConfig>, 'limit'>
   ): GelRelationalQuery<
     TSchema,
     TTableConfig,
@@ -141,7 +146,8 @@ export class RelationalQueryBuilder<
         limit: 1,
       },
       'first',
-      this.allEdges // M6.5 Phase 2: Pass all edges for nested loading
+      this.allEdges, // M6.5 Phase 2: Pass all edges for nested loading
+      this.rls
     );
   }
 
@@ -169,7 +175,11 @@ export class RelationalQueryBuilder<
       'limit' | 'offset'
     >,
   >(
-    queryConfig?: TConfig,
+    queryConfig?: TConfig &
+      Omit<
+        DBQueryConfig<'many', true, TSchema, TTableConfig>,
+        'limit' | 'offset'
+      >,
     paginationOpts?: { cursor: string | null; numItems: number }
   ): GelRelationalQuery<
     TSchema,
@@ -198,6 +208,7 @@ export class RelationalQueryBuilder<
         : ({} as DBQueryConfig<'many', true, TSchema, TTableConfig>),
       'paginate',
       this.allEdges, // M6.5 Phase 2: All edges for nested loading
+      this.rls,
       paginationOpts // M6.5 Phase 4: Pass pagination options
     );
   }

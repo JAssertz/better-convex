@@ -1,14 +1,19 @@
 import type { GenericDatabaseWriter } from 'convex/server';
 import type { FilterExpression } from './filter-expression';
 import {
-  evaluateFilter,
+  applyIncomingForeignKeyActionsOnUpdate,
+  enforceCheckConstraints,
   enforceForeignKeys,
   enforceUniqueIndexes,
+  evaluateFilter,
+  getOrmContext,
+  getTableColumns,
   getTableName,
   selectReturningRow,
   toConvexFilter,
 } from './mutation-utils';
 import { QueryPromise } from './query-promise';
+import { evaluateUpdateDecision } from './rls/evaluator';
 import type { ConvexTable } from './table';
 import type {
   MutationResult,
@@ -75,6 +80,24 @@ export class ConvexUpdateBuilder<
       throw new Error('set() must be called before execute()');
     }
 
+    const onUpdateSet: Record<string, unknown> = {};
+    for (const [columnName, builder] of Object.entries(
+      getTableColumns(this.table)
+    )) {
+      if (columnName in (this.setValues as any)) {
+        continue;
+      }
+      const onUpdateFn = (builder as any).config?.onUpdateFn;
+      if (typeof onUpdateFn === 'function') {
+        onUpdateSet[columnName] = onUpdateFn();
+      }
+    }
+
+    const effectiveSet = {
+      ...onUpdateSet,
+      ...(this.setValues as any),
+    } as UpdateSet<TTable>;
+
     const tableName = getTableName(this.table);
     let query = this.db.query(tableName);
 
@@ -91,27 +114,58 @@ export class ConvexUpdateBuilder<
       );
     }
 
+    const ormContext = getOrmContext(this.db);
+    const rls = ormContext?.rls;
+    const foreignKeyGraph = ormContext?.foreignKeyGraph;
+    if (!foreignKeyGraph) {
+      throw new Error(
+        'Foreign key actions require using createDatabase(...) with a schema.'
+      );
+    }
+
+    const updates = rows.map((row) => {
+      const updatedRow = { ...(row as any), ...(effectiveSet as any) };
+      const decision = evaluateUpdateDecision({
+        table: this.table,
+        existingRow: row as Record<string, unknown>,
+        updatedRow,
+        rls,
+      });
+      return { row, updatedRow, decision };
+    });
+
+    const blocked = updates.find(
+      ({ decision }) => decision.usingAllowed && !decision.withCheckAllowed
+    );
+    if (blocked) {
+      throw new Error(
+        `RLS policy violation for update on table "${tableName}"`
+      );
+    }
+
     const results: Record<string, unknown>[] = [];
 
-    for (const row of rows) {
-      await enforceForeignKeys(
+    for (const { row, updatedRow, decision } of updates) {
+      if (!decision.allowed) {
+        continue;
+      }
+      enforceCheckConstraints(this.table, updatedRow);
+      await enforceForeignKeys(this.db, this.table, updatedRow, {
+        changedFields: new Set(Object.keys(effectiveSet as any)),
+      });
+
+      await applyIncomingForeignKeyActionsOnUpdate(
         this.db,
         this.table,
-        { ...(row as any), ...(this.setValues as any) },
-        {
-          changedFields: new Set(Object.keys(this.setValues as any)),
-        }
+        row as Record<string, unknown>,
+        updatedRow,
+        { graph: foreignKeyGraph }
       );
-      await enforceUniqueIndexes(
-        this.db,
-        this.table,
-        { ...(row as any), ...(this.setValues as any) },
-        {
-          currentId: (row as any)._id,
-          changedFields: new Set(Object.keys(this.setValues as any)),
-        }
-      );
-      await this.db.patch(tableName, (row as any)._id, this.setValues as any);
+      await enforceUniqueIndexes(this.db, this.table, updatedRow, {
+        currentId: (row as any)._id,
+        changedFields: new Set(Object.keys(effectiveSet as any)),
+      });
+      await this.db.patch(tableName, (row as any)._id, effectiveSet as any);
 
       if (!this.returningFields) {
         continue;

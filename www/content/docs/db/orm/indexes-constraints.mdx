@@ -1,0 +1,242 @@
+---
+title: Indexes & Constraints
+description: Drizzle-style indexes and constraints, enforced at runtime in Better-Convex
+links:
+  doc: https://orm.drizzle.team/docs/indexes-constraints
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+Indexes and constraints help you keep data consistent and make queries fast.
+
+Better-Convex mirrors Drizzle’s schema API where it makes sense, but enforces constraints **at runtime** (in ORM mutations), not inside a SQL database.
+
+<Callout icon={<AlertTriangle />}>
+Constraints are enforced **only** by Better-Convex ORM mutations (`insert/update/delete`). Direct `ctx.db` writes bypass them.
+</Callout>
+
+## Constraints
+
+### Default
+
+Use `.default(value)` to define a default for inserts.
+
+```ts
+import { convexTable, integer, text } from 'better-convex/orm';
+
+export const posts = convexTable('posts', {
+  title: text().notNull(),
+  viewCount: integer().default(0),
+});
+```
+
+Defaults are applied by ORM inserts when the value is `undefined`. Explicit `null` is preserved.
+
+### Not null
+
+Fields are nullable by default. Use `.notNull()` to require a value.
+
+```ts
+import { convexTable, text } from 'better-convex/orm';
+
+export const users = convexTable('users', {
+  email: text().notNull(),
+  bio: text(),
+});
+```
+
+### Unique
+
+You can model uniqueness in a few Drizzle-style ways:
+
+#### `uniqueIndex()`
+
+```ts
+import { convexTable, text, uniqueIndex } from 'better-convex/orm';
+
+export const users = convexTable(
+  'users',
+  {
+    email: text().notNull(),
+  },
+  (t) => [uniqueIndex('users_email_unique').on(t.email)]
+);
+```
+
+#### `unique()`
+
+```ts
+import { convexTable, text, unique } from 'better-convex/orm';
+
+export const users = convexTable(
+  'users',
+  {
+    firstName: text().notNull(),
+    lastName: text().notNull(),
+  },
+  (t) => [unique('full_name').on(t.firstName, t.lastName)]
+);
+```
+
+Use `.nullsNotDistinct()` for PostgreSQL parity when you want `null` to be treated as a value.
+
+#### Column `.unique()`
+
+```ts
+import { convexTable, text } from 'better-convex/orm';
+
+export const users = convexTable('users', {
+  email: text().notNull().unique(),
+});
+```
+
+### Foreign Keys
+
+Foreign keys are enforced at runtime by the ORM mutation builders.
+
+#### Column `.references()`
+
+```ts
+import { convexTable, id, text } from 'better-convex/orm';
+
+export const users = convexTable('users', {
+  email: text().notNull(),
+});
+
+export const posts = convexTable('posts', {
+  title: text().notNull(),
+  authorId: id('users').notNull().references(() => users._id),
+});
+```
+
+#### `foreignKey()`
+
+```ts
+import { convexTable, foreignKey, text } from 'better-convex/orm';
+
+export const users = convexTable('users', {
+  slug: text().notNull().unique(),
+});
+
+export const memberships = convexTable(
+  'memberships',
+  {
+    userSlug: text().notNull(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.userSlug], foreignColumns: [users.slug] }),
+  ]
+);
+```
+
+#### Actions (`onDelete` / `onUpdate`)
+
+Better-Convex supports Drizzle-style foreign key actions, enforced at runtime by ORM mutations.
+
+```ts
+export const posts = convexTable(
+  'posts',
+  {
+    title: text().notNull(),
+    authorId: id('users').notNull().references(() => users._id, {
+      onDelete: 'cascade',
+    }),
+  },
+  (t) => [index('by_author').on(t.authorId)]
+);
+```
+
+<Callout icon={<InfoIcon />}>
+- For non-`_id` foreign keys, add an index on the referenced columns (parent table) so inserts/updates can validate quickly
+- For `cascade` / `set null` / `set default`, add an index on the referencing columns (child table). Without an index, Better-Convex will throw if it detects referencing rows.
+</Callout>
+
+### Check Constraints
+
+Use `check(name, expression)` to enforce invariants on inserts and updates.
+
+```ts
+import { check, convexTable, gt, integer, isNotNull, text } from 'better-convex/orm';
+
+export const users = convexTable(
+  'users',
+  {
+    age: integer(),
+    email: text(),
+  },
+  (t) => [
+    check('age_over_18', gt(t.age, 18)),
+    check('email_present', isNotNull(t.email)),
+  ]
+);
+```
+
+Checks follow SQL-like NULL semantics: they fail only when the expression evaluates to `false`. If it evaluates to `unknown` (because of `null`/`undefined`), it passes. Use `.notNull()` or `isNotNull(...)` for strict presence.
+
+## Indexes
+
+### `index()`
+
+Add indexes for fields you filter or sort by.
+
+```ts
+import { convexTable, id, index, text } from 'better-convex/orm';
+
+export const posts = convexTable(
+  'posts',
+  {
+    title: text().notNull(),
+    authorId: id('users').notNull(),
+  },
+  (t) => [index('by_author').on(t.authorId)]
+);
+```
+
+### `searchIndex()`
+
+Search indexes mirror Convex’s text search, with a Drizzle-style builder API.
+
+```ts
+import { convexTable, id, searchIndex, text } from 'better-convex/orm';
+
+export const posts = convexTable(
+  'posts',
+  {
+    title: text().notNull(),
+    authorId: id('users').notNull(),
+  },
+  (t) => [searchIndex('by_title').on(t.title).filter(t.authorId)]
+);
+```
+
+Use `.staged()` to stage an index for later activation.
+
+### `vectorIndex()`
+
+Vector indexes mirror Convex’s vector search API.
+
+```ts
+import { convexTable, id, vector, vectorIndex } from 'better-convex/orm';
+
+export const posts = convexTable(
+  'posts',
+  {
+    authorId: id('users').notNull(),
+    embedding: vector(1536).notNull(),
+  },
+  (t) => [
+    vectorIndex('embedding_vec')
+      .on(t.embedding)
+      .dimensions(1536)
+      .filter(t.authorId),
+  ]
+);
+```
+
+## Drizzle Differences
+
+<Callout icon={<AlertTriangle />}>
+- Convex creates `_id` automatically (no `primaryKey()` builder)
+- Check constraints are enforced at runtime (ORM mutations only)
+- SQL-only features (database-side cascades, triggers, raw SQL) are not applicable
+</Callout>

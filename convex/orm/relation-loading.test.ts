@@ -20,7 +20,7 @@ import {
 import type { StorageActionWriter } from 'convex/server';
 import { test as baseTest, describe, expect } from 'vitest';
 import type { MutationCtx } from '../_generated/server';
-import { posts, users } from '../schema';
+import { cities, posts, users } from '../schema';
 import { convexTest, getCtxWithTable } from '../setup.testing';
 
 // M6.5 Phase 2: Comments table and relations for nested testing (local to this test file)
@@ -30,18 +30,35 @@ const ormComments = convexTable('comments', {
   authorId: id('users'),
 });
 
+const ormGroups = convexTable('groups', {
+  name: text().notNull(),
+});
+
+const ormUsersToGroups = convexTable('usersToGroups', {
+  userId: id('users').notNull(),
+  groupId: id('groups').notNull(),
+});
+
 // M6.5 Phase 2: Relations for comments + posts (local to this test file)
 const relations = defineRelations(
   {
     users: users,
     posts: posts,
     comments: ormComments,
+    groups: ormGroups,
+    usersToGroups: ormUsersToGroups,
+    cities: cities,
   },
   (r) => ({
     users: {
       posts: r.many.posts({
         from: r.users._id,
         to: r.posts.authorId,
+      }),
+      groups: r.many.groups({
+        from: r.users._id.through(r.usersToGroups.userId),
+        to: r.groups._id.through(r.usersToGroups.groupId),
+        alias: 'users-groups',
       }),
     },
     posts: {
@@ -64,6 +81,18 @@ const relations = defineRelations(
         to: r.users._id,
       }),
     },
+    groups: {},
+    usersToGroups: {
+      user: r.one.users({
+        from: r.usersToGroups.userId,
+        to: r.users._id,
+      }),
+      group: r.one.groups({
+        from: r.usersToGroups.groupId,
+        to: r.groups._id,
+      }),
+    },
+    cities: {},
   })
 );
 
@@ -72,6 +101,9 @@ const testSchemaWithComments = defineSchema({
   users: users,
   posts: posts,
   comments: ormComments,
+  groups: ormGroups,
+  usersToGroups: ormUsersToGroups,
+  cities: cities,
 });
 
 // Test schema (local defineRelations config)
@@ -222,6 +254,128 @@ describe('M6.5 Phase 1: Relation Loading', () => {
       const charlie = users.find((u: any) => u._id === user3Id);
       expect(charlie).toBeDefined();
       expect(charlie!.posts).toEqual([]);
+    });
+  });
+
+  describe('Column Selection with Relations', () => {
+    test('should preserve relations when selecting specific columns', async ({
+      ctx,
+    }) => {
+      const userId = await ctx.db.insert('users', {
+        name: 'Alice',
+        email: 'alice@example.com',
+      });
+      await ctx.db.insert('posts', {
+        text: 'Hello',
+        numLikes: 1,
+        type: 'post',
+        authorId: userId,
+      });
+
+      const db = ctx.table;
+      const users = await db.query.users.findMany({
+        columns: { name: true },
+        with: {
+          posts: true,
+        },
+      });
+
+      expect(users).toHaveLength(1);
+      expect(users[0]).toHaveProperty('name');
+      expect(users[0]).toHaveProperty('posts');
+      expect(users[0].posts).toHaveLength(1);
+      expect(users[0]).not.toHaveProperty('email');
+    });
+
+    test('should preserve relations when columns is empty', async ({ ctx }) => {
+      const userId = await ctx.db.insert('users', {
+        name: 'Alice',
+        email: 'alice@example.com',
+      });
+      await ctx.db.insert('posts', {
+        text: 'Hello',
+        numLikes: 1,
+        type: 'post',
+        authorId: userId,
+      });
+
+      const db = ctx.table;
+      const users = await db.query.users.findMany({
+        columns: {},
+        with: {
+          posts: true,
+        },
+      });
+
+      expect(users).toHaveLength(1);
+      expect(Object.keys(users[0]).sort()).toEqual(['posts']);
+      expect(users[0].posts).toHaveLength(1);
+    });
+
+    test('should apply columns inside relations and keep nested with', async ({
+      ctx,
+    }) => {
+      const userId = await ctx.db.insert('users', {
+        name: 'Alice',
+        email: 'alice@example.com',
+      });
+      await ctx.db.insert('posts', {
+        text: 'Hello',
+        numLikes: 1,
+        type: 'post',
+        title: 'Post title',
+        authorId: userId,
+      });
+
+      const db = ctx.table;
+      const users = await db.query.users.findMany({
+        with: {
+          posts: {
+            columns: { title: true },
+            with: {
+              author: {
+                columns: { name: true },
+              },
+            },
+          },
+        },
+      });
+
+      expect(users).toHaveLength(1);
+      expect(users[0].posts).toHaveLength(1);
+      expect(users[0].posts[0]).toHaveProperty('title');
+      expect(users[0].posts[0]).not.toHaveProperty('text');
+      expect(users[0].posts[0]).toHaveProperty('author');
+      expect(users[0].posts[0].author).toHaveProperty('name');
+      expect(users[0].posts[0].author).not.toHaveProperty('email');
+    });
+
+    test('should compute extras inside relations', async ({ ctx }) => {
+      const userId = await ctx.db.insert('users', {
+        name: 'Alice',
+        email: 'alice@example.com',
+      });
+      await ctx.db.insert('posts', {
+        text: 'Hello',
+        numLikes: 1,
+        type: 'post',
+        authorId: userId,
+      });
+
+      const db = ctx.table;
+      const users = await db.query.users.findMany({
+        with: {
+          posts: {
+            extras: {
+              textLength: (row) => row.text.length,
+            },
+          },
+        },
+      });
+
+      expect(users).toHaveLength(1);
+      expect(users[0].posts).toHaveLength(1);
+      expect(users[0].posts[0]).toHaveProperty('textLength', 5);
     });
   });
 
@@ -763,6 +917,116 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
       // Verify Bob has exactly 2 posts (not affected by Alice's posts)
       const bob = users.find((u: any) => u._id === user2Id) as any;
       expect(bob.posts).toHaveLength(2);
+    });
+  });
+
+  describe('Per-Parent Offset', () => {
+    test('should apply offset per parent', async ({ ctx }) => {
+      const user1Id = await ctx.db.insert('users', {
+        name: 'Alice',
+        email: 'alice@example.com',
+      });
+
+      const user2Id = await ctx.db.insert('users', {
+        name: 'Bob',
+        email: 'bob@example.com',
+      });
+
+      await ctx.db.insert('posts', {
+        text: 'Alice post 1',
+        numLikes: 10,
+        type: 'text',
+        authorId: user1Id,
+      });
+      await ctx.db.insert('posts', {
+        text: 'Alice post 2',
+        numLikes: 20,
+        type: 'text',
+        authorId: user1Id,
+      });
+      await ctx.db.insert('posts', {
+        text: 'Alice post 3',
+        numLikes: 30,
+        type: 'text',
+        authorId: user1Id,
+      });
+
+      await ctx.db.insert('posts', {
+        text: 'Bob post 1',
+        numLikes: 5,
+        type: 'text',
+        authorId: user2Id,
+      });
+      await ctx.db.insert('posts', {
+        text: 'Bob post 2',
+        numLikes: 15,
+        type: 'text',
+        authorId: user2Id,
+      });
+      await ctx.db.insert('posts', {
+        text: 'Bob post 3',
+        numLikes: 25,
+        type: 'text',
+        authorId: user2Id,
+      });
+
+      const db = ctx.table;
+
+      const users = await db.query.users.findMany({
+        with: {
+          posts: {
+            orderBy: { numLikes: 'asc' },
+            offset: 1,
+          },
+        },
+      });
+
+      const alice = users.find((u: any) => u._id === user1Id) as any;
+      expect(alice.posts.map((post: any) => post.numLikes)).toEqual([20, 30]);
+
+      const bob = users.find((u: any) => u._id === user2Id) as any;
+      expect(bob.posts.map((post: any) => post.numLikes)).toEqual([15, 25]);
+    });
+
+    test('should apply offset for through relations', async ({ ctx }) => {
+      const userId = await ctx.db.insert('users', {
+        name: 'Charlie',
+        email: 'charlie@example.com',
+      });
+
+      const groupA = await (ctx.db as any).insert('groups', { name: 'A' });
+      const groupB = await (ctx.db as any).insert('groups', { name: 'B' });
+      const groupC = await (ctx.db as any).insert('groups', { name: 'C' });
+
+      await (ctx.db as any).insert('usersToGroups', {
+        userId,
+        groupId: groupA,
+      });
+      await (ctx.db as any).insert('usersToGroups', {
+        userId,
+        groupId: groupB,
+      });
+      await (ctx.db as any).insert('usersToGroups', {
+        userId,
+        groupId: groupC,
+      });
+
+      const db = ctx.table;
+
+      const users = await db.query.users.findMany({
+        with: {
+          groups: {
+            orderBy: { name: 'asc' },
+            offset: 1,
+          },
+        },
+      });
+
+      const charlie = users.find((u: any) => u._id === userId) as any;
+      expect(charlie.groups.map((group: any) => group.name)).toEqual([
+        'B',
+        'C',
+      ]);
     });
   });
 

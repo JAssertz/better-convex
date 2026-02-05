@@ -60,33 +60,60 @@ export type {
   ConvexBigIntBuilderInitial,
   ConvexBooleanBuilder,
   ConvexBooleanBuilderInitial,
+  ConvexBytesBuilder,
+  ConvexBytesBuilderInitial,
+  ConvexCustomBuilder,
+  ConvexCustomBuilderInitial,
   ConvexIdBuilder,
   ConvexIdBuilderInitial,
   ConvexNumberBuilder,
   ConvexNumberBuilderInitial,
   ConvexTextBuilder,
   ConvexTextBuilderInitial,
+  ConvexTextEnumBuilder,
+  ConvexTextEnumBuilderInitial,
   ConvexVectorBuilder,
   ConvexVectorBuilderInitial,
   DrizzleEntity,
   HasDefault,
-  IsUnique,
   IsPrimaryKey,
+  IsUnique,
   NotNull,
   SystemFields,
 } from './builders';
 export {
   bigint,
   boolean,
+  bytes,
   ConvexColumnBuilder,
+  custom,
   entityKind,
   id,
   integer,
+  json,
   number,
   text,
+  textEnum,
   vector,
 } from './builders';
-export type { DatabaseWithMutations, DatabaseWithQuery } from './database';
+export {
+  type ConvexCheckBuilder,
+  type ConvexCheckConfig,
+  type ConvexForeignKeyBuilder,
+  type ConvexForeignKeyConfig,
+  type ConvexUniqueConstraintBuilder,
+  type ConvexUniqueConstraintBuilderOn,
+  type ConvexUniqueConstraintConfig,
+  check,
+  foreignKey,
+  unique,
+} from './constraints';
+export type {
+  CreateDatabaseOptions,
+  DatabaseWithMutations,
+  DatabaseWithQuery,
+  DatabaseWithSkipRules,
+} from './database';
 // M3: Database Context
 export { buildSchema, createDatabase } from './database';
 export { ConvexDeleteBuilder } from './delete';
@@ -140,16 +167,12 @@ export {
   uniqueIndex,
   vectorIndex,
 } from './indexes';
-export {
-  type ConvexForeignKeyBuilder,
-  type ConvexForeignKeyConfig,
-  type ConvexUniqueConstraintBuilder,
-  type ConvexUniqueConstraintBuilderOn,
-  type ConvexUniqueConstraintConfig,
-  foreignKey,
-  unique,
-} from './constraints';
 export { ConvexInsertBuilder } from './insert';
+export {
+  getTableColumns,
+  getTableConfig,
+  type TableConfigResult,
+} from './introspection';
 // M5: OrderBy
 export { asc, desc } from './order-by';
 export { GelRelationalQuery } from './query';
@@ -168,6 +191,19 @@ export type {
 } from './relations';
 // M2: Relations Layer (v1)
 export { defineRelations, defineRelationsPart } from './relations';
+// RLS (Row-Level Security)
+export type {
+  RlsPolicyConfig,
+  RlsPolicyToOption,
+} from './rls/policies';
+export { RlsPolicy, rlsPolicy } from './rls/policies';
+export type { RlsRoleConfig } from './rls/roles';
+export { RlsRole, rlsRole } from './rls/roles';
+export type { RlsContext, RlsMode } from './rls/types';
+export {
+  type ScheduledDeleteArgs,
+  scheduledDeleteFactory,
+} from './scheduled-delete';
 export { defineSchema } from './schema';
 // M1: Schema Foundation
 export {

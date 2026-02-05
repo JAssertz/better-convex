@@ -254,7 +254,11 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
     {
       userSlug: text().notNull(),
     },
-    (t) => [foreignKey({ columns: [t.userSlug], foreignColumns: [users.slug] })]
+    (t) => [
+      foreignKey({ columns: [t.userSlug], foreignColumns: [users.slug] })
+        .onDelete('cascade')
+        .onUpdate('restrict'),
+    ]
   );
 
   type Result = InferSelectModel<typeof memberships>;
@@ -326,6 +330,19 @@ convexTable(
   (t) => [foreignKey({ columns: [t.slug], foreignColumns: [t.slug, t.other] })]
 );
 
+convexTable(
+  'users',
+  {
+    slug: text().notNull(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.slug], foreignColumns: [t.slug] }).onDelete(
+      // @ts-expect-error - invalid foreign key action
+      'invalid'
+    ),
+  ]
+);
+
 // @ts-expect-error - index().on requires at least one column
 index('missing_columns').on();
 
@@ -369,7 +386,7 @@ index('missing_columns').on();
       Result,
       {
         name: string;
-        age: number | null; // Nullable fields are required with | null
+        age?: number | null; // Nullable fields are optional
       }
     >
   >;
@@ -420,7 +437,7 @@ index('missing_columns').on();
       Insert,
       {
         title: string;
-        status: string | null; // Default doesn't change nullability in insert type
+        status?: string | null; // Defaults make fields optional
       }
     >
   >;

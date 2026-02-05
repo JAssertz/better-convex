@@ -1,0 +1,129 @@
+---
+title: Row-Level Security
+description: Drizzle-style rlsPolicy rules enforced at runtime for Better-Convex ORM
+links:
+  doc: https://orm.drizzle.team/docs/rls
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+Better-Convex ORM can enforce Drizzle v1-style RLS policies at runtime. Policies
+live next to your table definitions and are applied automatically to all ORM
+reads and writes.
+
+## Define Policies
+
+```ts title="convex/schema.ts"
+import { convexTable, rlsPolicy, text, id, eq } from 'better-convex/orm';
+
+export const secrets = convexTable.withRLS(
+  'secrets',
+  {
+    value: text().notNull(),
+    ownerId: id('users').notNull(),
+  },
+  (t) => [
+    rlsPolicy('read_own', {
+      for: 'select',
+      using: (ctx) => eq(t.ownerId, ctx.viewerId),
+    }),
+    rlsPolicy('insert_own', {
+      for: 'insert',
+      withCheck: (ctx) => eq(t.ownerId, ctx.viewerId),
+    }),
+    rlsPolicy('update_own', {
+      for: 'update',
+      using: (ctx) => eq(t.ownerId, ctx.viewerId),
+      withCheck: (ctx) => eq(t.ownerId, ctx.viewerId),
+    }),
+    rlsPolicy('delete_own', {
+      for: 'delete',
+      using: (ctx) => eq(t.ownerId, ctx.viewerId),
+    }),
+  ]
+);
+```
+
+<Callout icon={<InfoIcon />}>
+If you add at least one `rlsPolicy(...)` to a table, RLS is enabled automatically. You don’t need to call `withRLS(...)` explicitly.
+</Callout>
+
+You can also enable RLS without adding policies:
+
+<Callout icon={<AlertTriangle />}>
+`enableRLS()` is deprecated (Drizzle parity). Prefer `convexTable.withRLS(...)` for new code.
+</Callout>
+
+```ts
+const secrets = convexTable('secrets', {
+  value: text().notNull(),
+}).enableRLS();
+```
+
+## Use In Handlers
+
+Pass the request context into `createDatabase` so policy functions can access it:
+
+```ts title="convex/queries.ts"
+import { createDatabase } from 'better-convex/orm';
+import { ormSchema, ormEdges } from './schema';
+
+export const listSecrets = query({
+  handler: async (ctx) => {
+    const db = createDatabase(ctx.db, ormSchema, ormEdges, {
+      rls: { ctx },
+    });
+
+    return db.query.secrets.findMany();
+  },
+});
+```
+
+## Bypass Rules
+
+`createDatabase` exposes an explicit escape hatch for trusted access:
+
+```ts
+const db = createDatabase(ctx.db, ormSchema, ormEdges, { rls: { ctx } });
+
+await db.skipRules.table.query.secrets.findMany();
+```
+
+If you attach `db` to your context, you can also surface it as
+`ctx.skipRules.table`.
+
+## Roles (Optional)
+
+`to` clauses are enforced only when you provide a `roleResolver`:
+
+```ts
+import { rlsRole, rlsPolicy } from 'better-convex/orm';
+
+const admin = rlsRole('admin');
+
+rlsPolicy('admin_only', {
+  for: 'select',
+  to: admin,
+  using: (ctx, t) => eq(t.ownerId, ctx.viewerId),
+});
+
+const db = createDatabase(ctx.db, ormSchema, ormEdges, {
+  rls: {
+    ctx,
+    roleResolver: (ctx) => ctx.roles ?? [],
+  },
+});
+```
+
+## Drizzle Differences
+
+<Callout icon={<AlertTriangle />}>
+- Policies are enforced at runtime, not in the database
+- `ctx.db` bypasses RLS; only ORM access (`createDatabase`) enforces rules
+- If RLS is enabled with no permissive policies, access is denied by default
+</Callout>
+
+<Callout icon={<InfoIcon />}>
+RLS policies are evaluated after query filters. They also apply to nested
+relation loading.
+</Callout>

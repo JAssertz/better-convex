@@ -1,4 +1,4 @@
-import type { GenericId } from 'convex/values';
+import type { GenericId, Value } from 'convex/values';
 import type {
   Assume,
   KnownKeysOnly,
@@ -7,7 +7,7 @@ import type {
 } from '../internal/types';
 import type { ColumnBuilder } from './builders/column-builder';
 import type { SystemFields } from './builders/system-fields';
-import type { Column } from './filter-expression';
+import type { Column, FilterExpression } from './filter-expression';
 import type {
   One,
   Relation,
@@ -78,38 +78,46 @@ export type InferSelectModel<TTable extends ConvexTable<any>> = Simplify<
   >
 >;
 
+export type RequiredKeyOnly<
+  TKey extends string,
+  TColumn extends ColumnBuilder<any, any, any>,
+> = TColumn['_']['notNull'] extends true
+  ? TColumn['_']['hasDefault'] extends true
+    ? never
+    : TKey
+  : never;
+
+export type OptionalKeyOnly<
+  TKey extends string,
+  TColumn extends ColumnBuilder<any, any, any>,
+> = TColumn['_']['notNull'] extends true
+  ? TColumn['_']['hasDefault'] extends true
+    ? TKey
+    : never
+  : TKey;
+
 /**
- * Extract insert type from a ConvexTable (excludes system fields)
+ * Extract insert type from a ConvexTable (excludes system fields).
+ * Mirrors Drizzle behavior: required if notNull && no default, otherwise optional.
  *
  * @example
- * const users = convexTable('users', { name: v.string() });
+ * const users = convexTable('users', { name: text().notNull() });
  * type NewUser = InferInsertModel<typeof users>;
  * // → { name: string }
  */
 export type InferInsertModel<TTable extends ConvexTable<any>> = Simplify<
-  ColumnsToType<TTable['_']['columns']>
+  {
+    [K in keyof TTable['_']['columns'] & string as RequiredKeyOnly<
+      K,
+      TTable['_']['columns'][K]
+    >]: GetColumnData<TTable['_']['columns'][K], 'query'>;
+  } & {
+    [K in keyof TTable['_']['columns'] & string as OptionalKeyOnly<
+      K,
+      TTable['_']['columns'][K]
+    >]?: GetColumnData<TTable['_']['columns'][K], 'query'> | undefined;
+  }
 >;
-
-/**
- * Extract TypeScript type from a column builder
- * Uses phantom `_` property to get type info
- *
- * @example
- * text().notNull() → string
- * text() → string | null
- * integer().default(0) → number | null (nullable on select, optional on insert)
- */
-type BuilderToType<TBuilder extends ColumnBuilder<any, any, any>> =
-  TBuilder['_']['notNull'] extends true
-    ? TBuilder['_']['data'] // notNull → just the data type
-    : TBuilder['_']['data'] | null; // nullable → union with null
-
-/**
- * Extract TypeScript type from a column builder
- * Builders are the only supported API
- */
-type ColumnToType<V> =
-  V extends ColumnBuilder<any, any, any> ? BuilderToType<V> : never;
 
 /**
  * Extract column data type with mode-based handling (Drizzle pattern)
@@ -134,23 +142,18 @@ export type GetColumnData<
   TColumn extends ColumnBuilder<any, any, any>,
   TInferMode extends 'query' | 'raw' = 'query',
 > = TInferMode extends 'raw'
-  ? TColumn['_']['data'] // Raw mode: just the base data type
+  ? TColumn['_'] extends { $type: infer TType }
+    ? TType
+    : TColumn['_']['data'] // Raw mode: just the base data type
   : TColumn['_']['notNull'] extends true
-    ? TColumn['_']['data'] // Query mode, notNull: no null union
-    : TColumn['_']['data'] | null; // Query mode, nullable: add null
-
-/**
- * Recursively extract types from column builders
- * Only column builders are supported
- *
- * CRITICAL: No extends constraint to avoid type widening
- */
-type ColumnsToType<T> =
-  T extends Record<string, ColumnBuilder<any, any, any>>
-    ? {
-        [K in keyof T]: ColumnToType<T[K]>;
-      }
-    : never;
+    ? TColumn['_'] extends { $type: infer TType }
+      ? TType
+      : TColumn['_']['data'] // Query mode, notNull: no null union
+    :
+        | (TColumn['_'] extends { $type: infer TType }
+            ? TType
+            : TColumn['_']['data'])
+        | null; // Query mode, nullable: add null
 
 // ============================================================================
 // M3 Query Builder Types
@@ -204,17 +207,25 @@ export type DBQueryConfig<
       >
     | undefined;
   /**
-   * Extra computed fields (type-level only for now)
+   * Extra computed fields (post-fetch, computed in JS at runtime)
    */
   extras?:
-    | Record<string, unknown>
+    | Record<
+        string,
+        | Value
+        | ((row: InferModelFromColumns<TableColumns<TTableConfig>>) => Value)
+      >
     | ((
         fields: Simplify<
           [TableColumns<TTableConfig>] extends [never]
             ? {}
             : TableColumns<TTableConfig>
         >
-      ) => Record<string, unknown>)
+      ) => Record<
+        string,
+        | Value
+        | ((row: InferModelFromColumns<TableColumns<TTableConfig>>) => Value)
+      >)
     | undefined;
   /**
    * Relation-aware filter object (v1)
@@ -244,101 +255,101 @@ export interface FilterOperators {
   eq<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     value: GetColumnData<TBuilder, 'raw'>
-  ): any;
+  ): FilterExpression<boolean>;
 
   ne<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     value: GetColumnData<TBuilder, 'raw'>
-  ): any;
+  ): FilterExpression<boolean>;
 
   gt<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     value: GetColumnData<TBuilder, 'raw'>
-  ): any;
+  ): FilterExpression<boolean>;
 
   gte<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     value: GetColumnData<TBuilder, 'raw'>
-  ): any;
+  ): FilterExpression<boolean>;
 
   lt<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     value: GetColumnData<TBuilder, 'raw'>
-  ): any;
+  ): FilterExpression<boolean>;
 
   lte<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     value: GetColumnData<TBuilder, 'raw'>
-  ): any;
+  ): FilterExpression<boolean>;
 
   inArray<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     values: readonly GetColumnData<TBuilder, 'raw'>[]
-  ): any;
+  ): FilterExpression<boolean>;
 
   notInArray<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     values: readonly GetColumnData<TBuilder, 'raw'>[]
-  ): any;
+  ): FilterExpression<boolean>;
 
   arrayContains<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     values: readonly GetColumnData<TBuilder, 'raw'>[]
-  ): any;
+  ): FilterExpression<boolean>;
 
   arrayContained<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     values: readonly GetColumnData<TBuilder, 'raw'>[]
-  ): any;
+  ): FilterExpression<boolean>;
 
   arrayOverlaps<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     values: readonly GetColumnData<TBuilder, 'raw'>[]
-  ): any;
+  ): FilterExpression<boolean>;
 
   isNull<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder extends { _: { notNull: true } } ? never : TBuilder
-  ): any;
+  ): FilterExpression<boolean>;
 
   isNotNull<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder
-  ): any;
+  ): FilterExpression<boolean>;
 
   // M5 String Operators (Post-Fetch)
   like<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     pattern: string
-  ): any;
+  ): FilterExpression<boolean>;
 
   ilike<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     pattern: string
-  ): any;
+  ): FilterExpression<boolean>;
 
   notLike<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     pattern: string
-  ): any;
+  ): FilterExpression<boolean>;
 
   notIlike<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     pattern: string
-  ): any;
+  ): FilterExpression<boolean>;
 
   startsWith<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     prefix: string
-  ): any;
+  ): FilterExpression<boolean>;
 
   endsWith<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     suffix: string
-  ): any;
+  ): FilterExpression<boolean>;
 
   contains<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     substring: string
-  ): any;
+  ): FilterExpression<boolean>;
 }
 
 /**
@@ -404,6 +415,37 @@ type ColumnsSelection<T> = Assume<
   Record<string, unknown>
 >;
 
+/**
+ * Infer selected columns from a raw selection using Drizzle v1 semantics.
+ * - Any `true` => include-only
+ * - All `false` => exclude-only
+ * - Empty / all undefined => no columns
+ */
+type InferRelationalQueryTableResult<
+  TRawSelection extends Record<string, unknown>,
+  TSelectedFields extends Record<string, unknown> | 'Full' = 'Full',
+> = TSelectedFields extends 'Full'
+  ? TRawSelection
+  : {
+      [K in Equal<
+        Exclude<
+          TSelectedFields[keyof TSelectedFields & keyof TRawSelection],
+          undefined
+        >,
+        false
+      > extends true
+        ? Exclude<keyof TRawSelection, NonUndefinedKeysOnly<TSelectedFields>>
+        : {
+            [K in keyof TSelectedFields]: Equal<
+              TSelectedFields[K],
+              true
+            > extends true
+              ? K
+              : never;
+          }[keyof TSelectedFields] &
+            keyof TRawSelection]: TRawSelection[K];
+    };
+
 type TableColumns<TTableConfig extends TableRelationalConfig> =
   TTableConfig['table']['_']['columns'] &
     SystemFields<TTableConfig['table']['_']['name']>;
@@ -416,56 +458,24 @@ export type BuildQueryResult<
   ? InferModelFromColumns<TableColumns<TTableConfig>>
   : TFullSelection extends Record<string, unknown>
     ? Simplify<
-        (Exclude<TFullSelection['columns'], undefined> extends Record<
-          string,
-          unknown
-        >
-          ? NonUndefinedKeysOnly<
-              ColumnsSelection<TFullSelection['columns']>
-            > extends never
-            ? InferModelFromColumns<TableColumns<TTableConfig>>
-            : InferModelFromColumns<{
-                [K in Equal<
-                  Exclude<
-                    ColumnsSelection<
-                      TFullSelection['columns']
-                    >[keyof ColumnsSelection<TFullSelection['columns']> &
-                      keyof TableColumns<TTableConfig>],
-                    undefined
-                  >,
-                  false
-                > extends true
-                  ? Exclude<
-                      keyof TableColumns<TTableConfig>,
-                      NonUndefinedKeysOnly<
-                        ColumnsSelection<TFullSelection['columns']>
-                      >
-                    >
-                  : {
-                      [K in keyof ColumnsSelection<
-                        TFullSelection['columns']
-                      >]: Equal<
-                        ColumnsSelection<TFullSelection['columns']>[K],
-                        true
-                      > extends true
-                        ? K
-                        : never;
-                    }[keyof ColumnsSelection<TFullSelection['columns']>] &
-                      keyof TableColumns<TTableConfig>]: TableColumns<TTableConfig>[K];
-              }>
-          : InferModelFromColumns<TableColumns<TTableConfig>>) &
+        InferRelationalQueryTableResult<
+          InferModelFromColumns<TableColumns<TTableConfig>>,
+          TFullSelection['columns'] extends Record<string, unknown>
+            ? TFullSelection['columns']
+            : 'Full'
+        > &
           (Exclude<TFullSelection['extras'], undefined> extends
             | Record<string, unknown>
             | ((...args: any[]) => Record<string, unknown>)
-            ? {
-                [K in NonUndefinedKeysOnly<
-                  ReturnTypeOrValue<
-                    Exclude<TFullSelection['extras'], undefined>
-                  >
-                >]: ReturnTypeOrValue<
-                  Exclude<TFullSelection['extras'], undefined>
-                >[K];
-              }
+            ? ReturnTypeOrValue<
+                Exclude<TFullSelection['extras'], undefined>
+              > extends infer TExtras extends Record<string, unknown>
+              ? {
+                  [K in NonUndefinedKeysOnly<TExtras>]: ReturnTypeOrValue<
+                    TExtras[K]
+                  >;
+                }
+              : {}
             : {}) &
           (Exclude<TFullSelection['with'], undefined> extends Record<
             string,
@@ -503,7 +513,15 @@ export type BuildRelationResult<
         Assume<TInclude[K], true | Record<string, unknown>>
       > extends infer TResult
       ? TRel extends One<any, any>
-        ? TResult | (Equal<TRel['optional'], true> extends true ? null : never)
+        ?
+            | TResult
+            | (Equal<TRel['optional'], true> extends true
+                ? null
+                : TInclude[K] extends Record<string, unknown>
+                  ? TInclude[K]['where'] extends Record<string, any>
+                    ? null
+                    : never
+                  : never)
         : TResult[]
       : never
     : never;

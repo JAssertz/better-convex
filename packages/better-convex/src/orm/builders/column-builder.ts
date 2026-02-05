@@ -24,6 +24,8 @@ export type ColumnDataType =
   | 'number'
   | 'boolean'
   | 'bigint'
+  | 'bytes'
+  | 'any'
   | 'vector';
 
 export type ForeignKeyAction =
@@ -67,6 +69,8 @@ export interface ColumnBuilderRuntimeConfig<TData> {
   referenceTable?: string;
   notNull: boolean;
   default: TData | undefined;
+  defaultFn?: (() => unknown) | undefined;
+  onUpdateFn?: (() => unknown) | undefined;
   hasDefault: boolean;
   primaryKey: boolean;
   isUnique: boolean;
@@ -187,13 +191,53 @@ export abstract class ColumnBuilder<
   }
 
   /**
+   * Override the TypeScript type for this column.
+   * Mirrors Drizzle's $type() (type-only, no runtime validation changes).
+   */
+  $type<TType>(): $Type<this, TType> {
+    return this as any;
+  }
+
+  /**
    * Set default value for column
    * Makes field optional on insert
    */
-  default(value: T['data']): HasDefault<this> {
-    this.config.default = value;
+  default(value: ColumnData<this>): HasDefault<this> {
+    this.config.default = value as any;
     this.config.hasDefault = true;
     return this as HasDefault<this>;
+  }
+
+  /**
+   * Set default function for column (runtime evaluated on insert).
+   * Mirrors Drizzle's $defaultFn() / $default().
+   */
+  $defaultFn(fn: () => ColumnData<this>): HasDefault<this> {
+    this.config.defaultFn = fn as any;
+    return this as HasDefault<this>;
+  }
+
+  /**
+   * Alias of $defaultFn for Drizzle parity.
+   */
+  $default(fn: () => ColumnData<this>): HasDefault<this> {
+    return this.$defaultFn(fn);
+  }
+
+  /**
+   * Set on-update function for column (runtime evaluated on update).
+   * Mirrors Drizzle's $onUpdateFn() / $onUpdate().
+   */
+  $onUpdateFn(fn: () => ColumnData<this>): HasDefault<this> {
+    this.config.onUpdateFn = fn as any;
+    return this as HasDefault<this>;
+  }
+
+  /**
+   * Alias of $onUpdateFn for Drizzle parity.
+   */
+  $onUpdate(fn: () => ColumnData<this>): HasDefault<this> {
+    return this.$onUpdateFn(fn);
   }
 
   /**
@@ -283,6 +327,16 @@ export type HasDefault<T extends ColumnBuilderBase> = T & {
   _: {
     hasDefault: true;
   };
+};
+
+type ColumnData<TBuilder extends ColumnBuilderBase> = TBuilder['_'] extends {
+  $type: infer TType;
+}
+  ? TType
+  : TBuilder['_']['data'];
+
+export type $Type<TBuilder extends ColumnBuilderBase, TType> = TBuilder & {
+  _: { $type: TType };
 };
 
 /**

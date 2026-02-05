@@ -18,6 +18,13 @@ import {
   type SystemFields,
 } from './builders/system-fields';
 import type {
+  ConvexCheckBuilder,
+  ConvexForeignKeyBuilder,
+  ConvexUniqueConstraintBuilder,
+  ConvexUniqueConstraintBuilderOn,
+} from './constraints';
+import type { FilterExpression } from './filter-expression';
+import type {
   ConvexIndexBuilder,
   ConvexIndexBuilderOn,
   ConvexSearchIndexBuilder,
@@ -25,12 +32,9 @@ import type {
   ConvexVectorIndexBuilder,
   ConvexVectorIndexBuilderOn,
 } from './indexes';
-import type {
-  ConvexForeignKeyBuilder,
-  ConvexUniqueConstraintBuilder,
-  ConvexUniqueConstraintBuilderOn,
-} from './constraints';
-import { Brand, Columns, TableName } from './symbols';
+import type { RlsPolicy } from './rls/policies';
+import { isRlsPolicy } from './rls/policies';
+import { Brand, Columns, EnableRLS, RlsPolicies, TableName } from './symbols';
 
 /**
  * Reserved Convex system table names that cannot be used
@@ -101,7 +105,9 @@ export type ConvexTableExtraConfigValue =
   | ConvexSearchIndexBuilder
   | ConvexVectorIndexBuilder
   | ConvexForeignKeyBuilder
-  | ConvexUniqueConstraintBuilder;
+  | ConvexCheckBuilder
+  | ConvexUniqueConstraintBuilder
+  | RlsPolicy;
 export type ConvexTableExtraConfig = Record<
   string,
   ConvexTableExtraConfigValue
@@ -152,6 +158,14 @@ function isConvexForeignKeyBuilder(
     value !== null &&
     (value as { [entityKind]?: string })[entityKind] ===
       'ConvexForeignKeyBuilder'
+  );
+}
+
+function isConvexCheckBuilder(value: unknown): value is ConvexCheckBuilder {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { [entityKind]?: string })[entityKind] === 'ConvexCheckBuilder'
   );
 }
 
@@ -322,6 +336,19 @@ function applyExtraConfig<T extends TableConfig>(
       );
     }
 
+    if (isRlsPolicy(entry)) {
+      const target = (entry as any)._linkedTable ?? table;
+      if (typeof (target as any).addRlsPolicy === 'function') {
+        (target as any).addRlsPolicy(entry);
+      } else {
+        const policies = ((target as any)[RlsPolicies] as RlsPolicy[]) ?? [];
+        policies.push(entry);
+        (target as any)[RlsPolicies] = policies;
+        (target as any)[EnableRLS] = true;
+      }
+      continue;
+    }
+
     if (isConvexIndexBuilder(entry)) {
       const { name, columns, unique, where } = entry.config;
 
@@ -358,7 +385,8 @@ function applyExtraConfig<T extends TableConfig>(
     }
 
     if (isConvexForeignKeyBuilder(entry)) {
-      const { name, columns, foreignColumns, onDelete, onUpdate } = entry.config;
+      const { name, columns, foreignColumns, onDelete, onUpdate } =
+        entry.config;
       if (columns.length === 0 || foreignColumns.length === 0) {
         throw new Error(
           `Foreign key on '${table.tableName}' requires at least one column.`
@@ -401,6 +429,12 @@ function applyExtraConfig<T extends TableConfig>(
         onDelete,
         onUpdate,
       });
+      continue;
+    }
+
+    if (isConvexCheckBuilder(entry)) {
+      const { name, expression } = entry.config;
+      table.addCheck(name, expression);
       continue;
     }
 
@@ -501,6 +535,8 @@ class ConvexTableImpl<T extends TableConfig> {
   private stagedSearchIndexes: any[] = [];
   private vectorIndexes: any[] = [];
   private stagedVectorIndexes: any[] = [];
+  private checks: { name: string; expression: FilterExpression<boolean> }[] =
+    [];
 
   /**
    * Symbol-based metadata storage
@@ -508,6 +544,8 @@ class ConvexTableImpl<T extends TableConfig> {
   [TableName]: T['name'];
   [Columns]: T['columns'];
   [Brand] = 'ConvexTable' as const;
+  [EnableRLS] = false;
+  [RlsPolicies]: RlsPolicy[] = [];
 
   /**
    * Public tableName for convenience
@@ -547,7 +585,11 @@ class ConvexTableImpl<T extends TableConfig> {
             uniqueNulls?: string;
             foreignKeyConfigs?: {
               ref: () => ColumnBuilderBase;
-              config: { name?: string; onUpdate?: ForeignKeyAction; onDelete?: ForeignKeyAction };
+              config: {
+                name?: string;
+                onUpdate?: ForeignKeyAction;
+                onDelete?: ForeignKeyAction;
+              };
             }[];
             referenceTable?: string;
           }
@@ -636,16 +678,66 @@ class ConvexTableImpl<T extends TableConfig> {
    * Internal: expose index metadata for runtime enforcement
    */
   getIndexes(): { name: string; fields: string[] }[] {
-    return this.indexes.map((entry: { indexDescriptor: string; fields: string[] }) => ({
-      name: entry.indexDescriptor,
-      fields: entry.fields,
-    }));
+    return this.indexes.map(
+      (entry: { indexDescriptor: string; fields: string[] }) => ({
+        name: entry.indexDescriptor,
+        fields: entry.fields,
+      })
+    );
+  }
+
+  /**
+   * Internal: attach an RLS policy to this table
+   */
+  addRlsPolicy(policy: RlsPolicy): void {
+    this[RlsPolicies].push(policy);
+    this[EnableRLS] = true;
+  }
+
+  /**
+   * Internal: return attached RLS policies
+   */
+  getRlsPolicies(): RlsPolicy[] {
+    return this[RlsPolicies];
+  }
+
+  /**
+   * Internal: check if RLS is enabled on this table
+   */
+  isRlsEnabled(): boolean {
+    return this[EnableRLS];
   }
 
   /**
    * Internal: add foreign key metadata for runtime enforcement
    */
   addForeignKey(definition: ForeignKeyDefinition): void {
+    const matches = (existing: ForeignKeyDefinition) => {
+      if (existing.foreignTableName !== definition.foreignTableName) {
+        return false;
+      }
+      if (existing.columns.length !== definition.columns.length) {
+        return false;
+      }
+      if (existing.foreignColumns.length !== definition.foreignColumns.length) {
+        return false;
+      }
+      for (let i = 0; i < existing.columns.length; i++) {
+        if (existing.columns[i] !== definition.columns[i]) {
+          return false;
+        }
+      }
+      for (let i = 0; i < existing.foreignColumns.length; i++) {
+        if (existing.foreignColumns[i] !== definition.foreignColumns[i]) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    this.foreignKeys = this.foreignKeys.filter(
+      (existing) => !matches(existing)
+    );
     this.foreignKeys.push(definition);
   }
 
@@ -654,6 +746,14 @@ class ConvexTableImpl<T extends TableConfig> {
    */
   getForeignKeys(): ForeignKeyDefinition[] {
     return this.foreignKeys;
+  }
+
+  addCheck(name: string, expression: FilterExpression<boolean>): void {
+    this.checks.push({ name, expression });
+  }
+
+  getChecks(): { name: string; expression: FilterExpression<boolean> }[] {
+    return this.checks;
   }
 
   /**
@@ -810,6 +910,8 @@ export interface ConvexTable<
   [TableName]: T['name'];
   [Columns]: T['columns'];
   [Brand]: 'ConvexTable';
+  [RlsPolicies]: RlsPolicy[];
+  [EnableRLS]: boolean;
 
   /**
    * Convex schema validator
@@ -861,16 +963,29 @@ export type ConvexTableWithColumns<T extends TableConfig> = ConvexTable<T> & {
  *   index('by_email').on(t.email),
  * ]);
  */
-export function convexTable<TName extends string, TColumns>(
+type ConvexTableFnInternal = <TName extends string, TColumns>(
   name: TName,
   columns: TColumns,
   extraConfig?: (
     self: ColumnsWithTableName<TColumns, TName>
   ) => ConvexTableExtraConfigValue[] | ConvexTableExtraConfig
-): ConvexTableWithColumns<{
+) => ConvexTableWithColumns<{
   name: TName;
   columns: ColumnsWithTableName<TColumns, TName>;
-}> {
+}>;
+
+export interface ConvexTableFn extends ConvexTableFnInternal {
+  withRLS: ConvexTableFnInternal;
+}
+
+const convexTableInternal: ConvexTableFnInternal = (
+  name,
+  columns,
+  extraConfig
+): ConvexTableWithColumns<{
+  name: typeof name;
+  columns: ColumnsWithTableName<typeof columns, typeof name>;
+}> => {
   // Create raw table instance
   const rawTable = new ConvexTableImpl(name, columns as any);
 
@@ -881,12 +996,23 @@ export function convexTable<TName extends string, TColumns>(
   }
 
   // Following Drizzle pattern: Object.assign to attach columns AND system fields as properties
-  const table = Object.assign(rawTable, rawTable[Columns], systemFields);
+  const table = Object.assign(rawTable, rawTable[Columns], systemFields) as any;
 
-  applyExtraConfig(
-    rawTable,
-    extraConfig?.(rawTable[Columns] as ColumnsWithTableName<TColumns, TName>)
-  );
+  applyExtraConfig(rawTable, extraConfig?.(rawTable[Columns] as any));
 
   return table as any;
-}
+};
+
+const convexTableWithRLS: ConvexTableFnInternal = (
+  name,
+  columns,
+  extraConfig
+) => {
+  const table = convexTableInternal(name, columns, extraConfig);
+  (table as any)[EnableRLS] = true;
+  return table;
+};
+
+export const convexTable: ConvexTableFn = Object.assign(convexTableInternal, {
+  withRLS: convexTableWithRLS,
+});

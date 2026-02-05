@@ -8,13 +8,17 @@
 import type {
   GenericDatabaseReader,
   GenericDatabaseWriter,
+  SchedulableFunctionReference,
+  Scheduler,
 } from 'convex/server';
 import { ConvexDeleteBuilder } from './delete';
 import type { EdgeMetadata } from './extractRelationsConfig';
 import { ConvexInsertBuilder } from './insert';
+import { buildForeignKeyGraph, type OrmContextValue } from './mutation-utils';
 import { RelationalQueryBuilder } from './query-builder';
 import { defineRelations, type TablesRelationalConfig } from './relations';
-import { Brand } from './symbols';
+import type { RlsContext } from './rls/types';
+import { Brand, OrmContext } from './symbols';
 import type { ConvexTable } from './table';
 import { ConvexUpdateBuilder } from './update';
 
@@ -39,6 +43,8 @@ export type DatabaseWithQuery<TSchema extends TablesRelationalConfig> =
         };
   };
 
+export type DatabaseWithSkipRules<T> = T & { skipRules: { table: T } };
+
 export type DatabaseWithMutations<TSchema extends TablesRelationalConfig> =
   DatabaseWithQuery<TSchema> &
     GenericDatabaseWriter<any> & {
@@ -52,6 +58,12 @@ export type DatabaseWithMutations<TSchema extends TablesRelationalConfig> =
         table: TTable
       ): ConvexDeleteBuilder<TTable>;
     };
+
+export type CreateDatabaseOptions = {
+  scheduler?: Scheduler;
+  scheduledDelete?: SchedulableFunctionReference;
+  rls?: RlsContext;
+};
 
 /**
  * Create database context with query builder API
@@ -84,75 +96,108 @@ export type DatabaseWithMutations<TSchema extends TablesRelationalConfig> =
 export function createDatabase<TSchema extends TablesRelationalConfig>(
   db: GenericDatabaseWriter<any>,
   schema: TSchema,
-  edgeMetadata: EdgeMetadata[]
-): DatabaseWithMutations<TSchema>;
+  edgeMetadata: EdgeMetadata[],
+  options?: CreateDatabaseOptions
+): DatabaseWithSkipRules<DatabaseWithMutations<TSchema>>;
 export function createDatabase<TSchema extends TablesRelationalConfig>(
   db: GenericDatabaseReader<any>,
   schema: TSchema,
-  edgeMetadata: EdgeMetadata[]
-): DatabaseWithQuery<TSchema>;
+  edgeMetadata: EdgeMetadata[],
+  options?: CreateDatabaseOptions
+): DatabaseWithSkipRules<DatabaseWithQuery<TSchema>>;
 export function createDatabase<TSchema extends TablesRelationalConfig>(
   db: GenericDatabaseReader<any>,
   schema: TSchema,
-  edgeMetadata: EdgeMetadata[]
-): DatabaseWithQuery<TSchema> {
-  const query: any = {};
+  edgeMetadata: EdgeMetadata[],
+  options?: CreateDatabaseOptions
+): DatabaseWithSkipRules<DatabaseWithQuery<TSchema>> {
+  const buildDatabase = (rls: RlsContext | undefined) => {
+    const query: any = {};
 
-  // Create query builder for each table in schema
-  for (const [tableName, tableConfig] of Object.entries(schema)) {
-    // Filter edges to only those originating from this table
-    const tableEdges = edgeMetadata.filter(
-      (edge) => edge.sourceTable === tableConfig.name
-    );
+    // Create query builder for each table in schema
+    for (const [tableName, tableConfig] of Object.entries(schema)) {
+      // Filter edges to only those originating from this table
+      const tableEdges = edgeMetadata.filter(
+        (edge) => edge.sourceTable === tableConfig.name
+      );
 
-    query[tableName] = new RelationalQueryBuilder(
-      schema,
-      tableConfig,
-      tableEdges,
-      db,
-      edgeMetadata // M6.5 Phase 2: Pass all edges for nested relation loading
-    );
-  }
-
-  const rawInsert = (db as any).insert?.bind(db);
-  const rawDelete = (db as any).delete?.bind(db);
-
-  const isConvexTable = (value: unknown): value is ConvexTable<any> =>
-    !!value &&
-    typeof value === 'object' &&
-    (value as any)[Brand] === 'ConvexTable';
-
-  const insert = (...args: any[]) => {
-    if (isConvexTable(args[0])) {
-      return new ConvexInsertBuilder(db as GenericDatabaseWriter<any>, args[0]);
+      query[tableName] = new RelationalQueryBuilder(
+        schema,
+        tableConfig,
+        tableEdges,
+        db,
+        edgeMetadata, // M6.5 Phase 2: Pass all edges for nested relation loading
+        rls
+      );
     }
-    if (!rawInsert) {
-      throw new Error('Database insert is not available on a reader context.');
-    }
-    return rawInsert(...args);
+
+    const rawInsert = (db as any).insert?.bind(db);
+    const rawDelete = (db as any).delete?.bind(db);
+
+    const ormContext: OrmContextValue = {
+      foreignKeyGraph: buildForeignKeyGraph(schema),
+      scheduler: options?.scheduler,
+      scheduledDelete: options?.scheduledDelete,
+      rls,
+    };
+
+    const baseDb = {
+      ...db,
+      [OrmContext]: ormContext,
+    } as unknown as GenericDatabaseWriter<any>;
+
+    const isConvexTable = (value: unknown): value is ConvexTable<any> =>
+      !!value &&
+      typeof value === 'object' &&
+      (value as any)[Brand] === 'ConvexTable';
+
+    const insert = (...args: any[]) => {
+      if (isConvexTable(args[0])) {
+        return new ConvexInsertBuilder(baseDb, args[0]);
+      }
+      if (!rawInsert) {
+        throw new Error(
+          'Database insert is not available on a reader context.'
+        );
+      }
+      return rawInsert(...args);
+    };
+
+    const update = (table: ConvexTable<any>) =>
+      new ConvexUpdateBuilder(baseDb, table);
+
+    const deleteBuilder = (...args: any[]) => {
+      if (isConvexTable(args[0])) {
+        return new ConvexDeleteBuilder(baseDb, args[0]);
+      }
+      if (!rawDelete) {
+        throw new Error(
+          'Database delete is not available on a reader context.'
+        );
+      }
+      return rawDelete(...args);
+    };
+
+    // Return extended database with query property
+    return {
+      ...baseDb,
+      query,
+      insert,
+      update,
+      delete: deleteBuilder,
+    } as DatabaseWithQuery<TSchema>;
   };
 
-  const update = (table: ConvexTable<any>) =>
-    new ConvexUpdateBuilder(db as GenericDatabaseWriter<any>, table);
+  const table = buildDatabase(options?.rls);
+  const skipRulesTable = buildDatabase({
+    ...(options?.rls ?? {}),
+    mode: 'skip',
+  });
 
-  const deleteBuilder = (...args: any[]) => {
-    if (isConvexTable(args[0])) {
-      return new ConvexDeleteBuilder(db as GenericDatabaseWriter<any>, args[0]);
-    }
-    if (!rawDelete) {
-      throw new Error('Database delete is not available on a reader context.');
-    }
-    return rawDelete(...args);
-  };
-
-  // Return extended database with query property
   return {
-    ...db,
-    query,
-    insert,
-    update,
-    delete: deleteBuilder,
-  } as DatabaseWithQuery<TSchema>;
+    ...table,
+    skipRules: { table: skipRulesTable },
+  } as DatabaseWithSkipRules<DatabaseWithQuery<TSchema>>;
 }
 
 /**

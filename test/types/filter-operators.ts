@@ -1,9 +1,9 @@
-import type { GetColumnData } from 'better-convex/orm';
+import type { FilterOperators, GetColumnData } from 'better-convex/orm';
 
 import { bigint, boolean, id, integer, text } from 'better-convex/orm';
 import type { GenericId } from 'convex/values';
 
-import { type Equal, Expect } from './utils';
+import { type Equal, Expect, IsAny, Not } from './utils';
 
 // ============================================================================
 // Helper type to test GetColumnData with 'raw' mode
@@ -138,5 +138,56 @@ import { type Equal, Expect } from './utils';
 //
 // The above tests verify that GetColumnData<T, 'raw'> produces the correct
 // types for each column builder type, which is what FilterOperators rely on.
+
+// ============================================================================
+// FilterOperators TYPE SAFETY (Convex-backend inspired)
+// ============================================================================
+
+declare const ops: FilterOperators;
+
+// eq must use matching types
+{
+  const name = text().notNull();
+  ops.eq(name, 'Alice');
+  // @ts-expect-error - value must match column type
+  ops.eq(name, 123);
+}
+
+// gt must use matching types
+{
+  const age = integer().notNull();
+  ops.gt(age, 123);
+  // @ts-expect-error - value must match column type
+  ops.gt(age, 'nope');
+}
+
+// isNull should reject notNull fields
+{
+  const nullableName = text();
+  ops.isNull(nullableName);
+  // @ts-expect-error - isNull is invalid for notNull fields
+  ops.isNull(text().notNull());
+}
+
+// inArray must use array of correct types
+{
+  const cityId = id('cities').notNull();
+  ops.inArray(cityId, [] as GenericId<'cities'>[]);
+  // @ts-expect-error - inArray expects correct element type
+  ops.inArray(cityId, ['not-an-id']);
+}
+
+// ============================================================================
+// ANY-PROTECTION TESTS
+// ============================================================================
+
+// FilterOperators should not return any
+{
+  type EqReturn = ReturnType<FilterOperators['eq']>;
+  type InArrayReturn = ReturnType<FilterOperators['inArray']>;
+
+  Expect<Not<IsAny<EqReturn>>>;
+  Expect<Not<IsAny<InArrayReturn>>>;
+}
 
 export {};

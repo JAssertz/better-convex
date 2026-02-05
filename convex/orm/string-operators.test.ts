@@ -623,3 +623,157 @@ describe('M5: like() substring pattern', () => {
     expect(posts[0].title).toBe('JavaScript Guide');
   });
 });
+
+// ============================================================================
+// STARTSWITH / ENDSWITH / CONTAINS Operator Tests
+// ============================================================================
+
+describe('M5: startsWith operator', () => {
+  test('startsWith matches prefix', async ({ ctx }) => {
+    const db = ctx.table;
+
+    const user = await ctx.db.insert('users', {
+      name: 'Alice',
+      email: 'alice@example.com',
+    });
+
+    await ctx.db.insert('posts', {
+      text: 'test',
+      numLikes: 0,
+      type: 'text',
+      title: 'JavaScript Guide',
+      content: 'Content',
+      published: true,
+      authorId: user,
+      createdAt: 1000,
+    });
+    await ctx.db.insert('posts', {
+      text: 'test',
+      numLikes: 0,
+      type: 'text',
+      title: 'Java Basics',
+      content: 'Content',
+      published: true,
+      authorId: user,
+      createdAt: 2000,
+    });
+    await ctx.db.insert('posts', {
+      text: 'test',
+      numLikes: 0,
+      type: 'text',
+      title: 'Python Tutorial',
+      content: 'Content',
+      published: true,
+      authorId: user,
+      createdAt: 3000,
+    });
+
+    const posts = await db.query.posts.findMany({
+      where: { title: { startsWith: 'Java' } },
+    });
+
+    expect(posts).toHaveLength(2);
+    expect(posts.map((p: any) => p.title)).toContain('JavaScript Guide');
+    expect(posts.map((p: any) => p.title)).toContain('Java Basics');
+  });
+});
+
+describe('M5: endsWith operator', () => {
+  test('endsWith matches suffix', async ({ ctx }) => {
+    const db = ctx.table;
+
+    const user = await ctx.db.insert('users', {
+      name: 'Alice',
+      email: 'alice@example.com',
+    });
+
+    await ctx.db.insert('posts', {
+      text: 'test',
+      numLikes: 0,
+      type: 'text',
+      title: 'Beginner Guide',
+      content: 'Content',
+      published: true,
+      authorId: user,
+      createdAt: 1000,
+    });
+    await ctx.db.insert('posts', {
+      text: 'test',
+      numLikes: 0,
+      type: 'text',
+      title: 'Advanced Tutorial',
+      content: 'Content',
+      published: true,
+      authorId: user,
+      createdAt: 2000,
+    });
+    await ctx.db.insert('posts', {
+      text: 'test',
+      numLikes: 0,
+      type: 'text',
+      title: 'Quick Guide',
+      content: 'Content',
+      published: true,
+      authorId: user,
+      createdAt: 3000,
+    });
+
+    const posts = await db.query.posts.findMany({
+      where: { title: { endsWith: 'Guide' } },
+    });
+
+    expect(posts).toHaveLength(2);
+    expect(posts.map((p: any) => p.title)).toContain('Beginner Guide');
+    expect(posts.map((p: any) => p.title)).toContain('Quick Guide');
+  });
+});
+
+describe('M5: contains operator', () => {
+  test('contains matches substring', async ({ ctx }) => {
+    const db = ctx.table;
+
+    const user = await ctx.db.insert('users', {
+      name: 'Alice',
+      email: 'alice@example.com',
+    });
+
+    await ctx.db.insert('posts', {
+      text: 'test',
+      numLikes: 0,
+      type: 'text',
+      title: 'JavaScript Guide',
+      content: 'Content',
+      published: true,
+      authorId: user,
+      createdAt: 1000,
+    });
+    await ctx.db.insert('posts', {
+      text: 'test',
+      numLikes: 0,
+      type: 'text',
+      title: 'TypeScript Handbook',
+      content: 'Content',
+      published: true,
+      authorId: user,
+      createdAt: 2000,
+    });
+    await ctx.db.insert('posts', {
+      text: 'test',
+      numLikes: 0,
+      type: 'text',
+      title: 'Python Tutorial',
+      content: 'Content',
+      published: true,
+      authorId: user,
+      createdAt: 3000,
+    });
+
+    const posts = await db.query.posts.findMany({
+      where: { title: { contains: 'Script' } },
+    });
+
+    expect(posts).toHaveLength(2);
+    expect(posts.map((p: any) => p.title)).toContain('JavaScript Guide');
+    expect(posts.map((p: any) => p.title)).toContain('TypeScript Handbook');
+  });
+});

@@ -50,17 +50,19 @@ const users = convexTable('users', {
 
 | TypeScript Type | Builder |
 |---|---|
-| `string | null` | `text()` |
+| `string` \| `null` | `text()` |
 | `string` | `text().notNull()` |
-| `number | null` | `integer()` or `number()` |
+| `number` \| `null` | `integer()` or `number()` |
 | `number` | `integer().notNull()` or `number().notNull()` |
-| `boolean | null` | `boolean()` |
+| `boolean` \| `null` | `boolean()` |
 | `boolean` | `boolean().notNull()` |
-| `bigint | null` | `bigint()` |
-| `Id<'users'> | null` | `id('users')` |
+| `bigint` \| `null` | `bigint()` |
+| `Id<'users'>` \| `null` | `id('users')` |
 | `Id<'users'>` | `id('users').notNull()` |
-| `number[] | null` | `vector(1536)` |
+| `number[]` \| `null` | `vector(1536)` |
 | `number[]` | `vector(1536).notNull()` |
+
+See [Column Types](/docs/db/orm/column-types) for the full Better-Convex builder reference and Drizzle mapping notes.
 
 ## Relations
 
@@ -144,13 +146,14 @@ Better‑Convex mirrors Convex’s vector search API with Drizzle‑style builde
 
 ## Constraints And Defaults
 
-- Defaults set with `.default(...)` are applied by Better‑Convex inserts
+- Defaults set with `.default(...)` and `$defaultFn(...)` are applied by Better‑Convex inserts
+- `$onUpdateFn(...)` columns are applied on updates (and can also fill missing values on insert)
 - `unique()` and column `.unique()` are enforced at runtime (ORM mutations only)
 - `foreignKey()` and column `.references()` are enforced at runtime (ORM mutations only)
-- Check constraints are not enforced
+- `check()` constraints are enforced at runtime (ORM mutations only)
 
 <Callout icon={<AlertTriangle />}>
-**Unique and foreign key constraints** are enforced only by ORM mutations. Direct `ctx.db` writes bypass these checks. For non‑`_id` foreign keys, add an index on the referenced columns.
+Constraints and defaults are enforced only by ORM mutations. Direct `ctx.db` writes bypass these checks. For foreign key actions (`cascade`, `restrict`, `set null`, `set default`), add an index on the referencing columns.
 </Callout>
 
 ## Common Gotchas
@@ -165,6 +168,12 @@ Better‑Convex mirrors Convex’s vector search API with Drizzle‑style builde
 ## Next Steps
 
 <Cards>
+  <Card title="Column Types" href="/docs/db/orm/column-types">
+    Builders and TypeScript types
+  </Card>
+  <Card title="Indexes & Constraints" href="/docs/db/orm/indexes-constraints">
+    Indexes, unique constraints, and foreign keys
+  </Card>
   <Card title="Relations" href="/docs/db/orm/relations">
     One‑to‑one, one‑to‑many, many‑to‑many
   </Card>

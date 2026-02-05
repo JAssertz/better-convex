@@ -1,0 +1,116 @@
+---
+title: Operators (Filters)
+description: Query `where` operators and mutation filter helpers (Drizzle-style)
+links:
+  doc: https://orm.drizzle.team/docs/operators
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+Better-Convex mirrors Drizzle’s filter API surface in two places:
+
+- **Queries** use **RQBv2-style object filters** (`where: { ... }`)
+- **Mutations and RLS** use **operator helpers** (`eq(...)`, `and(...)`, etc.) that build filter expressions
+
+## Query `where` (Object Filters)
+
+Object filters are the primary query mechanism for Better-Convex ORM relational queries:
+
+```ts
+await db.query.users.findMany({
+  where: {
+    role: 'admin',
+    age: { gt: 18 },
+    OR: [{ status: 'active' }, { status: 'pending' }],
+  },
+});
+```
+
+### Supported operators
+
+```ts
+where: {
+  OR: [],
+  AND: [],
+  NOT: {},
+
+  // relations (filter by existence or nested filters)
+  posts: true,
+
+  // columns
+  age: 15,
+  age: { eq: 15 },
+  age: { ne: 15 },
+  age: { gt: 15 },
+  age: { gte: 15 },
+  age: { lt: 15 },
+  age: { lte: 15 },
+  status: { in: ['active', 'pending'] },
+  status: { notIn: ['deleted'] },
+  deletedAt: { isNull: true },
+  email: { isNotNull: true },
+}
+```
+
+### String operators (post-fetch)
+
+Better-Convex supports Drizzle-style `like`/`ilike` operators and evaluates them **post-fetch**:
+
+```ts
+await db.query.posts.findMany({
+  where: { title: { ilike: '%javascript%' } },
+});
+```
+
+Additional convenience operators are also available (post-fetch):
+
+```ts
+await db.query.users.findMany({
+  where: { email: { endsWith: '@example.com' } },
+});
+```
+
+Supported string operators:
+- `like`, `ilike`, `notLike`, `notIlike`
+- `startsWith`, `endsWith`, `contains`
+
+### Array operators (post-fetch)
+
+If a field is an array (for example, embeddings or other array-like values), you can use:
+
+- `arrayContains`
+- `arrayContained`
+- `arrayOverlaps`
+
+## Mutation `where` (Filter Expressions)
+
+Mutation builders (`insert`, `update`, `delete`) use operator helpers that return a `FilterExpression`.
+
+```ts
+import { and, eq, gt } from 'better-convex/orm';
+
+await db.update(users).set({ role: 'admin' }).where(
+  and(
+    eq(users.orgId, orgId),
+    gt(users.age, 18),
+  )
+);
+```
+
+### Common helpers
+
+- `eq`, `ne`, `gt`, `gte`, `lt`, `lte`
+- `inArray`, `notInArray`
+- `and`, `or`, `not`
+- `isNull`, `isNotNull`
+
+<Callout icon={<InfoIcon />}>
+Mutation/RLS operators accept **column builders** (like `users.email`) and use builder typing to infer the right value type.
+</Callout>
+
+## Unsupported SQL-only Features
+
+<Callout icon={<AlertTriangle />}>
+- `RAW` filters and SQL placeholders (`sql.placeholder(...)`) are not supported at runtime
+- Prepared statements are not supported
+</Callout>

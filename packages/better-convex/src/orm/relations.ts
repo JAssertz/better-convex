@@ -489,6 +489,9 @@ export interface RelationFieldsFilterInternals<T> {
   ilike?: string | Placeholder | undefined;
   notLike?: string | Placeholder | undefined;
   notIlike?: string | Placeholder | undefined;
+  startsWith?: string | Placeholder | undefined;
+  endsWith?: string | Placeholder | undefined;
+  contains?: string | Placeholder | undefined;
   isNull?: true | undefined;
   isNotNull?: true | undefined;
   NOT?: RelationsFieldFilter<T> | undefined;

@@ -2,7 +2,7 @@
 title: Relations
 description: Define relationships between tables with Better-Convex ORM
 links:
-  doc: https://orm.drizzle.team/docs/rqb#declare-relations
+  doc: https://orm.drizzle.team/docs/relations-v2
 ---
 
 import { InfoIcon, CheckCircle, AlertTriangle } from "lucide-react"
@@ -16,6 +16,42 @@ Relations in Better-Convex ORM use the same API as Drizzle v1 for **defining** a
 <Callout icon={<AlertTriangle />}>
 Relation loading via `with:` works end-to-end. Nested `with` has a depth limit and per-relation filters are post-fetch for `many()` relations.
 </Callout>
+
+## Relation Config Options
+
+Better-Convex mirrors Drizzle’s `defineRelations()` config shape.
+
+### `one()`
+
+```ts
+r.one.users({
+  from: r.posts.authorId,
+  to: r.users._id,
+  optional: false,
+  alias: 'author',
+  where: { isActive: true },
+})
+```
+
+- `from` / `to`: describe the relationship using columns
+- `optional`: type-level nullability (`true` by default)
+- `alias`: disambiguate multiple relations between the same tables
+- `where`: polymorphic relations / conditional relation loading
+
+### `many()`
+
+```ts
+r.many.posts({
+  from: r.users._id,
+  to: r.posts.authorId,
+  alias: 'posts',
+  where: { published: true },
+})
+```
+
+- `from` / `to`: optional when the inverse relation is unambiguous
+- `alias`: disambiguate multiple relations between the same tables
+- `where`: filter which related rows are loaded
 
 ## Relation Types
 
@@ -120,6 +156,44 @@ const ormSchema = defineRelations({ posts, tags, postsTags }, (r) => ({
 }));
 ```
 
+### Many-to-Many Relations with `.through()`
+
+You can also define direct many-to-many relations with `.through()` to point at junction table columns:
+
+```ts title="convex/schema.ts" showLineNumbers {1-3,5-27}
+import { boolean, convexTable, defineRelations, id, text } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  name: text().notNull(),
+});
+
+const groups = convexTable('groups', {
+  name: text().notNull(),
+});
+
+const usersToGroups = convexTable('usersToGroups', {
+  userId: id('users').notNull(),
+  groupId: id('groups').notNull(),
+});
+
+const ormSchema = defineRelations({ users, groups, usersToGroups }, (r) => ({
+  users: {
+    groups: r.many.groups({
+      from: r.users._id.through(r.usersToGroups.userId),
+      to: r.groups._id.through(r.usersToGroups.groupId),
+      alias: 'users-groups-direct',
+    }),
+  },
+  groups: {
+    users: r.many.users({
+      from: r.groups._id.through(r.usersToGroups.groupId),
+      to: r.users._id.through(r.usersToGroups.userId),
+      alias: 'users-groups-direct',
+    }),
+  },
+}));
+```
+
 ### Self-Referencing Relations
 
 Define relations where a table references itself (e.g., user followers).
@@ -153,6 +227,34 @@ const ormSchema = defineRelations({ users }, (r) => ({
 - **Use `alias`** to distinguish self-referencing relations
 - **Unique names** are required to disambiguate
 
+### Optional `one()` Relations
+
+By default, `one()` relations are optional and return `null` when no match is found.  
+Use `optional: false` when the relation is required:
+
+```ts title="convex/schema.ts" showLineNumbers {1-3,5-18}
+import { convexTable, defineRelations, id, text } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  name: text().notNull(),
+});
+
+const posts = convexTable('posts', {
+  title: text().notNull(),
+  authorId: id('users').notNull(),
+});
+
+const ormSchema = defineRelations({ users, posts }, (r) => ({
+  posts: {
+    author: r.one.users({
+      from: r.posts.authorId,
+      to: r.users._id,
+      optional: false,
+    }),
+  },
+}));
+```
+
 ## Relation Definition Rules
 
 ### Required Fields
@@ -184,9 +286,78 @@ export const ormSchema = defineRelations({ users, posts }, (r) => ({
 export const ormEdges = extractRelationsConfig(ormSchema);
 ```
 
+### Split Relations with `defineRelationsPart`
+
+Use `defineRelationsPart` to split large relation graphs across modules and merge them later:
+
+```ts title="convex/relations.ts" showLineNumbers {1-4,6-26}
+import { defineRelations, defineRelationsPart } from 'better-convex/orm';
+import { users, posts, comments } from './schema';
+
+const userRelations = defineRelationsPart({ users, posts }, (r) => ({
+  users: {
+    posts: r.many.posts({
+      from: r.users._id,
+      to: r.posts.authorId,
+    }),
+  },
+}));
+
+const postRelations = defineRelationsPart({ posts, comments }, (r) => ({
+  posts: {
+    comments: r.many.comments({
+      from: r.posts._id,
+      to: r.comments.postId,
+    }),
+  },
+}));
+
+export const ormSchema = defineRelations({ users, posts, comments }, (r) => ({
+  users: userRelations.users.relations,
+  posts: {
+    ...userRelations.posts.relations,
+    ...postRelations.posts.relations,
+  },
+  comments: postRelations.comments.relations,
+}));
+```
+
+<Callout icon={<InfoIcon />}>
+If a relation relies on inference (no `from`/`to`), define both sides in the same part or use explicit `from`/`to`.
+</Callout>
+
 ### Bidirectional Definitions
 
 Define both sides when you want `with` loading in both directions.
+
+### Predefined Filters
+
+You can attach a predefined `where` filter to a relation. It will always be applied:
+
+```ts title="convex/schema.ts" showLineNumbers {1-4,6-20}
+import { convexTable, defineRelations, id, text } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  name: text().notNull(),
+});
+
+const posts = convexTable('posts', {
+  title: text().notNull(),
+  authorId: id('users'),
+  published: boolean().notNull(),
+});
+
+const ormSchema = defineRelations({ users, posts }, (r) => ({
+  users: {
+    publishedPosts: r.many.posts({
+      from: r.users._id,
+      to: r.posts.authorId,
+      where: { published: true },
+      alias: 'published-posts',
+    }),
+  },
+}));
+```
 
 ## Relation Loading with `with:`
 
@@ -209,6 +380,29 @@ const usersWithPosts = await db.query.users.findMany({
 
 <Callout icon={<InfoIcon />}>
 **Note**: `limit`, `orderBy`, and `where` apply to `many()` relations. Nested `with` works with a depth limit to prevent infinite recursion.
+</Callout>
+
+### Column Selection Semantics
+
+`columns` follows Drizzle v1 selection rules:
+
+```ts title="convex/queries.ts" showLineNumbers {1-4,6-24}
+const users = await db.query.users.findMany({
+  columns: { name: true, email: true }, // include-only
+});
+
+const usersNoEmail = await db.query.users.findMany({
+  columns: { email: false }, // exclude-only
+});
+
+const usersOnlyPosts = await db.query.users.findMany({
+  columns: {}, // no table columns
+  with: { posts: true },
+});
+```
+
+<Callout icon={<InfoIcon />}>
+`columns` only affects table columns. Relation data and `extras` are preserved.
 </Callout>
 
 ## Common Gotchas

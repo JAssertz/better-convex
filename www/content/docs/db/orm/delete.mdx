@@ -1,0 +1,50 @@
+---
+title: Delete
+description: Delete rows with Drizzle-style builders (Better-Convex ORM)
+links:
+  doc: https://orm.drizzle.team/docs/delete
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+Better-Convex ORM provides a Drizzle-style `delete()` builder for Convex mutations.
+
+## Delete Rows
+
+```ts
+import { eq } from 'better-convex/orm';
+
+await db.delete(users).where(eq(users.email, 'dan@example.com'));
+```
+
+To delete all rows in a table (use with care):
+
+```ts
+await db.delete(users);
+```
+
+## Returning
+
+```ts
+const deleted = await db
+  .delete(users)
+  .where(eq(users.email, 'dan@example.com'))
+  .returning();
+
+const ids = await db
+  .delete(users)
+  .where(eq(users.email, 'dan@example.com'))
+  .returning({ id: users._id });
+```
+
+## Drizzle Differences
+
+<Callout icon={<AlertTriangle />}>
+- SQL-only features like `limit`, `orderBy`, and `WITH` clauses are not applicable
+- Deletes are executed against Convex documents; there is no SQL `DELETE FROM ...`
+</Callout>
+
+<Callout icon={<InfoIcon />}>
+Foreign key actions and RLS policies are enforced at runtime for ORM deletes when you create the DB with `createDatabase(...)`. Direct `ctx.db.delete(...)` bypasses these checks.
+</Callout>
+

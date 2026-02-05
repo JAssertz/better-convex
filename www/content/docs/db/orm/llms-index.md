@@ -15,15 +15,24 @@ This file provides a structured index of Better‑Convex ORM documentation for A
 
 **Schema Definition:**
 - `/docs/db/orm/schema` - Table definitions, field types, indexes, and type inference
+- `/docs/db/orm/column-types` - Column builders and TypeScript type mapping
+- `/docs/db/orm/indexes-constraints` - Indexes, unique constraints, and foreign keys
 
 **Relations:**
 - `/docs/db/orm/relations` - One‑to‑one, one‑to‑many, many‑to‑many relations
 
 **Querying Data:**
 - `/docs/db/orm/queries` - findMany(), findFirst(), paginate(), filters, orderBy
+- `/docs/db/orm/operators` - All supported `where` operators (query + mutation)
 
 **Mutations:**
 - `/docs/db/orm/mutations` - insert(), update(), delete(), returning(), onConflictDoUpdate()
+- `/docs/db/orm/insert` - insert() builder details
+- `/docs/db/orm/update` - update() builder details
+- `/docs/db/orm/delete` - delete() builder details
+
+**Row-Level Security:**
+- `/docs/db/orm/rls` - rlsPolicy, rlsRole, and runtime enforcement
 
 ## Migration & Comparison
 
@@ -71,6 +80,14 @@ await db.query.table.paginate(
 await db.insert(table).values(data)
 await db.update(table).set(data).where(eq(table._id, id))
 await db.delete(table).where(eq(table._id, id))
+```
+
+**RLS:**
+```ts
+const db = createDatabase(ctx.db, ormSchema, ormEdges, { rls: { ctx } })
+const secret = convexTable.withRLS('secrets', { /* ... */ }, (t) => [
+  rlsPolicy('read_own', { for: 'select', using: (ctx) => eq(t.ownerId, ctx.viewerId) }),
+])
 ```
 
 **Object `where` operators:**
