@@ -80,6 +80,14 @@ export const users = convexTable(
 
 Use `.nullsNotDistinct()` for PostgreSQL parity when you want `null` to be treated as a value.
 
+<Callout icon={<InfoIcon />}>
+**Compound unique**: use `unique('name').on(t.col1, t.col2, ...)` or `uniqueIndex('name').on(...)` for multi‑column uniqueness.
+</Callout>
+
+<Callout icon={<AlertTriangle />}>
+Uniqueness is enforced at runtime and is **best‑effort** within a mutation. Concurrent mutations can still race. For strict guarantees, serialize writes per key or use `onConflictDoNothing()` / retries.
+</Callout>
+
 #### Column `.unique()`
 
 ```ts

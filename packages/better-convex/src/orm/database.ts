@@ -6,10 +6,14 @@
  */
 
 import type {
+  DataModelFromSchemaDefinition,
   GenericDatabaseReader,
   GenericDatabaseWriter,
+  PaginationOptions,
+  PaginationResult,
   SchedulableFunctionReference,
   Scheduler,
+  SchemaDefinition,
 } from 'convex/server';
 import { ConvexDeleteBuilder } from './delete';
 import type { EdgeMetadata } from './extractRelationsConfig';
@@ -18,8 +22,14 @@ import { buildForeignKeyGraph, type OrmContextValue } from './mutation-utils';
 import { RelationalQueryBuilder } from './query-builder';
 import { defineRelations, type TablesRelationalConfig } from './relations';
 import type { RlsContext } from './rls/types';
-import { Brand, OrmContext } from './symbols';
+import {
+  type StreamDatabaseReader,
+  type StreamQueryInitializer,
+  stream,
+} from './stream';
+import { Brand, OrmContext, OrmSchemaDefinition } from './symbols';
 import type { ConvexTable } from './table';
+import type { InferSelectModel } from './types';
 import { ConvexUpdateBuilder } from './update';
 
 /**
@@ -34,6 +44,39 @@ import { ConvexUpdateBuilder } from './update';
  * Pattern from: drizzle-orm/src/pg-core/db.ts lines 50-54
  * Key insight: TSchema[K] must be captured at mapping time, not evaluated in conditionals later.
  */
+type SchemaDefinitionFromConfig<TSchema extends TablesRelationalConfig<any>> =
+  TSchema extends TablesRelationalConfig<infer SchemaDef>
+    ? SchemaDef
+    : SchemaDefinition<any, boolean>;
+
+type StreamRowForTable<
+  TSchema extends TablesRelationalConfig,
+  TableName extends keyof TSchema & string,
+> = InferSelectModel<TSchema[TableName]['table']>;
+
+type StreamQueryForTable<
+  TSchema extends TablesRelationalConfig,
+  TableName extends keyof TSchema & string,
+> = Omit<
+  StreamQueryInitializer<SchemaDefinitionFromConfig<TSchema>, TableName>,
+  'paginate' | 'collect' | 'take' | 'first' | 'unique'
+> & {
+  paginate(
+    paginationOpts: PaginationOptions
+  ): Promise<PaginationResult<StreamRowForTable<TSchema, TableName>>>;
+  collect(): Promise<StreamRowForTable<TSchema, TableName>[]>;
+  take(n: number): Promise<StreamRowForTable<TSchema, TableName>[]>;
+  first(): Promise<StreamRowForTable<TSchema, TableName> | null>;
+  unique(): Promise<StreamRowForTable<TSchema, TableName> | null>;
+};
+
+type StreamDatabaseReaderForTables<TSchema extends TablesRelationalConfig> =
+  Omit<StreamDatabaseReader<SchemaDefinitionFromConfig<TSchema>>, 'query'> & {
+    query<TableName extends keyof TSchema & string>(
+      tableName: TableName
+    ): StreamQueryForTable<TSchema, TableName>;
+  };
+
 export type DatabaseWithQuery<TSchema extends TablesRelationalConfig> =
   GenericDatabaseReader<any> & {
     query: TSchema extends Record<string, never>
@@ -41,6 +84,12 @@ export type DatabaseWithQuery<TSchema extends TablesRelationalConfig> =
       : {
           [K in keyof TSchema]: RelationalQueryBuilder<TSchema, TSchema[K]>;
         };
+    stream: {
+      (): StreamDatabaseReaderForTables<TSchema>;
+      <Schema extends SchemaDefinition<any, boolean>>(
+        schema: Schema
+      ): StreamDatabaseReader<Schema>;
+    };
   };
 
 export type DatabaseWithSkipRules<T> = T & { skipRules: { table: T } };
@@ -63,6 +112,9 @@ export type CreateDatabaseOptions = {
   scheduler?: Scheduler;
   scheduledDelete?: SchedulableFunctionReference;
   rls?: RlsContext;
+  relationLoading?: {
+    concurrency?: number;
+  };
 };
 
 /**
@@ -111,6 +163,10 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
   edgeMetadata: EdgeMetadata[],
   options?: CreateDatabaseOptions
 ): DatabaseWithSkipRules<DatabaseWithQuery<TSchema>> {
+  const strict = Object.values(schema)[0]?.strict ?? true;
+  const schemaDefinition = (
+    schema as TablesRelationalConfig<SchemaDefinitionFromConfig<TSchema>>
+  )[OrmSchemaDefinition] as SchemaDefinitionFromConfig<TSchema> | undefined;
   const buildDatabase = (rls: RlsContext | undefined) => {
     const query: any = {};
 
@@ -127,7 +183,8 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
         tableEdges,
         db,
         edgeMetadata, // M6.5 Phase 2: Pass all edges for nested relation loading
-        rls
+        rls,
+        options?.relationLoading
       );
     }
 
@@ -139,6 +196,7 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
       scheduler: options?.scheduler,
       scheduledDelete: options?.scheduledDelete,
       rls,
+      strict,
     };
 
     const baseDb = {
@@ -178,10 +236,28 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
       return rawDelete(...args);
     };
 
+    const streamFn = (<Schema extends SchemaDefinition<any, boolean>>(
+      schemaParam?: Schema
+    ) => {
+      const effectiveSchema = (schemaParam ?? schemaDefinition) as
+        | Schema
+        | undefined;
+      if (!effectiveSchema) {
+        throw new Error(
+          'db.stream() requires a schema from defineSchema(). Call defineSchema(tables) on the same tables object used for defineRelations.'
+        );
+      }
+      return stream(
+        db as GenericDatabaseReader<DataModelFromSchemaDefinition<Schema>>,
+        effectiveSchema
+      ) as unknown as StreamDatabaseReaderForTables<TSchema>;
+    }) as DatabaseWithQuery<TSchema>['stream'];
+
     // Return extended database with query property
     return {
       ...baseDb,
       query,
+      stream: streamFn,
       insert,
       update,
       delete: deleteBuilder,

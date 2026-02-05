@@ -44,6 +44,7 @@ import {
   or,
   startsWith,
 } from './filter-expression';
+import { findRelationIndex } from './index-utils';
 import { asc, desc } from './order-by';
 import { QueryPromise } from './query-promise';
 import type { RelationsFieldFilter, RelationsFilter } from './relations';
@@ -95,7 +96,8 @@ export class GelRelationalQuery<
     private mode: 'many' | 'first' | 'paginate',
     private _allEdges?: EdgeMetadata[], // M6.5 Phase 2: All edges for nested loading
     private rls?: RlsContext,
-    private paginationOpts?: { cursor: string | null; numItems: number } // M6.5 Phase 4: Cursor pagination options
+    private paginationOpts?: { cursor: string | null; numItems: number }, // M6.5 Phase 4: Cursor pagination options
+    private relationLoading?: { concurrency?: number }
   ) {
     super();
   }
@@ -1450,6 +1452,46 @@ export class GelRelationalQuery<
     return JSON.stringify(values);
   }
 
+  private _buildIndexPredicate(
+    q: any,
+    fields: string[],
+    values: unknown[]
+  ): any {
+    let builder = q.eq(fields[0], values[0]);
+    for (let i = 1; i < fields.length; i += 1) {
+      builder = builder.eq(fields[i], values[i]);
+    }
+    return builder;
+  }
+
+  private _buildFilterPredicate(
+    q: any,
+    fields: string[],
+    values: unknown[]
+  ): any {
+    let expression = q.eq(q.field(fields[0]), values[0]);
+    for (let i = 1; i < fields.length; i += 1) {
+      expression = q.and(expression, q.eq(q.field(fields[i]), values[i]));
+    }
+    return expression;
+  }
+
+  private _queryByFields(
+    query: any,
+    fields: string[],
+    values: unknown[],
+    indexName: string | null
+  ): any {
+    if (indexName) {
+      return query.withIndex(indexName, (q: any) =>
+        this._buildIndexPredicate(q, fields, values)
+      );
+    }
+    return query.filter((q: any) =>
+      this._buildFilterPredicate(q, fields, values)
+    );
+  }
+
   private _getColumns(
     tableConfig: TableRelationalConfig = this.tableConfig
   ): Record<string, ColumnBuilder<any, any, any>> {
@@ -1639,6 +1681,44 @@ export class GelRelationalQuery<
     return this._allEdges.filter((edge) => edge.sourceTable === tableName);
   }
 
+  private _getRelationConcurrency(): number {
+    const value = this.relationLoading?.concurrency;
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return 25;
+    }
+    if (value <= 0) {
+      return 1;
+    }
+    return Math.floor(value);
+  }
+
+  private async _mapWithConcurrency<T, R>(
+    items: T[],
+    worker: (item: T, index: number) => Promise<R>
+  ): Promise<R[]> {
+    if (items.length === 0) {
+      return [];
+    }
+    const limit = Math.min(this._getRelationConcurrency(), items.length);
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+
+    const runWorker = async () => {
+      while (true) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= items.length) {
+          return;
+        }
+        results[index] = await worker(items[index], index);
+      }
+    };
+
+    await Promise.all(Array.from({ length: limit }, () => runWorker()));
+
+    return results;
+  }
+
   /**
    * Load relations for query results
    * M6.5 Phase 2 implementation: Recursive relation loading with depth limiting
@@ -1751,39 +1831,76 @@ export class GelRelationalQuery<
     const targetFields =
       edge.targetFields.length > 0 ? edge.targetFields : ['_id'];
 
-    // Collect unique source keys
-    const sourceKeys = new Set<string>();
+    const sourceKeyMap = new Map<string, unknown[]>();
     for (const row of rows) {
-      const key = this._buildRelationKey(row, sourceFields);
-      if (key) sourceKeys.add(key);
+      const values = sourceFields.map((field) => row[field]);
+      if (values.some((value) => value === null || value === undefined)) {
+        continue;
+      }
+      const key = JSON.stringify(values);
+      if (!sourceKeyMap.has(key)) {
+        sourceKeyMap.set(key, values);
+      }
     }
 
-    if (sourceKeys.size === 0) {
-      // All rows have null foreign key
+    if (sourceKeyMap.size === 0) {
       for (const row of rows) {
         row[relationName] = null;
       }
       return;
     }
 
-    // Batch load all target records
-    // TODO M6.5 Phase 3: Use withIndex for efficient lookup
-    const allTargets = await this.db.query(edge.targetTable).take(10_000);
-
-    // Filter to only targets we need (in-memory filter since Convex lacks .in() operator)
-    let targets = allTargets.filter((t) => {
-      const key = this._buildRelationKey(t, targetFields);
-      return key ? sourceKeys.has(key) : false;
-    });
-
     const targetTableConfig = this._getTableConfigByDbName(edge.targetTable);
+    if (!targetTableConfig) {
+      throw new Error(
+        `Relation '${relationName}' target table '${edge.targetTable}' not found.`
+      );
+    }
     const relationDefinition = tableConfig.relations[relationName];
+    const strict = tableConfig.strict !== false;
+    const useGetById = targetFields.length === 1 && targetFields[0] === '_id';
+    const indexName = useGetById
+      ? null
+      : findRelationIndex(
+          targetTableConfig.table as any,
+          targetFields,
+          `${tableConfig.name}.${relationName}`,
+          edge.targetTable,
+          strict
+        );
 
-    if (targetTableConfig) {
-      targets = this._applyRlsSelectFilter(targets, targetTableConfig);
+    const entries = Array.from(sourceKeyMap.entries());
+    const fetched = await this._mapWithConcurrency(
+      entries,
+      async ([key, values]) => {
+        let target: any | null = null;
+        if (useGetById) {
+          target = await this.db.get(values[0] as any);
+        } else {
+          const query = this._queryByFields(
+            this.db.query(edge.targetTable),
+            targetFields,
+            values,
+            indexName
+          );
+          target = await query.first();
+        }
+        return { key, target };
+      }
+    );
+
+    const targetsByKey = new Map<string, any | null>();
+    for (const entry of fetched) {
+      targetsByKey.set(entry.key, entry.target ?? null);
     }
 
-    if (relationDefinition?.where && targetTableConfig) {
+    let targets = Array.from(targetsByKey.values()).filter(
+      (value): value is any => !!value
+    );
+
+    targets = this._applyRlsSelectFilter(targets, targetTableConfig);
+
+    if (relationDefinition?.where) {
       targets = targets.filter((target) =>
         this._evaluateTableFilter(
           target,
@@ -1796,8 +1913,7 @@ export class GelRelationalQuery<
     if (
       relationConfig &&
       typeof relationConfig === 'object' &&
-      'where' in relationConfig &&
-      targetTableConfig
+      'where' in relationConfig
     ) {
       const whereFilter = (relationConfig as any).where;
       if (typeof whereFilter === 'function') {
@@ -1819,13 +1935,11 @@ export class GelRelationalQuery<
       }
     }
 
-    // M6.5 Phase 2: Recursively load nested relations if configured
     if (
       relationConfig &&
       typeof relationConfig === 'object' &&
       'with' in relationConfig
     ) {
-      // Get edge metadata for the target table (not the current table)
       const targetTableEdges = this._getTargetTableEdges(edge.targetTable);
       await this._loadRelations(
         targets,
@@ -1833,15 +1947,14 @@ export class GelRelationalQuery<
         depth + 1,
         maxDepth,
         targetTableEdges,
-        targetTableConfig ?? this.tableConfig
+        targetTableConfig
       );
     }
 
     if (
       relationConfig &&
       typeof relationConfig === 'object' &&
-      'extras' in relationConfig &&
-      targetTableConfig
+      'extras' in relationConfig
     ) {
       targets = this._applyExtras(
         targets,
@@ -1852,41 +1965,32 @@ export class GelRelationalQuery<
       );
     }
 
-    // Create key → record mapping for O(1) lookup
-    const targetsByKey = new Map<string, any>();
-    for (const target of targets) {
-      const key = this._buildRelationKey(target, targetFields);
-      if (key) {
-        targetsByKey.set(key, target);
-      }
-    }
-
-    let selectedTargetsByKey = targetsByKey;
+    let selectedTargets = targets;
     if (
       relationConfig &&
       typeof relationConfig === 'object' &&
-      'columns' in relationConfig &&
-      targetTableConfig
+      'columns' in relationConfig
     ) {
-      const selectedTargets = this._selectColumns(
+      selectedTargets = this._selectColumns(
         targets,
         (relationConfig as any).columns,
         this._getColumns(targetTableConfig)
       );
-      const selectedByKey = new Map<string, any>();
-      for (let i = 0; i < targets.length; i += 1) {
-        const key = this._buildRelationKey(targets[i], targetFields);
-        if (key) {
-          selectedByKey.set(key, selectedTargets[i]);
-        }
-      }
-      selectedTargetsByKey = selectedByKey;
     }
 
-    // Map relations back to parent rows
+    const selectedTargetsByKey = new Map<string, any>();
+    for (let i = 0; i < targets.length; i += 1) {
+      const key = this._buildRelationKey(targets[i], targetFields);
+      if (key) {
+        selectedTargetsByKey.set(key, selectedTargets[i]);
+      }
+    }
+
     for (const row of rows) {
-      const key = this._buildRelationKey(row, sourceFields);
-      row[relationName] = key ? (selectedTargetsByKey.get(key) ?? null) : null;
+      const rowKey = this._buildRelationKey(row, sourceFields);
+      row[relationName] = rowKey
+        ? (selectedTargetsByKey.get(rowKey) ?? null)
+        : null;
     }
   }
 
@@ -1913,79 +2017,202 @@ export class GelRelationalQuery<
     const targetFields =
       edge.targetFields.length > 0 ? edge.targetFields : [edge.fieldName];
 
-    // Collect all source keys
-    const sourceKeys = new Set<string>();
+    const sourceKeyMap = new Map<string, unknown[]>();
     for (const row of rows) {
-      const key = this._buildRelationKey(row, sourceFields);
-      if (key) sourceKeys.add(key);
+      const values = sourceFields.map((field) => row[field]);
+      if (values.some((value) => value === null || value === undefined)) {
+        continue;
+      }
+      const key = JSON.stringify(values);
+      if (!sourceKeyMap.has(key)) {
+        sourceKeyMap.set(key, values);
+      }
     }
 
-    if (sourceKeys.size === 0) {
+    if (sourceKeyMap.size === 0) {
       return;
     }
 
+    const targetTableConfig = this._getTableConfigByDbName(edge.targetTable);
+    if (!targetTableConfig) {
+      throw new Error(
+        `Relation '${relationName}' target table '${edge.targetTable}' not found.`
+      );
+    }
+    const relationDefinition = tableConfig.relations[relationName];
+    const strict = tableConfig.strict !== false;
+
+    let orderSpecs: { field: string; direction: 'asc' | 'desc' }[] = [];
+    if (
+      relationConfig &&
+      typeof relationConfig === 'object' &&
+      'orderBy' in relationConfig
+    ) {
+      let orderByValue = (relationConfig as any).orderBy;
+      if (typeof orderByValue === 'function') {
+        orderByValue = orderByValue(targetTableConfig.table as any, {
+          asc,
+          desc,
+        });
+      }
+      orderSpecs = this._orderBySpecs(orderByValue);
+    }
+
+    const perParentLimit =
+      relationConfig &&
+      typeof relationConfig === 'object' &&
+      'limit' in relationConfig
+        ? (relationConfig as any).limit
+        : undefined;
+    if (perParentLimit !== undefined && typeof perParentLimit !== 'number') {
+      throw new Error('Only numeric limit is supported in Better Convex ORM.');
+    }
+
+    const perParentOffset =
+      relationConfig &&
+      typeof relationConfig === 'object' &&
+      'offset' in relationConfig
+        ? (relationConfig as any).offset
+        : undefined;
+    if (perParentOffset !== undefined && typeof perParentOffset !== 'number') {
+      throw new Error('Only numeric offset is supported in Better Convex ORM.');
+    }
+
+    const applyOffsetAndLimit = (items: any[]): any[] => {
+      let result = items;
+      if (perParentOffset !== undefined && perParentOffset > 0) {
+        result = result.slice(perParentOffset);
+      }
+      if (perParentLimit !== undefined) {
+        result = result.slice(0, perParentLimit);
+      }
+      return result;
+    };
+
     let targets: any[] = [];
-    let targetKeys = new Set<string>();
     let throughBySourceKey: Map<string, any[]> | undefined;
 
     if (edge.through) {
-      const throughTable = edge.through.table;
-      const throughRows = await this.db.query(throughTable).take(10_000);
-
-      const throughMatches = throughRows.filter((row) => {
-        const key = this._buildRelationKey(row, edge.through!.sourceFields);
-        return key ? sourceKeys.has(key) : false;
-      });
-
-      for (const row of throughMatches) {
-        const key = this._buildRelationKey(row, edge.through!.targetFields);
-        if (key) targetKeys.add(key);
+      const throughTableConfig = this._getTableConfigByDbName(
+        edge.through.table
+      );
+      if (!throughTableConfig) {
+        throw new Error(
+          `Relation '${relationName}' through table '${edge.through.table}' not found.`
+        );
       }
 
-      const allTargets = await this.db.query(edge.targetTable).take(10_000);
-      targets = allTargets.filter((t) => {
-        const key = this._buildRelationKey(t, targetFields);
-        return key ? targetKeys.has(key) : false;
-      });
+      const throughIndexName = findRelationIndex(
+        throughTableConfig.table as any,
+        edge.through.sourceFields,
+        `${tableConfig.name}.${relationName}`,
+        edge.through.table,
+        strict
+      );
+
+      const entries = Array.from(sourceKeyMap.entries());
+      const throughRowsPerSource = await this._mapWithConcurrency(
+        entries,
+        async ([key, values]) => {
+          const query = this._queryByFields(
+            this.db.query(edge.through!.table),
+            edge.through!.sourceFields,
+            values,
+            throughIndexName
+          );
+          const throughRows = await query.collect();
+          return { key, rows: throughRows };
+        }
+      );
 
       throughBySourceKey = new Map<string, any[]>();
-      for (const row of throughMatches) {
-        const sourceKey = this._buildRelationKey(
-          row,
-          edge.through!.sourceFields
-        );
-        if (!sourceKey) continue;
-        if (!throughBySourceKey.has(sourceKey)) {
-          throughBySourceKey.set(sourceKey, []);
+      const targetKeyMap = new Map<string, unknown[]>();
+      for (const entry of throughRowsPerSource) {
+        throughBySourceKey.set(entry.key, entry.rows);
+        for (const row of entry.rows) {
+          const values = edge.through!.targetFields.map((field) => row[field]);
+          if (values.some((value) => value === null || value === undefined)) {
+            continue;
+          }
+          const key = JSON.stringify(values);
+          if (!targetKeyMap.has(key)) {
+            targetKeyMap.set(key, values);
+          }
         }
-        throughBySourceKey.get(sourceKey)!.push(row);
       }
 
-      targetKeys = new Set(
-        targets
-          .map((target) => this._buildRelationKey(target, targetFields))
-          .filter((key): key is string => !!key)
-      );
+      if (targetKeyMap.size > 0) {
+        const useGetById =
+          targetFields.length === 1 && targetFields[0] === '_id';
+        const targetIndexName = useGetById
+          ? null
+          : findRelationIndex(
+              targetTableConfig.table as any,
+              targetFields,
+              `${tableConfig.name}.${relationName}`,
+              edge.targetTable,
+              strict
+            );
+
+        const targetEntries = Array.from(targetKeyMap.entries());
+        const fetchedTargets = await this._mapWithConcurrency(
+          targetEntries,
+          async ([key, values]) => {
+            let target: any | null = null;
+            if (useGetById) {
+              target = await this.db.get(values[0] as any);
+            } else {
+              const query = this._queryByFields(
+                this.db.query(edge.targetTable),
+                targetFields,
+                values,
+                targetIndexName
+              );
+              target = await query.first();
+            }
+            return { key, target };
+          }
+        );
+
+        targets = fetchedTargets
+          .map((entry) => entry.target)
+          .filter((value): value is any => !!value);
+      }
     } else {
-      // Batch load all target records that reference any source
-      // TODO M6.5 Phase 3: Use withIndex for efficient lookup
-      const allTargets = await this.db.query(edge.targetTable).take(10_000);
+      const indexName = findRelationIndex(
+        targetTableConfig.table as any,
+        targetFields,
+        `${tableConfig.name}.${relationName}`,
+        edge.targetTable,
+        strict
+      );
 
-      // Filter to only targets that reference our source IDs
-      targets = allTargets.filter((t) => {
-        const key = this._buildRelationKey(t, targetFields);
-        return key ? sourceKeys.has(key) : false;
-      });
+      const entries = Array.from(sourceKeyMap.entries());
+      const targetGroups = await this._mapWithConcurrency(
+        entries,
+        async ([, values]) => {
+          const query = this._queryByFields(
+            this.db.query(edge.targetTable),
+            targetFields,
+            values,
+            indexName
+          );
+
+          if (orderSpecs.length === 0 && perParentLimit !== undefined) {
+            const fetchLimit = (perParentOffset ?? 0) + (perParentLimit ?? 0);
+            return await query.take(fetchLimit);
+          }
+
+          return await query.collect();
+        }
+      );
+
+      targets = targetGroups.flat();
     }
 
-    const targetTableConfig = this._getTableConfigByDbName(edge.targetTable);
-    const relationDefinition = tableConfig.relations[relationName];
+    targets = this._applyRlsSelectFilter(targets, targetTableConfig);
 
-    if (targetTableConfig) {
-      targets = this._applyRlsSelectFilter(targets, targetTableConfig);
-    }
-
-    if (relationDefinition?.where && targetTableConfig) {
+    if (relationDefinition?.where) {
       targets = targets.filter((target) =>
         this._evaluateTableFilter(
           target,
@@ -1995,12 +2222,10 @@ export class GelRelationalQuery<
       );
     }
 
-    // M6.5 Phase 3: Apply where filters if present
     if (
       relationConfig &&
       typeof relationConfig === 'object' &&
-      'where' in relationConfig &&
-      targetTableConfig
+      'where' in relationConfig
     ) {
       const whereFilter = (relationConfig as any).where;
       if (typeof whereFilter === 'function') {
@@ -2022,37 +2247,15 @@ export class GelRelationalQuery<
       }
     }
 
-    // M6.5 Phase 3: Apply orderBy if present
-    if (
-      relationConfig &&
-      typeof relationConfig === 'object' &&
-      'orderBy' in relationConfig
-    ) {
-      let orderByValue = (relationConfig as any).orderBy;
-      if (typeof orderByValue === 'function') {
-        if (targetTableConfig) {
-          orderByValue = orderByValue(targetTableConfig.table as any, {
-            asc,
-            desc,
-          });
-        } else {
-          orderByValue = undefined;
-        }
-      }
-
-      const orderSpecs = this._orderBySpecs(orderByValue);
-      if (orderSpecs.length > 0) {
-        targets.sort((a, b) => this._compareByOrderSpecs(a, b, orderSpecs));
-      }
+    if (orderSpecs.length > 0) {
+      targets.sort((a, b) => this._compareByOrderSpecs(a, b, orderSpecs));
     }
 
-    // M6.5 Phase 2: Recursively load nested relations if configured
     if (
       relationConfig &&
       typeof relationConfig === 'object' &&
       'with' in relationConfig
     ) {
-      // Get edge metadata for the target table (not the current table)
       const targetTableEdges = this._getTargetTableEdges(edge.targetTable);
       await this._loadRelations(
         targets,
@@ -2060,15 +2263,14 @@ export class GelRelationalQuery<
         depth + 1,
         maxDepth,
         targetTableEdges,
-        targetTableConfig ?? this.tableConfig
+        targetTableConfig
       );
     }
 
     if (
       relationConfig &&
       typeof relationConfig === 'object' &&
-      'extras' in relationConfig &&
-      targetTableConfig
+      'extras' in relationConfig
     ) {
       targets = this._applyExtras(
         targets,
@@ -2101,38 +2303,6 @@ export class GelRelationalQuery<
       }
     }
 
-    // M6.5 Phase 3: Extract limit for per-parent limiting
-    const perParentLimit =
-      relationConfig &&
-      typeof relationConfig === 'object' &&
-      'limit' in relationConfig
-        ? (relationConfig as any).limit
-        : undefined;
-    if (perParentLimit !== undefined && typeof perParentLimit !== 'number') {
-      throw new Error('Only numeric limit is supported in Better Convex ORM.');
-    }
-
-    const perParentOffset =
-      relationConfig &&
-      typeof relationConfig === 'object' &&
-      'offset' in relationConfig
-        ? (relationConfig as any).offset
-        : undefined;
-    if (perParentOffset !== undefined && typeof perParentOffset !== 'number') {
-      throw new Error('Only numeric offset is supported in Better Convex ORM.');
-    }
-
-    const applyOffsetAndLimit = (items: any[]): any[] => {
-      let result = items;
-      if (perParentOffset !== undefined && perParentOffset > 0) {
-        result = result.slice(perParentOffset);
-      }
-      if (perParentLimit !== undefined) {
-        result = result.slice(0, perParentLimit);
-      }
-      return result;
-    };
-
     if (edge.through) {
       const targetOrder = new Map<string, number>();
       targets.forEach((target, index) => {
@@ -2148,7 +2318,6 @@ export class GelRelationalQuery<
         }
       }
 
-      // Map targets per source row using through table
       for (const row of rows) {
         const sourceKey = this._buildRelationKey(row, sourceFields);
         if (!sourceKey || !throughBySourceKey) {

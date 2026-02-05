@@ -9,7 +9,6 @@
     "codegen",
     "cli"
   ],
-  "license": "MIT",
   "sideEffects": false,
   "type": "module",
   "exports": {

@@ -175,6 +175,13 @@ export {
 } from './introspection';
 // M5: OrderBy
 export { asc, desc } from './order-by';
+export {
+  getPage,
+  type IndexKey as PaginationIndexKey,
+  type PageRequest,
+  type PageResponse,
+  paginator,
+} from './pagination';
 export { GelRelationalQuery } from './query';
 // M3: Query Builder
 export { RelationalQueryBuilder } from './query-builder';
@@ -205,6 +212,15 @@ export {
   scheduledDeleteFactory,
 } from './scheduled-delete';
 export { defineSchema } from './schema';
+// Streams + pagination (native fork of convex-helpers)
+export {
+  type IndexKey as StreamIndexKey,
+  mergedStream,
+  type QueryStream,
+  StreamDatabaseReader,
+  stream,
+  streamIndexRange,
+} from './stream';
 // M1: Schema Foundation
 export {
   Brand,

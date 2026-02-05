@@ -4,11 +4,12 @@
  * Mirrors drizzle-orm/src/relations.ts (v1) with Convex adaptations.
  */
 
+import type { SchemaDefinition } from 'convex/server';
 import type { Simplify } from '../internal/types';
 import type { ColumnBuilder } from './builders/column-builder';
 import { entityKind } from './builders/column-builder';
 import type { SystemFields } from './builders/system-fields';
-import { Columns } from './symbols';
+import { Columns, OrmSchemaDefinition, OrmSchemaOptions } from './symbols';
 import type { ConvexTable } from './table';
 
 // ============================================================================
@@ -444,9 +445,29 @@ export interface TableRelationalConfig {
   table: SchemaEntry;
   name: string;
   relations: RelationsRecord;
+  strict?: boolean;
 }
 
-export type TablesRelationalConfig = Record<string, TableRelationalConfig>;
+export type TablesRelationalConfig<
+  SchemaDef extends SchemaDefinition<any, boolean> = SchemaDefinition<
+    any,
+    true
+  >,
+> = Record<string, TableRelationalConfig> & {
+  [OrmSchemaDefinition]?: SchemaDef;
+};
+
+type RelationsConfigWithSchema<
+  TConfig extends AnyRelationsBuilderConfig,
+  TTables extends Schema,
+> = ExtractTablesWithRelations<TConfig, TTables> &
+  TablesRelationalConfig<SchemaDefinition<TTables, true>>;
+
+type RelationsPartsConfigWithSchema<
+  TConfig extends AnyRelationsBuilderConfig,
+  TTables extends Schema,
+> = ExtractTablesWithRelationsParts<TConfig, TTables> &
+  TablesRelationalConfig<SchemaDefinition<TTables, true>>;
 
 // ============================================================================
 // Relations filter types (v1)
@@ -621,7 +642,8 @@ export function buildRelations<
   TConfig extends AnyRelationsBuilderConfig,
 >(
   tables: TTables,
-  config: TConfig
+  config: TConfig,
+  strict?: boolean
 ): ExtractTablesWithRelations<TConfig, TTables> {
   const tablesConfig = {} as TablesRelationalConfig;
 
@@ -630,6 +652,7 @@ export function buildRelations<
       table: table as SchemaEntry,
       name: tsName,
       relations: (config as AnyRelationsBuilderConfig)[tsName] ?? {},
+      strict,
     };
   }
 
@@ -641,7 +664,8 @@ export function buildRelationsParts<
   TConfig extends AnyRelationsBuilderConfig,
 >(
   tables: TTables,
-  config: TConfig
+  config: TConfig,
+  strict?: boolean
 ): ExtractTablesWithRelationsParts<TConfig, TTables> {
   const tablesConfig = {} as TablesRelationalConfig;
 
@@ -651,6 +675,7 @@ export function buildRelationsParts<
       table: tables[tsName] as SchemaEntry,
       name: tsName,
       relations,
+      strict,
     };
   }
 
@@ -661,7 +686,7 @@ export function buildRelationsParts<
 export function defineRelations<
   TSchema extends Record<string, unknown>,
   TTables extends Schema = ExtractTablesFromSchema<TSchema>,
->(schema: TSchema): ExtractTablesWithRelations<{}, TTables>;
+>(schema: TSchema): RelationsConfigWithSchema<{}, TTables>;
 /** Builds relational config for every table in schema */
 export function defineRelations<
   TSchema extends Record<string, unknown>,
@@ -670,16 +695,32 @@ export function defineRelations<
 >(
   schema: TSchema,
   relations: (helpers: RelationsBuilder<TTables>) => TConfig
-): ExtractTablesWithRelations<TConfig, TTables>;
+): RelationsConfigWithSchema<TConfig, TTables>;
 export function defineRelations(
   schema: Record<string, unknown>,
   relations?: (helpers: RelationsBuilder<Schema>) => AnyRelationsBuilderConfig
 ): TablesRelationalConfig {
   const tables = extractTablesFromSchema(schema);
+  const strict =
+    (schema as { [OrmSchemaOptions]?: { strict?: boolean } })[OrmSchemaOptions]
+      ?.strict ?? true;
+  const schemaDefinition = (schema as { [OrmSchemaDefinition]?: unknown })[
+    OrmSchemaDefinition
+  ];
   const config = relations
     ? relations(createRelationsHelper(tables) as RelationsBuilder<Schema>)
     : {};
-  return buildRelations(tables, config);
+  const tablesConfig = buildRelations(tables, config, strict);
+  if (schemaDefinition) {
+    Object.defineProperty(tablesConfig, OrmSchemaDefinition, {
+      value: schemaDefinition,
+      enumerable: false,
+    });
+  }
+  return tablesConfig as RelationsConfigWithSchema<
+    AnyRelationsBuilderConfig,
+    Schema
+  >;
 }
 
 /** Builds relational config only for tables present in relational config */
@@ -688,7 +729,7 @@ export function defineRelationsPart<
   TTables extends Schema = ExtractTablesFromSchema<TSchema>,
 >(
   schema: TSchema
-): ExtractTablesWithRelationsParts<IncludeEveryTable<TTables>, TTables>;
+): RelationsPartsConfigWithSchema<IncludeEveryTable<TTables>, TTables>;
 /** Builds relational config only for tables present in relational config */
 export function defineRelationsPart<
   TSchema extends Record<string, unknown>,
@@ -697,19 +738,35 @@ export function defineRelationsPart<
 >(
   schema: TSchema,
   relations: (helpers: RelationsBuilder<TTables>) => TConfig
-): ExtractTablesWithRelationsParts<TConfig, TTables>;
+): RelationsPartsConfigWithSchema<TConfig, TTables>;
 export function defineRelationsPart(
   schema: Record<string, unknown>,
   relations?: (helpers: RelationsBuilder<Schema>) => AnyRelationsBuilderConfig
 ): TablesRelationalConfig {
   const tables = extractTablesFromSchema(schema);
+  const strict =
+    (schema as { [OrmSchemaOptions]?: { strict?: boolean } })[OrmSchemaOptions]
+      ?.strict ?? true;
+  const schemaDefinition = (schema as { [OrmSchemaDefinition]?: unknown })[
+    OrmSchemaDefinition
+  ];
   const config = relations
     ? relations(createRelationsHelper(tables) as RelationsBuilder<Schema>)
     : (Object.fromEntries(
         Object.keys(tables).map((k) => [k, {}])
       ) as AnyRelationsBuilderConfig);
 
-  return buildRelationsParts(tables, config);
+  const tablesConfig = buildRelationsParts(tables, config, strict);
+  if (schemaDefinition) {
+    Object.defineProperty(tablesConfig, OrmSchemaDefinition, {
+      value: schemaDefinition,
+      enumerable: false,
+    });
+  }
+  return tablesConfig as RelationsPartsConfigWithSchema<
+    AnyRelationsBuilderConfig,
+    Schema
+  >;
 }
 
 // ============================================================================

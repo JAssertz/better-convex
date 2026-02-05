@@ -21,6 +21,7 @@
     "---ORM (Drizzle-style)---",
     "db/orm/index",
     "db/orm/quickstart",
+    "db/orm/migrate-from-ents",
     "db/orm/schema",
     "db/orm/column-types",
     "db/orm/indexes-constraints",

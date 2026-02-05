@@ -8,10 +8,22 @@
  * - onConflictDoNothing/onConflictDoUpdate
  */
 
-import { eq } from 'better-convex/orm';
+import {
+  convexTable,
+  defineRelations,
+  defineSchema,
+  eq,
+  extractRelationsConfig,
+  text,
+} from 'better-convex/orm';
 import { it as baseIt, describe, expect } from 'vitest';
 import schema, { users } from '../schema';
-import { convexTest, runCtx, type TestCtx } from '../setup.testing';
+import {
+  convexTest,
+  runCtx,
+  type TestCtx,
+  withTableCtx,
+} from '../setup.testing';
 
 const it = baseIt.extend<{ ctx: TestCtx }>({
   ctx: async ({}, use) => {
@@ -125,5 +137,46 @@ describe('M7 Mutations', () => {
       .returning();
 
     expect(updated.name).toBe('Updated');
+  });
+
+  it('should throw update/delete without where when strict is true', async ({
+    ctx,
+  }) => {
+    const db = ctx.table;
+    await db.insert(users).values(baseUser).returning();
+
+    await expect(db.update(users).set({ name: 'NoWhere' })).rejects.toThrow(
+      /requires where\(\)/i
+    );
+    await expect(db.delete(users)).rejects.toThrow(/requires where\(\)/i);
+  });
+
+  it('should allow update/delete without where when strict is false', async () => {
+    const relaxedUsers = convexTable('relaxedUsers', {
+      name: text().notNull(),
+    });
+    const tables = { relaxedUsers };
+    const relaxedSchema = defineSchema(tables, { strict: false });
+    const relaxedRelations = defineRelations(tables);
+    const relaxedEdges = extractRelationsConfig(relaxedRelations);
+
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      await expect(
+        withTableCtx(
+          relaxedSchema,
+          relaxedRelations,
+          relaxedEdges,
+          async (ctx) => {
+            await ctx.db.insert('relaxedUsers', { name: 'Alice' });
+            await ctx.table.update(relaxedUsers).set({ name: 'Bob' });
+            await ctx.table.delete(relaxedUsers);
+          }
+        )
+      ).resolves.toBeUndefined();
+    } finally {
+      console.warn = warn;
+    }
   });
 });

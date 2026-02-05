@@ -28,9 +28,11 @@ Mutation APIs mirror Drizzle v1 patterns with Convex semantics.
 ```ts title="convex/mutations.ts"
 import { mutation } from './_generated/server';
 import { v } from 'convex/values';
-import { createDatabase, eq } from 'better-convex/orm';
-import { ormSchema, ormEdges, users } from './schema';
+import { eq } from 'better-convex/orm';
+import { users } from './schema';
 ```
+
+These examples assume ORM is attached as `ctx.table` in your context.
 
 ## Insert
 
@@ -38,7 +40,7 @@ import { ormSchema, ormEdges, users } from './schema';
 export const createUser = mutation({
   args: { name: v.string(), email: v.string() },
   handler: async (ctx, args) => {
-    const db = createDatabase(ctx.db, ormSchema, ormEdges);
+    const db = ctx.table;
 
     await db.insert(users).values({
       name: args.name,
@@ -79,7 +81,7 @@ await db
 export const updateUserName = mutation({
   args: { userId: v.id('users'), newName: v.string() },
   handler: async (ctx, args) => {
-    const db = createDatabase(ctx.db, ormSchema, ormEdges);
+    const db = ctx.table;
 
     await db
       .update(users)
@@ -105,7 +107,7 @@ const updated = await db
 export const deleteUser = mutation({
   args: { userId: v.id('users') },
   handler: async (ctx, args) => {
-    const db = createDatabase(ctx.db, ormSchema, ormEdges);
+    const db = ctx.table;
 
     await db.delete(users).where(eq(users._id, args.userId));
   },

@@ -92,6 +92,16 @@ export class ConvexDeleteBuilder<
 
   async execute(): Promise<MutationResult<TTable, TReturning>> {
     const tableName = getTableName(this.table);
+    const ormContext = getOrmContext(this.db);
+    const strict = ormContext?.strict ?? true;
+    if (!this.whereExpression) {
+      if (strict) {
+        throw new Error('update/delete requires where() when strict is true');
+      }
+      console.warn(
+        'update/delete without where() is running with strict=false (full scan).'
+      );
+    }
     let query = this.db.query(tableName);
 
     if (this.whereExpression) {
@@ -109,7 +119,6 @@ export class ConvexDeleteBuilder<
 
     const results: Record<string, unknown>[] = [];
 
-    const ormContext = getOrmContext(this.db);
     const rls = ormContext?.rls;
     const foreignKeyGraph = ormContext?.foreignKeyGraph;
     if (!foreignKeyGraph) {

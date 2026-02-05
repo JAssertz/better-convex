@@ -1,10 +1,10 @@
 import type { ColumnBuilder } from './builders/column-builder';
 import type { SystemFields } from './builders/system-fields';
 import { createSystemFields } from './builders/system-fields';
+import { getIndexes } from './index-utils';
 import {
   getChecks,
   getForeignKeys,
-  getIndexes,
   getTableName,
   getUniqueIndexes,
 } from './mutation-utils';

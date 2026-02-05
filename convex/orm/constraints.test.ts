@@ -7,6 +7,7 @@ import {
   eq,
   extractRelationsConfig,
   gte,
+  inArray,
   integer,
   text,
   unique,
@@ -152,6 +153,7 @@ describe('column hooks', () => {
       const updated = await table
         .update(hookUsers)
         .set({ name: 'Updated' })
+        .where(inArray(hookUsers.name, ['Ada', 'Grace']))
         .returning();
 
       expect(hookUpdatedAtCalls).toBe(1);

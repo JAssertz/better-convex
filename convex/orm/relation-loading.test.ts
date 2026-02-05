@@ -15,29 +15,38 @@ import {
   defineSchema,
   extractRelationsConfig,
   id,
+  index,
   text,
 } from 'better-convex/orm';
 import type { StorageActionWriter } from 'convex/server';
 import { test as baseTest, describe, expect } from 'vitest';
 import type { MutationCtx } from '../_generated/server';
 import { cities, posts, users } from '../schema';
-import { convexTest, getCtxWithTable } from '../setup.testing';
+import { convexTest, getCtxWithTable, withTableCtx } from '../setup.testing';
 
 // M6.5 Phase 2: Comments table and relations for nested testing (local to this test file)
-const ormComments = convexTable('comments', {
-  text: text().notNull(),
-  postId: id('posts').notNull(),
-  authorId: id('users'),
-});
+const ormComments = convexTable(
+  'comments',
+  {
+    text: text().notNull(),
+    postId: id('posts').notNull(),
+    authorId: id('users'),
+  },
+  (t) => [index('by_post').on(t.postId), index('by_author').on(t.authorId)]
+);
 
 const ormGroups = convexTable('groups', {
   name: text().notNull(),
 });
 
-const ormUsersToGroups = convexTable('usersToGroups', {
-  userId: id('users').notNull(),
-  groupId: id('groups').notNull(),
-});
+const ormUsersToGroups = convexTable(
+  'usersToGroups',
+  {
+    userId: id('users').notNull(),
+    groupId: id('groups').notNull(),
+  },
+  (t) => [index('by_user').on(t.userId)]
+);
 
 // M6.5 Phase 2: Relations for comments + posts (local to this test file)
 const relations = defineRelations(
@@ -1086,6 +1095,153 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
       expect((users[0] as any).posts[0].numLikes).toBe(50);
       expect((users[0] as any).posts[1].numLikes).toBe(40);
       expect((users[0] as any).posts[2].numLikes).toBe(30);
+    });
+  });
+
+  describe('Index Requirements', () => {
+    test('should throw when many() relation is missing an index', async () => {
+      const noIndexUsers = convexTable('noIndexUsers', {
+        name: text().notNull(),
+      });
+      const noIndexPosts = convexTable('noIndexPosts', {
+        authorId: id('noIndexUsers').notNull(),
+      });
+
+      const noIndexRelations = defineRelations(
+        { noIndexUsers, noIndexPosts },
+        (r) => ({
+          noIndexUsers: {
+            posts: r.many.noIndexPosts({
+              from: r.noIndexUsers._id,
+              to: r.noIndexPosts.authorId,
+            }),
+          },
+          noIndexPosts: {},
+        })
+      );
+
+      const noIndexSchema = defineSchema({
+        noIndexUsers,
+        noIndexPosts,
+      });
+      const noIndexEdges = extractRelationsConfig(noIndexRelations);
+
+      await expect(
+        withTableCtx(
+          noIndexSchema,
+          noIndexRelations,
+          noIndexEdges,
+          async (ctx) => {
+            await ctx.db.insert('noIndexUsers', { name: 'Alice' });
+            await ctx.table.query.noIndexUsers.findMany({
+              with: {
+                posts: true,
+              },
+            });
+          }
+        )
+      ).rejects.toThrow(/requires index/i);
+    });
+
+    test('should throw when through() relation is missing a through index', async () => {
+      const noIndexUsers = convexTable('noIndexThroughUsers', {
+        name: text().notNull(),
+      });
+      const noIndexGroups = convexTable('noIndexThroughGroups', {
+        name: text().notNull(),
+      });
+      const noIndexUsersToGroups = convexTable('noIndexUsersToGroups', {
+        userId: id('noIndexThroughUsers').notNull(),
+        groupId: id('noIndexThroughGroups').notNull(),
+      });
+
+      const noIndexRelations = defineRelations(
+        {
+          noIndexThroughUsers: noIndexUsers,
+          noIndexThroughGroups: noIndexGroups,
+          noIndexUsersToGroups: noIndexUsersToGroups,
+        },
+        (r) => ({
+          noIndexThroughUsers: {
+            groups: r.many.noIndexThroughGroups({
+              from: r.noIndexThroughUsers._id.through(
+                r.noIndexUsersToGroups.userId
+              ),
+              to: r.noIndexThroughGroups._id.through(
+                r.noIndexUsersToGroups.groupId
+              ),
+              alias: 'no-index-through',
+            }),
+          },
+          noIndexThroughGroups: {},
+          noIndexUsersToGroups: {},
+        })
+      );
+
+      const noIndexSchema = defineSchema({
+        noIndexThroughUsers: noIndexUsers,
+        noIndexThroughGroups: noIndexGroups,
+        noIndexUsersToGroups: noIndexUsersToGroups,
+      });
+      const noIndexEdges = extractRelationsConfig(noIndexRelations);
+
+      await expect(
+        withTableCtx(
+          noIndexSchema,
+          noIndexRelations,
+          noIndexEdges,
+          async (ctx) => {
+            await ctx.db.insert('noIndexThroughUsers', { name: 'Alice' });
+            await ctx.table.query.noIndexThroughUsers.findMany({
+              with: {
+                groups: true,
+              },
+            });
+          }
+        )
+      ).rejects.toThrow(/requires index/i);
+    });
+
+    test('should allow missing indexes when schema strict is false', async () => {
+      const noIndexUsers = convexTable('noIndexRelaxedUsers', {
+        name: text().notNull(),
+      });
+      const noIndexPosts = convexTable('noIndexRelaxedPosts', {
+        authorId: id('noIndexRelaxedUsers').notNull(),
+      });
+
+      const noIndexTables = {
+        noIndexRelaxedUsers: noIndexUsers,
+        noIndexRelaxedPosts: noIndexPosts,
+      };
+
+      const noIndexSchema = defineSchema(noIndexTables, { strict: false });
+      const noIndexRelations = defineRelations(noIndexTables, (r) => ({
+        noIndexRelaxedUsers: {
+          posts: r.many.noIndexRelaxedPosts({
+            from: r.noIndexRelaxedUsers._id,
+            to: r.noIndexRelaxedPosts.authorId,
+          }),
+        },
+        noIndexRelaxedPosts: {},
+      }));
+      const noIndexEdges = extractRelationsConfig(noIndexRelations);
+
+      await expect(
+        withTableCtx(
+          noIndexSchema,
+          noIndexRelations,
+          noIndexEdges,
+          async (ctx) => {
+            await ctx.db.insert('noIndexRelaxedUsers', { name: 'Alice' });
+            await ctx.table.query.noIndexRelaxedUsers.findMany({
+              with: {
+                posts: true,
+              },
+            });
+          }
+        )
+      ).resolves.toBeUndefined();
     });
   });
 });

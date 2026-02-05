@@ -14,6 +14,7 @@ Better-Convex ORM provides a Drizzle-style `delete()` builder for Convex mutatio
 ```ts
 import { eq } from 'better-convex/orm';
 
+// db is ctx.table
 await db.delete(users).where(eq(users.email, 'dan@example.com'));
 ```
 
@@ -22,6 +23,10 @@ To delete all rows in a table (use with care):
 ```ts
 await db.delete(users);
 ```
+
+<Callout icon={<AlertTriangle />}>
+With `strict: true` (default), full-table deletes throw unless you set `defineSchema(..., { strict: false })`.
+</Callout>
 
 ## Returning
 
@@ -45,6 +50,5 @@ const ids = await db
 </Callout>
 
 <Callout icon={<InfoIcon />}>
-Foreign key actions and RLS policies are enforced at runtime for ORM deletes when you create the DB with `createDatabase(...)`. Direct `ctx.db.delete(...)` bypasses these checks.
+Foreign key actions and RLS policies are enforced at runtime for ORM deletes when you attach ORM to `ctx.table`. Direct `ctx.db.delete(...)` bypasses these checks.
 </Callout>
-

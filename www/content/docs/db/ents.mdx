@@ -5,9 +5,14 @@ links:
   doc: https://labs.convex.dev/convex-ents
 ---
 
-import { InfoIcon } from "lucide-react"
+import { InfoIcon, AlertTriangle } from "lucide-react"
 
 In this guide, we'll explore Convex Ents - an ergonomic layer over Convex's database. You'll learn to define schemas with relationships, traverse edges between tables, handle cascading deletes, and integrate with cRPC.
+
+<Callout icon={<AlertTriangle />}>
+Convex Ents is in maintenance mode. For new work or Drizzle‑style queries, see the
+[migration guide](/docs/db/orm/migrate-from-ents).
+</Callout>
 
 ## Overview
 
@@ -594,6 +599,7 @@ Key differences:
 ## Next Steps
 
 <Cards>
+  <Card title="Migrate to Better‑Convex ORM" href="/docs/db/orm/migrate-from-ents" />
   <Card title="Templates" href="/docs/templates#entsts" />
   <Card title="Triggers" href="/docs/db/triggers" />
   <Card title="Convex Ents Docs" href="https://labs.convex.dev/convex-ents" />

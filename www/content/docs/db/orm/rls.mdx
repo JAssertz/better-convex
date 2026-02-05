@@ -60,20 +60,27 @@ const secrets = convexTable('secrets', {
 }).enableRLS();
 ```
 
+## Context Setup (once)
+
+Attach ORM to `ctx.table` with RLS enabled. Do this once in your context layer:
+
+```ts title="convex/lib/orm.ts"
+import type { GenericDatabaseWriter } from 'convex/server';
+import { createDatabase } from 'better-convex/orm';
+import { ormSchema, ormEdges } from '../schema';
+
+export const withOrm = <Ctx extends { db: GenericDatabaseWriter<any> }>(ctx: Ctx) => {
+  const table = createDatabase(ctx.db, ormSchema, ormEdges, { rls: { ctx } });
+  return { ...ctx, table, skipRules: table.skipRules };
+};
+```
+
 ## Use In Handlers
 
-Pass the request context into `createDatabase` so policy functions can access it:
-
 ```ts title="convex/queries.ts"
-import { createDatabase } from 'better-convex/orm';
-import { ormSchema, ormEdges } from './schema';
-
 export const listSecrets = query({
   handler: async (ctx) => {
-    const db = createDatabase(ctx.db, ormSchema, ormEdges, {
-      rls: { ctx },
-    });
-
+    const db = ctx.table;
     return db.query.secrets.findMany();
   },
 });
@@ -81,16 +88,11 @@ export const listSecrets = query({
 
 ## Bypass Rules
 
-`createDatabase` exposes an explicit escape hatch for trusted access:
+Use `ctx.skipRules.table` for trusted access:
 
 ```ts
-const db = createDatabase(ctx.db, ormSchema, ormEdges, { rls: { ctx } });
-
-await db.skipRules.table.query.secrets.findMany();
+await ctx.skipRules.table.query.secrets.findMany();
 ```
-
-If you attach `db` to your context, you can also surface it as
-`ctx.skipRules.table`.
 
 ## Roles (Optional)
 
@@ -107,7 +109,7 @@ rlsPolicy('admin_only', {
   using: (ctx, t) => eq(t.ownerId, ctx.viewerId),
 });
 
-const db = createDatabase(ctx.db, ormSchema, ormEdges, {
+const table = createDatabase(ctx.db, ormSchema, ormEdges, {
   rls: {
     ctx,
     roleResolver: (ctx) => ctx.roles ?? [],
@@ -119,7 +121,7 @@ const db = createDatabase(ctx.db, ormSchema, ormEdges, {
 
 <Callout icon={<AlertTriangle />}>
 - Policies are enforced at runtime, not in the database
-- `ctx.db` bypasses RLS; only ORM access (`createDatabase`) enforces rules
+- `ctx.db` bypasses RLS; only ORM access (`ctx.table`) enforces rules
 - If RLS is enabled with no permissive policies, access is denied by default
 </Callout>
 

@@ -30,13 +30,31 @@ This guide compares Drizzle v1 and Better-Convex ORM side-by-side. It focuses on
 - Database migrations and database-side constraints/triggers
 - Custom SQL data types
 
+## Convex‑Ents Compatibility
+
+Better‑Convex is designed as a successor to Convex‑Ents, but it follows Drizzle’s query‑builder model rather than Ent‑object APIs.
+
+**What maps cleanly:**
+- Relations and relational reads (`with`) replace `edge()`/`edgeX()` traversal
+- Runtime constraints (unique / foreign key / check) are enforced by ORM mutations
+- Soft and scheduled deletes are supported
+- Many‑to‑many with data uses an explicit join table with payload fields
+
+**What’s intentionally different:**
+- No ent‑object API (`getX()`, `patch()`, lazy promises); use `ctx.table.query.*` and mutation builders
+- No edge methods on loaded rows; use relation loading + mutation builders
+
+See [Migrate from Convex Ents](/docs/db/orm/migrate-from-ents) for a step‑by‑step mapping.
+
+**Concurrency note:** uniqueness is best‑effort within a mutation; concurrent mutations can still race. Prefer `onConflictDoNothing()` / retries or serialize writes per key when strict guarantees are required.
+
 ## Migration Checklist
 
 - [ ] Install `better-convex`
 - [ ] Convert table definitions to `convexTable()` with column builders (`text`, `integer`, `boolean`, `id`)
 - [ ] Replace manual `id` fields with Convex `_id`
 - [ ] Define relations using `defineRelations()` and `with`
-- [ ] Create a DB instance with `createDatabase(ctx.db, ormSchema, ormEdges)`
+- [ ] Attach ORM to `ctx.table` in context (create once)
 - [ ] Keep `where`, `orderBy`, `limit`, `offset` shapes the same
 - [ ] Move joins to relation loading (`with`)
 
@@ -156,10 +174,7 @@ This guide compares Drizzle v1 and Better-Convex ORM side-by-side. It focuses on
   </Tab>
   <Tab value="Better-Convex">
     ```ts
-    import { createDatabase } from 'better-convex/orm';
-    import { ormSchema, ormEdges } from './schema';
-
-    const db = createDatabase(ctx.db, ormSchema, ormEdges);
+    const db = ctx.table;
 
     const users = await db.query.users.findMany();
 
@@ -185,8 +200,8 @@ This guide compares Drizzle v1 and Better-Convex ORM side-by-side. It focuses on
 |---|---|---|
 | `pgTable()` / `mysqlTable()` / `sqliteTable()` | `convexTable()` | Same surface | 
 | `defineRelations()` | `defineRelations()` | Same surface |
-| `db.query.*.findMany()` | `db.query.*.findMany()` | Same surface via `createDatabase` |
-| `db.query.*.findFirst()` | `db.query.*.findFirst()` | Same surface via `createDatabase` |
+| `db.query.*.findMany()` | `db.query.*.findMany()` | Same surface via `ctx.table` |
+| `db.query.*.findFirst()` | `db.query.*.findFirst()` | Same surface via `ctx.table` |
 | `where` object filters | `where` object filters | Same shape |
 | `orderBy` | `orderBy` | Same shape, index-aware |
 | `columns` | `columns` | Post-fetch projection |
@@ -195,7 +210,7 @@ This guide compares Drizzle v1 and Better-Convex ORM side-by-side. It focuses on
 | SQL joins | Not available | Use `with` |
 | Raw SQL | Not available | Convex is document-based |
 | Custom types | Not available | Use app-level encoding |
-| Table introspection | Not available | Use your schema object |
+| Table introspection | `getTableColumns`, `getTableConfig` | Runtime metadata helpers |
 
 ## Differences To Note
 
@@ -209,7 +224,7 @@ This guide compares Drizzle v1 and Better-Convex ORM side-by-side. It focuses on
 
 | Gotcha | Fix |
 |---|---|
-| **No `db` instance** | Use `createDatabase(ctx.db, ormSchema, ormEdges)` |
+| **`ctx.table` is missing** | Attach ORM once in context (`createDatabase(...)`) |
 | **`id` vs `_id`** | Convex uses `_id` for primary keys |
 | **Nullable fields** | Types include `null` unless `.notNull()` |
 | **No SQL joins** | Use `with` relation loading |

@@ -245,6 +245,10 @@ createDatabase(db, ormSchema, ormEdges)
 
 Creates a typed query/mutation client. If `db` is a writer context, mutation methods are available.
 
+<Callout icon={<InfoIcon />}>
+Recommended: call `createDatabase` once in your context layer and attach the result to `ctx.table`.
+</Callout>
+
 **RLS options**
 
 ```ts
@@ -256,7 +260,7 @@ createDatabase(db, ormSchema, ormEdges, {
 })
 ```
 
-Use `db.skipRules.table` for an explicit bypass of RLS.
+Use `ctx.skipRules.table` (or `db.skipRules.table`) for an explicit bypass of RLS.
 
 ## Query Builder
 
@@ -346,7 +350,7 @@ await db
   .scheduled({ delayMs: 60_000 });
 ```
 
-Scheduled deletes require passing `{ scheduler, scheduledDelete }` to `createDatabase`
+Scheduled deletes require passing `{ scheduler, scheduledDelete }` when building `ctx.table`
 and exposing `scheduledDeleteFactory(schema, edges)` as an internal mutation.
 
 ### `returning()`
@@ -404,6 +408,20 @@ users.$inferInsert
 ```ts
 getTableColumns(users) // includes _id/_creationTime
 getTableConfig(users)  // indexes/unique/fks/rls/checks
+```
+
+## Stream & Pagination Helpers
+
+Native fork of `convex-helpers` stream utilities, exported from `better-convex/orm`:
+
+```ts
+db.stream() // preferred entrypoint
+db.stream(schema) // optional explicit schema
+stream(ctx.db, schema)
+mergedStream(streams, indexFields)
+streamIndexRange(db, schema, table, index, bounds, order)
+getPage(ctx, request)
+paginator(db, schema)
 ```
 
 ## Notes

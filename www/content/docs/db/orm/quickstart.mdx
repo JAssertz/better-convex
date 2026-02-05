@@ -80,16 +80,41 @@ export const ormSchema = defineRelations({ users, posts }, (r) => ({
 export const ormEdges = extractRelationsConfig(ormSchema);
 ```
 
-## Step 4: Query Data
+## Step 4: Attach ORM to Context (once)
+
+Create a small helper that attaches Better‑Convex ORM to `ctx.table`. Do this once in your context setup.
+
+```ts title="convex/lib/orm.ts"
+import type { GenericDatabaseWriter } from 'convex/server';
+import { createDatabase } from 'better-convex/orm';
+import { ormSchema, ormEdges } from '../schema';
+
+export const withOrm = <Ctx extends { db: GenericDatabaseWriter<any> }>(ctx: Ctx) => {
+  const table = createDatabase(ctx.db, ormSchema, ormEdges);
+  return { ...ctx, table, skipRules: table.skipRules };
+};
+```
+
+If you use better‑convex cRPC, wire it into the context:
+
+```ts title="convex/lib/crpc.ts"
+const c = initCRPC
+  .dataModel<DataModel>()
+  .context({
+    query: (ctx) => withOrm(ctx),
+    mutation: (ctx) => withOrm(ctx),
+  })
+  .create({ ... });
+```
+
+## Step 5: Query Data
 
 ```ts title="convex/queries.ts"
 import { query } from './_generated/server';
-import { createDatabase } from 'better-convex/orm';
-import { ormSchema, ormEdges } from './schema';
 
 export const getPublishedPosts = query({
   handler: async (ctx) => {
-    const db = createDatabase(ctx.db, ormSchema, ormEdges);
+    const db = ctx.table;
 
     return db.query.posts.findMany({
       where: { published: true },
@@ -105,14 +130,14 @@ export const getPublishedPosts = query({
 
 - Defined tables with `convexTable()`
 - Added relations with `defineRelations()`
-- Created a typed DB instance with `createDatabase()`
+- Attached the ORM once as `ctx.table`
 - Queried data using Drizzle‑style `findMany()`
 
 ## Common Gotchas
 
 | Issue | Fix |
 |---|---|
-| `createDatabase` type errors | Pass `ormSchema` + `ormEdges`, not raw tables |
+| `ctx.table` is missing | Ensure `withOrm(ctx)` is applied in your context |
 | Relations not loading | Ensure `defineRelations()` and `extractRelationsConfig()` are used |
 | Slow `orderBy` | Add `index('...').on(t.field)` in `convexTable` extraConfig |
 | `columns` doesn’t reduce reads | Projection is post‑fetch |

@@ -80,6 +80,17 @@ export class ConvexUpdateBuilder<
       throw new Error('set() must be called before execute()');
     }
 
+    const ormContext = getOrmContext(this.db);
+    const strict = ormContext?.strict ?? true;
+    if (!this.whereExpression) {
+      if (strict) {
+        throw new Error('update/delete requires where() when strict is true');
+      }
+      console.warn(
+        'update/delete without where() is running with strict=false (full scan).'
+      );
+    }
+
     const onUpdateSet: Record<string, unknown> = {};
     for (const [columnName, builder] of Object.entries(
       getTableColumns(this.table)
@@ -114,7 +125,6 @@ export class ConvexUpdateBuilder<
       );
     }
 
-    const ormContext = getOrmContext(this.db);
     const rls = ormContext?.rls;
     const foreignKeyGraph = ormContext?.foreignKeyGraph;
     if (!foreignKeyGraph) {

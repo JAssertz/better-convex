@@ -408,14 +408,6 @@ export type DBQueryConfigOrderBy<TTableConfig extends TableRelationalConfig> =
  */
 
 /**
- * Normalize optional columns config to a record for selection logic.
- */
-type ColumnsSelection<T> = Assume<
-  Exclude<T, undefined>,
-  Record<string, unknown>
->;
-
-/**
  * Infer selected columns from a raw selection using Drizzle v1 semantics.
  * - Any `true` => include-only
  * - All `false` => exclude-only

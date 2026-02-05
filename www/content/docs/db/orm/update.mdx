@@ -9,18 +9,22 @@ import { InfoIcon, AlertTriangle } from "lucide-react"
 
 Better-Convex ORM provides a Drizzle-style `update()` builder for Convex mutations.
 
+<Callout icon={<AlertTriangle />}>
+With `strict: true` (default), `update()` requires `.where(...)`. Full-table updates throw. Set `defineSchema(..., { strict: false })` to allow full scans (warns).
+</Callout>
+
 ## Basic Update
 
 ```ts title="convex/mutations.ts"
 import { mutation } from './_generated/server';
 import { v } from 'convex/values';
-import { createDatabase, eq } from 'better-convex/orm';
-import { ormSchema, ormEdges, users } from './schema';
+import { eq } from 'better-convex/orm';
+import { users } from './schema';
 
 export const renameUser = mutation({
   args: { userId: v.id('users'), name: v.string() },
   handler: async (ctx, args) => {
-    const db = createDatabase(ctx.db, ormSchema, ormEdges);
+    const db = ctx.table;
 
     await db
       .update(users)
@@ -56,4 +60,3 @@ const ids = await db
 <Callout icon={<InfoIcon />}>
 Unique constraints, foreign keys, and RLS policies are enforced at runtime for ORM mutations. Direct `ctx.db.patch(...)` bypasses these checks.
 </Callout>
-

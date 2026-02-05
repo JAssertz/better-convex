@@ -80,15 +80,25 @@ const posts = convexTable(
 
 - Unique, foreign keys, and `check()` constraints are enforced only through Better‑Convex ORM mutations
 - Foreign key actions require an index on the referencing columns
+- Relation loading requires indexes on relation fields (missing indexes throw unless `strict: false`)
+- Update/delete without `where()` throws unless `strict: false`
 - Check constraints follow SQL-like NULL semantics: the check fails only when the expression is `false` (and passes on `unknown`)
 - Defaults are applied only by Better‑Convex ORM inserts/updates (`.default(...)`, `$defaultFn(...)`, `$onUpdateFn(...)`)
 - Direct `ctx.db` writes bypass all ORM enforcement
+
+<Callout icon={<AlertTriangle />}>
+**Uniqueness under concurrency**: runtime uniqueness checks are best‑effort within a mutation. Concurrent mutations can still race (including 1:1 relations).  
+Recommended patterns:
+- Use `onConflictDoNothing()` / `onConflictDoUpdate()` for idempotent writes
+- Retry on conflict when appropriate
+- Serialize writes per unique key in application logic when strict guarantees are required
+</Callout>
 
 ## Soft & Scheduled Deletes
 
 - Soft/scheduled deletes are **optional helpers** and not part of Drizzle v1
 - Soft deletes require a `deletionTime` field in your table
-- Scheduled deletes require `createDatabase(..., { scheduler, scheduledDelete })`
+- Scheduled deletes require wiring `scheduler` + `scheduledDelete` when you build `ctx.table`
 
 ## Performance Guidance
 

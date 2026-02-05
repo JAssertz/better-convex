@@ -86,6 +86,29 @@ export const ormSchema = defineRelations({ users, posts }, (r) => ({
 export const ormEdges = extractRelationsConfig(ormSchema);
 ```
 
+## Schema Options
+
+`defineSchema` accepts Convex's schema options and a Better‑Convex `strict` flag.
+
+```ts
+import { defineSchema } from 'better-convex/orm';
+
+export default defineSchema({ users, posts }, { strict: false });
+```
+
+- `strict` (default `true`): missing relation indexes throw at runtime.
+- `strict: false`: relation loading falls back to full‑scan `filter` queries and lets Convex emit warnings.
+
+### Strict Policy (Guardrails)
+
+Only relation index enforcement is active today. Other guardrails are planned.
+
+| Area | Current (2026‑02‑05) | Strict `true` | Strict `false` |
+|---|---|---|---|
+| Relation loading missing index | throws | throws | warn + full scan |
+| Pagination orderBy missing index | warn + fallback to `_creationTime` | warn + fallback | warn + fallback |
+| Update/delete without `where()` | throws | throws | warn + allow |
+
 ## Indexes
 
 Add indexes for fields you filter or sort by.

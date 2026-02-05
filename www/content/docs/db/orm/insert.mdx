@@ -14,13 +14,12 @@ Better-Convex ORM provides a Drizzle-style `insert()` builder for Convex mutatio
 ```ts title="convex/mutations.ts"
 import { mutation } from './_generated/server';
 import { v } from 'convex/values';
-import { createDatabase } from 'better-convex/orm';
-import { ormSchema, ormEdges, users } from './schema';
+import { users } from './schema';
 
 export const createUser = mutation({
   args: { email: v.string(), name: v.string() },
   handler: async (ctx, args) => {
-    const db = createDatabase(ctx.db, ormSchema, ormEdges);
+    const db = ctx.table;
 
     await db.insert(users).values({
       email: args.email,

@@ -53,7 +53,8 @@ export class RelationalQueryBuilder<
     private edgeMetadata: EdgeMetadata[],
     private db: GenericDatabaseReader<any>,
     private allEdges?: EdgeMetadata[], // M6.5 Phase 2: All edges for nested loading
-    private rls?: RlsContext
+    private rls?: RlsContext,
+    private relationLoading?: { concurrency?: number }
   ) {}
 
   /**
@@ -96,7 +97,9 @@ export class RelationalQueryBuilder<
         : ({} as DBQueryConfig<'many', true, TSchema, TTableConfig>),
       'many',
       this.allEdges, // M6.5 Phase 2: Pass all edges for nested loading
-      this.rls
+      this.rls,
+      undefined,
+      this.relationLoading
     );
   }
 
@@ -147,7 +150,9 @@ export class RelationalQueryBuilder<
       },
       'first',
       this.allEdges, // M6.5 Phase 2: Pass all edges for nested loading
-      this.rls
+      this.rls,
+      undefined,
+      this.relationLoading
     );
   }
 
@@ -209,7 +214,8 @@ export class RelationalQueryBuilder<
       'paginate',
       this.allEdges, // M6.5 Phase 2: All edges for nested loading
       this.rls,
-      paginationOpts // M6.5 Phase 4: Pass pagination options
+      paginationOpts, // M6.5 Phase 4: Pass pagination options
+      this.relationLoading
     );
   }
 }

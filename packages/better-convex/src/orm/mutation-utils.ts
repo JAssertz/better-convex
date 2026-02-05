@@ -16,6 +16,7 @@ import type {
   UnaryExpression,
 } from './filter-expression';
 import { isFieldReference } from './filter-expression';
+import { findIndexForColumns, getIndexes } from './index-utils';
 import type { TablesRelationalConfig } from './relations';
 import type { RlsContext } from './rls/types';
 import { Columns, OrmContext, TableName } from './symbols';
@@ -51,6 +52,7 @@ export type OrmContextValue = {
   scheduler?: Scheduler;
   scheduledDelete?: SchedulableFunctionReference;
   rls?: RlsContext;
+  strict?: boolean;
 };
 
 type ForeignKeyDefinition = {
@@ -154,47 +156,6 @@ export function getForeignKeys(
   }
   const fromField = (table as any).foreignKeys;
   return Array.isArray(fromField) ? fromField : [];
-}
-
-export function getIndexes(
-  table: ConvexTable<any>
-): { name: string; fields: string[] }[] {
-  const fromMethod = (table as any).getIndexes?.();
-  if (Array.isArray(fromMethod)) {
-    return fromMethod;
-  }
-  const fromField = (table as any).indexes;
-  if (!Array.isArray(fromField)) {
-    return [];
-  }
-  return fromField.map(
-    (entry: { indexDescriptor: string; fields: string[] }) => ({
-      name: entry.indexDescriptor,
-      fields: entry.fields,
-    })
-  );
-}
-
-function findIndexForColumns(
-  indexes: { name: string; fields: string[] }[],
-  columns: string[]
-): string | null {
-  for (const index of indexes) {
-    if (index.fields.length < columns.length) {
-      continue;
-    }
-    let matches = true;
-    for (let i = 0; i < columns.length; i++) {
-      if (index.fields[i] !== columns[i]) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches) {
-      return index.name;
-    }
-  }
-  return null;
 }
 
 export function getColumnName(column: ColumnBuilder<any, any, any>): string {

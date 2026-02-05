@@ -18,17 +18,21 @@ import {
 // Better Convex ORM Schema (Drizzle-style)
 // ============================================================================
 
-export const users = convexTable('users', {
-  name: text().notNull(),
-  email: text().notNull(),
-  height: number(),
-  age: integer(),
-  status: text(),
-  role: text(),
-  deletedAt: number(),
-  cityId: id('cities'),
-  homeCityId: id('cities'),
-});
+export const users = convexTable(
+  'users',
+  {
+    name: text().notNull(),
+    email: text().notNull(),
+    height: number(),
+    age: integer(),
+    status: text(),
+    role: text(),
+    deletedAt: number(),
+    cityId: id('cities'),
+    homeCityId: id('cities'),
+  },
+  (t) => [index('by_city').on(t.cityId)]
+);
 
 export const cities = convexTable('cities', {
   name: text().notNull(),
@@ -48,6 +52,7 @@ export const posts = convexTable(
     embedding: vector(1536),
   },
   (t) => [
+    index('by_author').on(t.authorId),
     index('numLikesAndType').on(t.type, t.numLikes),
     searchIndex('text_search').on(t.text).filter(t.type),
     vectorIndex('embedding_vec')
@@ -57,21 +62,29 @@ export const posts = convexTable(
   ]
 );
 
-export const comments = convexTable('comments', {
-  postId: id('posts').notNull(),
-  authorId: id('users'),
-  text: text().notNull(),
-});
+export const comments = convexTable(
+  'comments',
+  {
+    postId: id('posts').notNull(),
+    authorId: id('users'),
+    text: text().notNull(),
+  },
+  (t) => [index('by_post').on(t.postId), index('by_author').on(t.authorId)]
+);
 
 export const books = convexTable('books', {
   name: text().notNull(),
 });
 
-export const bookAuthors = convexTable('bookAuthors', {
-  bookId: id('books').notNull(),
-  authorId: id('users').notNull(),
-  role: text().notNull(),
-});
+export const bookAuthors = convexTable(
+  'bookAuthors',
+  {
+    bookId: id('books').notNull(),
+    authorId: id('users').notNull(),
+    role: text().notNull(),
+  },
+  (t) => [index('by_book').on(t.bookId), index('by_author').on(t.authorId)]
+);
 
 export const node = convexTable('node', {
   parentId: id('node'),

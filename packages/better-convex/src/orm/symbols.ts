@@ -10,3 +10,7 @@ export const Relations = Symbol.for('better-convex:Relations');
 export const OrmContext = Symbol.for('better-convex:OrmContext');
 export const RlsPolicies = Symbol.for('better-convex:RlsPolicies');
 export const EnableRLS = Symbol.for('better-convex:EnableRLS');
+export const OrmSchemaOptions = Symbol.for('better-convex:OrmSchemaOptions');
+export const OrmSchemaDefinition = Symbol.for(
+  'better-convex:OrmSchemaDefinition'
+);

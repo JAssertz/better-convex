@@ -33,6 +33,25 @@ describe('M3 Query Builder', () => {
       expect(typeof db.query.users.findMany).toBe('function');
       expect(typeof db.query.users.findFirst).toBe('function');
     });
+
+    it('should expose stream wrapper on db', async ({ ctx }) => {
+      await ctx.db.insert('users', {
+        name: 'Alice',
+        email: 'alice@example.com',
+      });
+
+      const db = ctx.table;
+      const streamDb = db.stream(schema);
+      await streamDb.query('users').take(1);
+      const rows = await db.stream().query('users').take(1);
+      // @ts-expect-error take expects a number
+      db.stream().query('users').take('nope');
+      // @ts-expect-error unknown field should fail typecheck
+      rows[0].notAField;
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].name).toBe('Alice');
+    });
   });
 
   describe('findMany()', () => {

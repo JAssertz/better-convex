@@ -17,6 +17,12 @@ Relations in Better-Convex ORM use the same API as Drizzle v1 for **defining** a
 Relation loading via `with:` works end-to-end. Nested `with` has a depth limit and per-relation filters are post-fetch for `many()` relations.
 </Callout>
 
+<Callout icon={<AlertTriangle />}>
+Relation loading requires indexes on relation fields (e.g. `posts.authorId`). Missing indexes throw at runtime to avoid full scans. Set `defineSchema(..., { strict: false })` to allow unindexed scans with Convex warnings.
+</Callout>
+
+See Schema Options for strict policy details.
+
 ## Relation Config Options
 
 Better-Convex mirrors Drizzle’s `defineRelations()` config shape.
@@ -84,6 +90,10 @@ const ormSchema = defineRelations({ users, profiles }, (r) => ({
 
 <Callout icon={<InfoIcon />}>
 **Relation Definition**: Use `from` and `to` to describe the foreign key relationship. In Convex, primary keys are `_id`.
+</Callout>
+
+<Callout icon={<AlertTriangle />}>
+**1:1 uniqueness**: enforce a unique constraint on the foreign key column (`.unique()` / `uniqueIndex()`). Runtime uniqueness is best‑effort; concurrent mutations can still race.
 </Callout>
 
 ### One-to-Many Relations
@@ -154,6 +164,53 @@ const ormSchema = defineRelations({ posts, tags, postsTags }, (r) => ({
     tag: r.one.tags({ from: r.postsTags.tagId, to: r.tags._id }),
   },
 }));
+```
+
+### Many-to-Many With Data (Join Table + Payload)
+
+If you need extra data on the relationship (role, timestamps, etc.), put it on the join table. No special API required.
+
+```ts title="convex/schema.ts" showLineNumbers {1-3,5-33,35-52}
+import { convexTable, defineRelations, id, text, number } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  name: text().notNull(),
+});
+
+const groups = convexTable('groups', {
+  name: text().notNull(),
+});
+
+const memberships = convexTable('memberships', {
+  userId: id('users').notNull(),
+  groupId: id('groups').notNull(),
+  role: text().notNull(),
+  joinedAt: number().notNull(),
+});
+
+const ormSchema = defineRelations({ users, groups, memberships }, (r) => ({
+  users: {
+    memberships: r.many.memberships(),
+  },
+  groups: {
+    memberships: r.many.memberships(),
+  },
+  memberships: {
+    user: r.one.users({ from: r.memberships.userId, to: r.users._id }),
+    group: r.one.groups({ from: r.memberships.groupId, to: r.groups._id }),
+  },
+}));
+```
+
+```ts title="convex/queries.ts"
+const usersWithGroups = await db.query.users.findMany({
+  with: {
+    memberships: {
+      columns: { role: true, joinedAt: true },
+      with: { group: true },
+    },
+  },
+});
 ```
 
 ### Many-to-Many Relations with `.through()`
@@ -330,6 +387,10 @@ If a relation relies on inference (no `from`/`to`), define both sides in the sam
 
 Define both sides when you want `with` loading in both directions.
 
+### One‑Way Definitions
+
+You can define relations only on the side you need. When you do, provide explicit `from`/`to` (and `alias` if ambiguous). The inverse side is optional and won’t be available for `with` unless you define it.
+
 ### Predefined Filters
 
 You can attach a predefined `where` filter to a relation. It will always be applied:
@@ -364,9 +425,7 @@ const ormSchema = defineRelations({ users, posts }, (r) => ({
 Better-Convex ORM supports Drizzle-style relation loading:
 
 ```ts
-import { createDatabase } from 'better-convex/orm';
-
-const db = createDatabase(ctx.db, ormSchema, ormEdges);
+const db = ctx.table;
 
 const usersWithPosts = await db.query.users.findMany({
   with: {
@@ -409,11 +468,11 @@ const usersOnlyPosts = await db.query.users.findMany({
 
 | Issue | Solution |
 |-------|----------|
-| **Relations not working** | Define relations in `defineRelations()` and pass `ormEdges` to `createDatabase` |
+| **Relations not working** | Define relations in `defineRelations()` and use `ormEdges` when building `ctx.table` |
 | **Foreign key field missing** | Define the FK column yourself (e.g., `userId: id('users')`) |
 | **Type errors in `from`/`to`** | Ensure `from` columns belong to the source table and `to` columns belong to the target table |
 | **Self-referencing conflicts** | Use unique `alias` for each self-referencing relation |
-| **`with:` not working** | Ensure relations are defined on both tables and `ormEdges` is passed to `createDatabase` |
+| **`with:` not working** | Ensure relations are defined on both tables and `ormEdges` is used in `ctx.table` setup |
 
 ## Next Steps
 
