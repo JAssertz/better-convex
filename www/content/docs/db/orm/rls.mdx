@@ -62,16 +62,18 @@ const secrets = convexTable('secrets', {
 
 ## Context Setup (once)
 
-Attach ORM to `ctx.table` with RLS enabled. Do this once in your context layer:
+Attach ORM to `ctx.orm` with RLS enabled. Do this once in your context layer:
 
 ```ts title="convex/lib/orm.ts"
 import type { GenericDatabaseWriter } from 'convex/server';
-import { createDatabase } from 'better-convex/orm';
-import { ormSchema, ormEdges } from '../schema';
+import { createOrm } from 'better-convex/orm';
+import { ormSchema } from '../schema';
+
+const orm = createOrm({ schema: ormSchema });
 
 export const withOrm = <Ctx extends { db: GenericDatabaseWriter<any> }>(ctx: Ctx) => {
-  const table = createDatabase(ctx.db, ormSchema, ormEdges, { rls: { ctx } });
-  return { ...ctx, table, skipRules: table.skipRules };
+  const ormDb = orm.db(ctx, { rls: { ctx } });
+  return { ...ctx, orm: ormDb };
 };
 ```
 
@@ -80,7 +82,7 @@ export const withOrm = <Ctx extends { db: GenericDatabaseWriter<any> }>(ctx: Ctx
 ```ts title="convex/queries.ts"
 export const listSecrets = query({
   handler: async (ctx) => {
-    const db = ctx.table;
+    const db = ctx.orm;
     return db.query.secrets.findMany();
   },
 });
@@ -88,10 +90,10 @@ export const listSecrets = query({
 
 ## Bypass Rules
 
-Use `ctx.skipRules.table` for trusted access:
+Use `ctx.orm.skipRules` for trusted access:
 
 ```ts
-await ctx.skipRules.table.query.secrets.findMany();
+await ctx.orm.skipRules.query.secrets.findMany();
 ```
 
 ## Roles (Optional)
@@ -109,7 +111,7 @@ rlsPolicy('admin_only', {
   using: (ctx, t) => eq(t.ownerId, ctx.viewerId),
 });
 
-const table = createDatabase(ctx.db, ormSchema, ormEdges, {
+const ormDb = orm.db(ctx, {
   rls: {
     ctx,
     roleResolver: (ctx) => ctx.roles ?? [],
@@ -121,7 +123,7 @@ const table = createDatabase(ctx.db, ormSchema, ormEdges, {
 
 <Callout icon={<AlertTriangle />}>
 - Policies are enforced at runtime, not in the database
-- `ctx.db` bypasses RLS; only ORM access (`ctx.table`) enforces rules
+- `ctx.db` bypasses RLS; only ORM access (`ctx.orm`) enforces rules
 - If RLS is enabled with no permissive policies, access is denied by default
 </Callout>
 

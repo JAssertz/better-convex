@@ -62,12 +62,11 @@ export const posts = convexTable('posts', {
 **Nullable by default**: `text()` is `string | null`. Use `.notNull()` for required fields.
 </Callout>
 
-## Step 3: Define Relations + Edges
+## Step 3: Define Relations
 
 ```ts title="convex/schema.ts"
 import {
   defineRelations,
-  extractRelationsConfig,
 } from 'better-convex/orm';
 
 export const ormSchema = defineRelations({ users, posts }, (r) => ({
@@ -76,22 +75,22 @@ export const ormSchema = defineRelations({ users, posts }, (r) => ({
     author: r.one.users({ from: r.posts.userId, to: r.users._id }),
   },
 }));
-
-export const ormEdges = extractRelationsConfig(ormSchema);
 ```
 
 ## Step 4: Attach ORM to Context (once)
 
-Create a small helper that attaches Better‑Convex ORM to `ctx.table`. Do this once in your context setup.
+Create a small helper that attaches Better‑Convex ORM to `ctx.orm`. Do this once in your context setup.
 
 ```ts title="convex/lib/orm.ts"
 import type { GenericDatabaseWriter } from 'convex/server';
-import { createDatabase } from 'better-convex/orm';
-import { ormSchema, ormEdges } from '../schema';
+import { createOrm } from 'better-convex/orm';
+import { ormSchema } from '../schema';
+
+const orm = createOrm({ schema: ormSchema });
 
 export const withOrm = <Ctx extends { db: GenericDatabaseWriter<any> }>(ctx: Ctx) => {
-  const table = createDatabase(ctx.db, ormSchema, ormEdges);
-  return { ...ctx, table, skipRules: table.skipRules };
+  const ormDb = orm.db(ctx);
+  return { ...ctx, orm: ormDb };
 };
 ```
 
@@ -114,7 +113,7 @@ import { query } from './_generated/server';
 
 export const getPublishedPosts = query({
   handler: async (ctx) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     return db.query.posts.findMany({
       where: { published: true },
@@ -130,15 +129,15 @@ export const getPublishedPosts = query({
 
 - Defined tables with `convexTable()`
 - Added relations with `defineRelations()`
-- Attached the ORM once as `ctx.table`
+- Attached the ORM once as `ctx.orm`
 - Queried data using Drizzle‑style `findMany()`
 
 ## Common Gotchas
 
 | Issue | Fix |
 |---|---|
-| `ctx.table` is missing | Ensure `withOrm(ctx)` is applied in your context |
-| Relations not loading | Ensure `defineRelations()` and `extractRelationsConfig()` are used |
+| `ctx.orm` is missing | Ensure `withOrm(ctx)` is applied in your context |
+| Relations not loading | Ensure `defineRelations()` includes both sides (or explicit `from`/`to`) |
 | Slow `orderBy` | Add `index('...').on(t.field)` in `convexTable` extraConfig |
 | `columns` doesn’t reduce reads | Projection is post‑fetch |
 

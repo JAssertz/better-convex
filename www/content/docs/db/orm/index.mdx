@@ -23,7 +23,7 @@ Better-Convex ORM brings Drizzle v1’s relational query builder to Convex. You 
 </Callout>
 
 <Callout icon={<InfoIcon />}>
-**Context setup**: attach ORM to `ctx.table` once (see Quickstart). Examples below assume `ctx.table` is available.
+**Context setup**: attach ORM to `ctx.orm` once (see Quickstart). Examples below assume `ctx.orm` is available.
 </Callout>
 
 ## Where It Differs From SQL ORMs
@@ -37,7 +37,7 @@ Better-Convex ORM brings Drizzle v1’s relational query builder to Convex. You 
 ## Quick Example
 
 ```ts title="convex/schema.ts"
-import { convexTable, defineRelations, text, boolean, id, extractRelationsConfig } from 'better-convex/orm';
+import { convexTable, defineRelations, text, boolean, id } from 'better-convex/orm';
 
 export const users = convexTable('users', {
   name: text().notNull(),
@@ -57,15 +57,13 @@ export const ormSchema = defineRelations({ users, posts }, (r) => ({
     author: r.one.users({ from: r.posts.userId, to: r.users._id }),
   },
 }));
-
-export const ormEdges = extractRelationsConfig(ormSchema);
 ```
 
 ```ts title="convex/queries.ts"
 import { query } from './_generated/server';
 export const getRecentPosts = query({
   handler: async (ctx) => {
-    const db = ctx.table;
+    const db = ctx.orm;
     return db.query.posts.findMany({
       where: { published: true },
       orderBy: { _creationTime: 'desc' },

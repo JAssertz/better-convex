@@ -22,6 +22,7 @@ import {
   arrayContained,
   arrayContains,
   arrayOverlaps,
+  between,
   column,
   contains,
   endsWith,
@@ -38,6 +39,7 @@ import {
   lte,
   ne,
   not,
+  notBetween,
   notIlike,
   notInArray,
   notLike,
@@ -47,6 +49,7 @@ import {
 import {
   findRelationIndex,
   findSearchIndexByName,
+  findVectorIndexByName,
   getIndexes,
 } from './index-utils';
 import { asc, desc } from './order-by';
@@ -65,6 +68,7 @@ import type {
   TableRelationalConfig,
   TablesRelationalConfig,
   ValueOrArray,
+  VectorSearchProvider,
 } from './types';
 import {
   type IndexStrategy,
@@ -107,7 +111,8 @@ export class GelRelationalQuery<
     private mode: 'many' | 'first',
     private _allEdges?: EdgeMetadata[], // M6.5 Phase 2: All edges for nested loading
     private rls?: RlsContext,
-    private relationLoading?: { concurrency?: number }
+    private relationLoading?: { concurrency?: number },
+    private vectorSearchProvider?: VectorSearchProvider
   ) {
     super();
     this.allowFullScan = (config as any).allowFullScan === true;
@@ -596,6 +601,24 @@ export class GelRelationalQuery<
         case 'lte':
           results.push(fieldValue <= value);
           continue;
+        case 'between': {
+          if (!Array.isArray(value) || value.length !== 2) {
+            results.push(false);
+            continue;
+          }
+          const [min, max] = value;
+          results.push(fieldValue >= min && fieldValue <= max);
+          continue;
+        }
+        case 'notBetween': {
+          if (!Array.isArray(value) || value.length !== 2) {
+            results.push(false);
+            continue;
+          }
+          const [min, max] = value;
+          results.push(fieldValue < min || fieldValue > max);
+          continue;
+        }
         default:
           throw new Error(`Unsupported field operator: ${op}`);
       }
@@ -913,6 +936,16 @@ export class GelRelationalQuery<
           continue;
         case 'lte':
           parts.push(lte(columnRef, value));
+          continue;
+        case 'between':
+          if (Array.isArray(value) && value.length === 2) {
+            parts.push(between(columnRef, value[0], value[1]));
+          }
+          continue;
+        case 'notBetween':
+          if (Array.isArray(value) && value.length === 2) {
+            parts.push(notBetween(columnRef, value[0], value[1]));
+          }
           continue;
         default:
           throw new Error(`Unsupported field operator: ${op}`);
@@ -1279,6 +1312,36 @@ export class GelRelationalQuery<
     return filtered;
   }
 
+  private async _finalizeRows(rows: any[]): Promise<any[]> {
+    let rowsWithRelations = rows;
+    if (this.config.with) {
+      rowsWithRelations = await this._loadRelations(
+        rows,
+        this.config.with,
+        0,
+        3,
+        this.edgeMetadata,
+        this.tableConfig
+      );
+    }
+
+    if ((this.config as any).extras) {
+      rowsWithRelations = this._applyExtras(
+        rowsWithRelations,
+        (this.config as any).extras,
+        this._getColumns(this.tableConfig),
+        this.config.with as Record<string, unknown> | undefined,
+        this.tableConfig.name
+      );
+    }
+
+    return this._selectColumns(
+      rowsWithRelations,
+      (this.config as any).columns,
+      this._getColumns(this.tableConfig)
+    );
+  }
+
   /**
    * Execute the query and return results
    * Phase 4 implementation with WhereClauseCompiler integration
@@ -1294,6 +1357,14 @@ export class GelRelationalQuery<
           filters?: Record<string, unknown>;
         }
       | undefined;
+    const vectorSearchConfig = config.vectorSearch as
+      | {
+          index: string;
+          vector: number[];
+          limit: number;
+          filter?: ((q: any) => unknown) | undefined;
+        }
+      | undefined;
     const wherePredicate =
       typeof config.where === 'function'
         ? (config.where as (row: any) => boolean | Promise<boolean>)
@@ -1307,6 +1378,85 @@ export class GelRelationalQuery<
 
     // Start Convex query
     let query: any = this.db.query(queryConfig.table);
+
+    if (vectorSearchConfig) {
+      if (searchConfig) {
+        throw new Error('vectorSearch cannot be combined with search.');
+      }
+      if (config.orderBy !== undefined) {
+        throw new Error(
+          'vectorSearch cannot be combined with orderBy. Vector results stay in similarity order.'
+        );
+      }
+      if (paginate !== undefined) {
+        throw new Error('vectorSearch cannot be combined with paginate.');
+      }
+      if (config.where !== undefined) {
+        throw new Error('vectorSearch cannot be combined with where.');
+      }
+      if (config.index !== undefined) {
+        throw new Error('vectorSearch cannot be combined with index.');
+      }
+      if (config.offset !== undefined) {
+        throw new Error('vectorSearch cannot be combined with offset.');
+      }
+      if (config.limit !== undefined) {
+        throw new Error(
+          'vectorSearch uses vectorSearch.limit. Top-level limit is not supported.'
+        );
+      }
+      if (!Array.isArray(vectorSearchConfig.vector)) {
+        throw new Error('vectorSearch.vector must be an array of numbers.');
+      }
+      if (
+        !Number.isInteger(vectorSearchConfig.limit) ||
+        vectorSearchConfig.limit < 1 ||
+        vectorSearchConfig.limit > 256
+      ) {
+        throw new Error(
+          'vectorSearch.limit must be an integer between 1 and 256.'
+        );
+      }
+      if (!this.vectorSearchProvider) {
+        throw new Error(
+          'vectorSearch is not configured. Pass { vectorSearch: ctx.vectorSearch } to orm.db(ctx, ...).'
+        );
+      }
+
+      const vectorIndex = findVectorIndexByName(
+        this.tableConfig.table as any,
+        vectorSearchConfig.index
+      );
+      if (!vectorIndex) {
+        throw new Error(
+          `Vector index '${vectorSearchConfig.index}' was not found on table '${this.tableConfig.name}'.`
+        );
+      }
+
+      const hits = await this.vectorSearchProvider(
+        this.tableConfig.name as string,
+        vectorSearchConfig.index,
+        {
+          vector: vectorSearchConfig.vector,
+          limit: vectorSearchConfig.limit,
+          filter: vectorSearchConfig.filter,
+        }
+      );
+
+      const fetched = await this._mapWithConcurrency(hits, async (hit) =>
+        this.db.get((hit as any)._id)
+      );
+      let rows = fetched.filter((row): row is any => !!row);
+      rows = this._applyRlsSelectFilter(rows, this.tableConfig);
+
+      const selectedRows = await this._finalizeRows(rows);
+
+      if (this.mode === 'first') {
+        return selectedRows[0] as TResult;
+      }
+
+      return selectedRows as TResult;
+    }
 
     if (searchConfig) {
       if (config.orderBy !== undefined) {
@@ -1382,33 +1532,7 @@ export class GelRelationalQuery<
           );
         }
 
-        let pageWithRelations = pageRows;
-        if (this.config.with) {
-          pageWithRelations = await this._loadRelations(
-            pageRows,
-            this.config.with,
-            0,
-            3,
-            this.edgeMetadata,
-            this.tableConfig
-          );
-        }
-
-        if ((this.config as any).extras) {
-          pageWithRelations = this._applyExtras(
-            pageWithRelations,
-            (this.config as any).extras,
-            this._getColumns(this.tableConfig),
-            this.config.with as Record<string, unknown> | undefined,
-            this.tableConfig.name
-          );
-        }
-
-        const selectedPage = this._selectColumns(
-          pageWithRelations,
-          (this.config as any).columns,
-          this._getColumns(this.tableConfig)
-        );
+        const selectedPage = await this._finalizeRows(pageRows);
 
         return {
           page: selectedPage,
@@ -1447,33 +1571,7 @@ export class GelRelationalQuery<
         );
       }
 
-      let rowsWithRelations = rows;
-      if (this.config.with) {
-        rowsWithRelations = await this._loadRelations(
-          rows,
-          this.config.with,
-          0,
-          3,
-          this.edgeMetadata,
-          this.tableConfig
-        );
-      }
-
-      if ((this.config as any).extras) {
-        rowsWithRelations = this._applyExtras(
-          rowsWithRelations,
-          (this.config as any).extras,
-          this._getColumns(this.tableConfig),
-          this.config.with as Record<string, unknown> | undefined,
-          this.tableConfig.name
-        );
-      }
-
-      const selectedRows = this._selectColumns(
-        rowsWithRelations,
-        (this.config as any).columns,
-        this._getColumns(this.tableConfig)
-      );
+      const selectedRows = await this._finalizeRows(rows);
 
       if (this.mode === 'first') {
         return selectedRows[0] as TResult;

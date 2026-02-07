@@ -6,6 +6,12 @@ export type TableSearchIndex = {
   searchField: string;
   filterFields: string[];
 };
+export type TableVectorIndex = {
+  name: string;
+  vectorField: string;
+  dimensions: number;
+  filterFields: string[];
+};
 
 export function getIndexes(
   table: ConvexTable<any>
@@ -56,6 +62,41 @@ export function findSearchIndexByName(
 ): TableSearchIndex | null {
   return (
     getSearchIndexes(table).find((index) => index.name === indexName) ?? null
+  );
+}
+
+export function getVectorIndexes(table: ConvexTable<any>): TableVectorIndex[] {
+  const fromMethod = (table as any).getVectorIndexes?.();
+  if (Array.isArray(fromMethod)) {
+    return fromMethod;
+  }
+
+  const fromField = (table as any).vectorIndexes;
+  if (!Array.isArray(fromField)) {
+    return [];
+  }
+
+  return fromField.map(
+    (entry: {
+      indexDescriptor: string;
+      vectorField: string;
+      dimensions: number;
+      filterFields: string[];
+    }) => ({
+      name: entry.indexDescriptor,
+      vectorField: entry.vectorField,
+      dimensions: entry.dimensions,
+      filterFields: entry.filterFields ?? [],
+    })
+  );
+}
+
+export function findVectorIndexByName(
+  table: ConvexTable<any>,
+  indexName: string
+): TableVectorIndex | null {
+  return (
+    getVectorIndexes(table).find((index) => index.name === indexName) ?? null
   );
 }
 

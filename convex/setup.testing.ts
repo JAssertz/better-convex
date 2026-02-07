@@ -1,10 +1,8 @@
 import {
-  type CreateDatabaseOptions,
-  createDatabase,
+  type CreateOrmDbOptions,
+  createOrm,
   type DatabaseWithMutations,
   type DatabaseWithSkipRules,
-  type EdgeMetadata,
-  extractRelationsConfig,
   type TablesRelationalConfig,
 } from 'better-convex/orm';
 import type {
@@ -21,65 +19,55 @@ export function convexTest<Schema extends SchemaDefinition<any, any>>(
   return baseConvexTest(schema);
 }
 
-const defaultEdges = extractRelationsConfig(relations);
-
-export const getCtxWithTable = <
+export const getOrmCtx = <
   Ctx extends { db: GenericDatabaseWriter<any> },
   Schema extends TablesRelationalConfig,
 >(
   ctx: Ctx,
   schema: Schema,
-  edges: EdgeMetadata[],
-  options?: CreateDatabaseOptions
+  options?: CreateOrmDbOptions
 ) => {
-  const ctxWithTable = { ...ctx } as Ctx & {
-    table: DatabaseWithSkipRules<DatabaseWithMutations<Schema>>;
-    skipRules: DatabaseWithSkipRules<
-      DatabaseWithMutations<Schema>
-    >['skipRules'];
+  const ctxWithOrm = { ...ctx } as Ctx & {
+    orm: DatabaseWithSkipRules<DatabaseWithMutations<Schema>>;
   };
   const rls =
     options?.rls && options.rls.ctx
       ? options.rls
-      : { ...(options?.rls ?? {}), ctx: ctxWithTable };
-  const table = createDatabase(ctx.db, schema, edges, { ...options, rls });
-  ctxWithTable.table = table as DatabaseWithSkipRules<
+      : { ...(options?.rls ?? {}), ctx: ctxWithOrm };
+  const orm = createOrm({ schema });
+  const ormDb = orm.db(ctx, { ...options, rls });
+  ctxWithOrm.orm = ormDb as DatabaseWithSkipRules<
     DatabaseWithMutations<Schema>
   >;
-  ctxWithTable.skipRules = table.skipRules;
-  return ctxWithTable;
+  return ctxWithOrm;
 };
 
-// Default context wrapper that attaches Better Convex ORM as ctx.table
+// Default context wrapper that attaches Better Convex ORM as ctx.orm
 export async function runCtx<T extends { db: GenericDatabaseWriter<any> }>(
   ctx: T
-): Promise<ReturnType<typeof getCtxWithTable<T, typeof relations>>> {
-  return getCtxWithTable(ctx, relations, defaultEdges);
+): Promise<ReturnType<typeof getOrmCtx<T, typeof relations>>> {
+  return getOrmCtx(ctx, relations);
 }
 
 export type TestCtx = Awaited<ReturnType<typeof runCtx>>;
 
-export async function withTableCtx<
+export async function withOrmCtx<
   Schema extends SchemaDefinition<any, any>,
   Relations extends TablesRelationalConfig,
   Result,
 >(
   schema: Schema,
   relationsConfig: Relations,
-  edges: EdgeMetadata[],
   fn: (ctx: {
-    table: DatabaseWithSkipRules<DatabaseWithMutations<Relations>>;
-    skipRules: DatabaseWithSkipRules<
-      DatabaseWithMutations<Relations>
-    >['skipRules'];
+    orm: DatabaseWithSkipRules<DatabaseWithMutations<Relations>>;
     db: GenericDatabaseWriter<any>;
   }) => Promise<Result>,
-  options?: CreateDatabaseOptions
+  options?: CreateOrmDbOptions
 ): Promise<Result> {
   const t = convexTest(schema);
   let result: Result | undefined;
   await t.run(async (baseCtx) => {
-    const ctx = getCtxWithTable(baseCtx, relationsConfig, edges, options);
+    const ctx = getOrmCtx(baseCtx, relationsConfig, options);
     result = await fn(ctx);
   });
   return result as Result;

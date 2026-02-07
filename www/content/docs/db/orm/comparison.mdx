@@ -29,6 +29,7 @@ This guide compares Drizzle v1 and Better-Convex ORM side-by-side. It focuses on
 - SQL joins and raw SQL execution
 - Database migrations and database-side constraints/triggers
 - Custom SQL data types
+- ORM query-builder aggregations (`count`, `sum`, `avg`, `max`, `min`) should use Convex aggregate components
 
 ## Convex‑Ents Compatibility
 
@@ -41,7 +42,7 @@ Better‑Convex is designed as a successor to Convex‑Ents, but it follows Driz
 - Many‑to‑many with data uses an explicit join table with payload fields
 
 **What’s intentionally different:**
-- No ent‑object API (`getX()`, `patch()`, lazy promises); use `ctx.table.query.*` and mutation builders
+- No ent‑object API (`getX()`, `patch()`, lazy promises); use `ctx.orm.query.*` and mutation builders
 - No edge methods on loaded rows; use relation loading + mutation builders
 
 See [Migrate from Convex Ents](/docs/db/orm/migrate-from-ents) for a step‑by‑step mapping.
@@ -54,7 +55,7 @@ See [Migrate from Convex Ents](/docs/db/orm/migrate-from-ents) for a step‑by�
 - [ ] Convert table definitions to `convexTable()` with column builders (`text`, `integer`, `boolean`, `id`)
 - [ ] Replace manual `id` fields with Convex `_id`
 - [ ] Define relations using `defineRelations()` and `with`
-- [ ] Attach ORM to `ctx.table` in context (create once)
+- [ ] Attach ORM to `ctx.orm` in context (create once)
 - [ ] Keep `where`, `orderBy`, `limit`, `offset` shapes the same
 - [ ] Move joins to relation loading (`with`)
 
@@ -132,7 +133,7 @@ See [Migrate from Convex Ents](/docs/db/orm/migrate-from-ents) for a step‑by�
   </Tab>
   <Tab value="Better-Convex">
     ```ts
-    import { defineRelations, extractRelationsConfig } from 'better-convex/orm';
+    import { defineRelations } from 'better-convex/orm';
 
     export const ormSchema = defineRelations({ users, posts }, (r) => ({
       users: {
@@ -145,8 +146,6 @@ See [Migrate from Convex Ents](/docs/db/orm/migrate-from-ents) for a step‑by�
         }),
       },
     }));
-
-    export const ormEdges = extractRelationsConfig(ormSchema);
     ```
   </Tab>
 </Tabs>
@@ -174,7 +173,7 @@ See [Migrate from Convex Ents](/docs/db/orm/migrate-from-ents) for a step‑by�
   </Tab>
   <Tab value="Better-Convex">
     ```ts
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const users = await db.query.users.findMany();
 
@@ -200,13 +199,14 @@ See [Migrate from Convex Ents](/docs/db/orm/migrate-from-ents) for a step‑by�
 |---|---|---|
 | `pgTable()` / `mysqlTable()` / `sqliteTable()` | `convexTable()` | Same surface | 
 | `defineRelations()` | `defineRelations()` | Same surface |
-| `db.query.*.findMany()` | `db.query.*.findMany()` | Same surface via `ctx.table` |
-| `db.query.*.findFirst()` | `db.query.*.findFirst()` | Same surface via `ctx.table` |
+| `db.query.*.findMany()` | `db.query.*.findMany()` | Same surface via `ctx.orm` |
+| `db.query.*.findFirst()` | `db.query.*.findFirst()` | Same surface via `ctx.orm` |
 | `where` object filters | `where` object filters | Same shape |
 | `orderBy` | `orderBy` | Same shape, index-aware |
 | `columns` | `columns` | Post-fetch projection |
 | `with` | `with` | Relation loading |
 | `insert/update/delete` | `insert/update/delete` | Same surface |
+| `count/sum/avg/max/min` in query builder | Use components | Use [Aggregates](/docs/db/aggregates) (`@convex-dev/aggregate`) |
 | SQL joins | Not available | Use `with` |
 | Raw SQL | Not available | Convex is document-based |
 | Custom types | Not available | Use app-level encoding |
@@ -224,7 +224,7 @@ See [Migrate from Convex Ents](/docs/db/orm/migrate-from-ents) for a step‑by�
 
 | Gotcha | Fix |
 |---|---|
-| **`ctx.table` is missing** | Attach ORM once in context (`createDatabase(...)`) |
+| **`ctx.orm` is missing** | Attach ORM once in context (`createOrm({ schema }).db(ctx)`) |
 | **`id` vs `_id`** | Convex uses `_id` for primary keys |
 | **Nullable fields** | Types include `null` unless `.notNull()` |
 | **No SQL joins** | Use `with` relation loading |

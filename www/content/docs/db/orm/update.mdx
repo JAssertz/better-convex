@@ -25,7 +25,7 @@ import { users } from './schema';
 export const renameUser = mutation({
   args: { userId: v.id('users'), name: v.string() },
   handler: async (ctx, args) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await db
       .update(users)
@@ -99,6 +99,35 @@ Paged update result:
 <Callout icon={<InfoIcon />}>
 `paginate()` currently supports single-range index plans. Multi-probe filters (`inArray`, some `OR` patterns, complement ranges) are not yet supported in paged mutation mode.
 </Callout>
+
+## Async Batched Update
+
+Use async mode when a mutation can affect large sets.
+
+- Per call: `execute({ mode: 'async' })`
+- Convenience alias: `executeAsync(...)`
+- Global default: `defineSchema(..., { defaults: { mutationExecutionMode: 'async' } })`
+
+Async mode runs the first update batch in the current mutation, then schedules remaining batches through Convex scheduler.
+
+```ts
+const firstBatch = await db
+  .update(users)
+  .set({ role: 'member' })
+  .where(eq(users.status, 'pending'))
+  .returning({ id: users._id })
+  .execute({ mode: 'async', batchSize: 200, delayMs: 0 });
+```
+
+Important behavior:
+- `execute()` in async mode returns the same type shape as sync `execute()` (with `.returning()`, rows from the first batch only).
+- Remaining batches are scheduled asynchronously.
+- Explicit async APIs (`execute({ mode: 'async' })` / `executeAsync()`) cannot be combined with `.paginate()`.
+- `.paginate()` remains the caller-controlled execution path.
+- `batchSize` resolves as: per-call `batchSize` → `defaults.mutationBatchSize` → `100`.
+- `delayMs` resolves as: per-call `delayMs` → `defaults.mutationAsyncDelayMs` → `0`.
+
+Async execution requires wiring `scheduler` + `scheduledMutationBatch` when building `ctx.orm`.
 
 ## Drizzle Differences
 

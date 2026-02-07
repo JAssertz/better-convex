@@ -11,10 +11,10 @@ Query your Convex database using Drizzle v1’s relational query builder API. Be
 
 ## Setup
 
-These examples assume you attached ORM to `ctx.table` once in your context (see Quickstart).
+These examples assume you attached ORM to `ctx.orm` once in your context (see Quickstart).
 
 ```ts title="convex/queries.ts"
-const db = ctx.table;
+const db = ctx.orm;
 ```
 
 ## Basic Queries
@@ -24,7 +24,7 @@ const db = ctx.table;
 ```ts title="convex/queries.ts"
 export const getAllUsers = query({
   handler: async (ctx) => {
-    const db = ctx.table;
+    const db = ctx.orm;
     return db.query.users.findMany({ limit: 50 });
   },
 });
@@ -39,7 +39,7 @@ Non-paginated `findMany()` requires explicit sizing: provide `limit`, use `pagin
 ```ts title="convex/queries.ts"
 export const getFirstUser = query({
   handler: async (ctx) => {
-    const db = ctx.table;
+    const db = ctx.orm;
     return db.query.users.findFirst({
       where: { email: 'alice@example.com' },
     });
@@ -78,6 +78,8 @@ Predicate `where` (function form) runs via stream filtering and requires an expl
 | `gte` | `{ credits: { gte: 100 } }` | Greater than or equal |
 | `lt` | `{ age: { lt: 65 } }` | Less than |
 | `lte` | `{ loginCount: { lte: 10 } }` | Less than or equal |
+| `between` | `{ age: { between: [18, 65] } }` | Inclusive range (`>= min` and `<= max`) |
+| `notBetween` | `{ age: { notBetween: [18, 65] } }` | Strict outside range (`< min` or `> max`) |
 | `in` | `{ status: { in: ['active', 'pending'] } }` | Value in array (index-compiled when indexed) |
 | `notIn` | `{ status: { notIn: ['deleted'] } }` | Value not in array (index-compiled when indexed) |
 | `isNull` | `{ deletedAt: { isNull: true } }` | Null/undefined (index-compiled when indexed) |
@@ -101,7 +103,32 @@ Predicate `where` (function form) runs via stream filtering and requires an expl
 <Callout icon={<InfoIcon />}>
 Most string operators run post-fetch. For large datasets, prefer indexed filters first.
 `startsWith` and `like('prefix%')` use index ranges when the field is indexed.
+`between` and `notBetween` are also index-compiled when the field is indexed.
 </Callout>
+
+### SQL Subquery Operators (`exists`, `notExists`)
+
+Drizzle exposes `exists(query)` and `notExists(query)` as SQL subquery operators.
+Better-Convex does not support SQL subqueries at runtime, so these operators are unavailable.
+
+Use relation filters to model existence checks:
+
+```ts
+// Users with at least one post
+const withPosts = await db.query.users.findMany({
+  where: { posts: true },
+});
+
+// Users with no posts
+const withoutPosts = await db.query.users.findMany({
+  where: { NOT: { posts: true } },
+});
+```
+
+### Aggregations (`count`, `sum`, `avg`, `max`, `min`)
+
+For query-builder aggregations, use Convex aggregates via `@convex-dev/aggregate`.
+See [/docs/db/aggregates](/docs/db/aggregates).
 
 ### Full-Scan Operators and Workarounds
 
@@ -215,6 +242,55 @@ const posts = await db.query.posts.findMany({
 - object `where` on base table fields is allowed (post-search filter)
 - `with` is allowed for eager loading
 
+## System Tables (`db.system` passthrough)
+
+Use `db.system` for Convex system tables (`_storage`, `_scheduled_functions`).
+This is raw Convex access, not ORM query-builder behavior.
+
+```ts
+const job = await db.system.get(jobId);
+
+const files = await db.system
+  .query('_storage')
+  .take(20);
+
+const pendingJobs = await db.system
+  .query('_scheduled_functions')
+  .collect();
+```
+
+<Callout icon={<AlertTriangle />}>
+`db.system` supports raw Convex reader methods like `get` and `query`. ORM features such as
+`findMany`/`findFirst`, relation loading (`with`), and ORM-specific rule helpers do not apply.
+</Callout>
+
+## Vector Search
+
+Use `vectorSearch` on `findMany()` when your table defines a `vectorIndex`.
+
+```ts
+const posts = await db.query.posts.findMany({
+  vectorSearch: {
+    index: 'embedding_vec',
+    vector: args.embedding,
+    limit: 10,
+    filter: (q) => q.eq('type', 'news'),
+  },
+  with: { author: true },
+});
+```
+
+`vectorSearch.index` and `vectorSearch.filter` are strongly typed from your vector index definition.
+
+**Vector mode constraints**
+- `vectorSearch.limit` is required (`1..256`)
+- `orderBy` is not allowed
+- `paginate` is not allowed
+- `where` is not allowed
+- `index` is not allowed
+- `offset` is not allowed
+- `with`, `columns`, and `extras` are allowed
+
 ## Choosing Filter vs Paginate
 
 Use this decision matrix to avoid accidental full scans.
@@ -226,6 +302,7 @@ Use this decision matrix to avoid accidental full scans.
 | Complex JS predicate + pagination | `db.query.*.findMany({ where: (row) => ..., index: { name: 'by_field' }, paginate: { cursor, numItems, maximumRowsRead } })` | Explicit index + bounded scan |
 | Large lists | `db.query.*.findMany({ paginate })` | First `orderBy` field should be indexed |
 | Search + equality filters | `db.query.*.findMany({ search: { index, query, filters? } })` | `filters` must be in search index `filterFields` |
+| Embedding similarity | `db.query.*.findMany({ vectorSearch: { index, vector, limit, filter? } })` | Similarity order from vector search; no `paginate`/`where`/`orderBy` |
 
 ## Relation Loading With `with`
 
@@ -293,4 +370,4 @@ Extras are computed in JavaScript after fetching documents (and after `with` rel
 | `eq(field, null)` | Use `{ isNull: true }` |
 | Slow ordering | Add an index on the primary `orderBy` field |
 | `columns` doesn’t reduce reads | Projection is post‑fetch |
-| Relations not loading | Ensure `ormEdges` are used when building `ctx.table` |
+| Relations not loading | Ensure relations are defined on both sides (or explicit `from`/`to`) |

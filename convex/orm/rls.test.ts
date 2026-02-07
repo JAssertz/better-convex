@@ -17,7 +17,7 @@ import {
   text,
 } from 'better-convex/orm';
 import { it as baseIt, describe, expect } from 'vitest';
-import { convexTest, getCtxWithTable } from '../setup.testing';
+import { convexTest, getOrmCtx } from '../setup.testing';
 
 const users = convexTable('rls_users', {
   name: text().notNull(),
@@ -121,7 +121,7 @@ const it = baseIt.extend<{ ctx: any }>({
   ctx: async ({}, use) => {
     const t = convexTest(schema);
     await t.run(async (baseCtx) => {
-      const ctx = getCtxWithTable(baseCtx, relations, edges, {
+      const ctx = getOrmCtx(baseCtx, relations, {
         rls: {
           roleResolver: (ctx) => (ctx as { roles?: string[] }).roles ?? [],
         },
@@ -147,7 +147,7 @@ describe('RLS', () => {
 
     ctx.viewerId = viewerId;
 
-    const db = ctx.table;
+    const db = ctx.orm;
     const rows = await db.query.rls_secrets.findMany();
 
     expect(rows).toHaveLength(1);
@@ -165,7 +165,7 @@ describe('RLS', () => {
 
     ctx.viewerId = viewerId;
 
-    const db = ctx.table;
+    const db = ctx.orm;
     const rows = await db.query.rls_secrets.findMany();
 
     expect(rows).toHaveLength(0);
@@ -176,7 +176,7 @@ describe('RLS', () => {
   }) => {
     await ctx.db.insert('rls_locked', { value: 'secret' });
 
-    const db = ctx.table;
+    const db = ctx.orm;
     const rows = await db.query.rls_locked.findMany();
 
     expect(rows).toHaveLength(0);
@@ -188,7 +188,7 @@ describe('RLS', () => {
 
     ctx.viewerId = viewerId;
 
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await expect(async () => {
       await db.insert(secrets).values({ value: 'allowed', ownerId: otherId });
@@ -205,7 +205,7 @@ describe('RLS', () => {
 
     ctx.viewerId = viewerId;
 
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const result = await db
       .update(secrets)
@@ -229,7 +229,7 @@ describe('RLS', () => {
 
     ctx.viewerId = viewerId;
 
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await expect(async () => {
       await db
@@ -252,7 +252,7 @@ describe('RLS', () => {
 
     ctx.viewerId = viewerId;
 
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const result = await db
       .delete(secrets)
@@ -271,7 +271,7 @@ describe('RLS', () => {
 
     ctx.viewerId = viewerId;
 
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await expect(async () => {
       await db.insert(tasks).values({ title: 'Nope', ownerId: otherId });
@@ -289,7 +289,7 @@ describe('RLS', () => {
     await ctx.db.insert('rls_linked', { value: 'linked' });
     await ctx.db.insert('rls_linked', { value: 'blocked' });
 
-    const rows = await ctx.table.query.rls_linked.findMany();
+    const rows = await ctx.orm.query.rls_linked.findMany();
 
     expect(rows).toHaveLength(1);
     expect(rows[0].value).toBe('linked');
@@ -301,25 +301,25 @@ describe('RLS', () => {
     await ctx.db.insert('rls_role_docs', { value: 'allowed' });
 
     ctx.roles = [];
-    const denied = await ctx.table.query.rls_role_docs.findMany();
+    const denied = await ctx.orm.query.rls_role_docs.findMany();
     expect(denied).toHaveLength(0);
 
     ctx.roles = ['admin'];
-    const allowed = await ctx.table.query.rls_role_docs.findMany();
+    const allowed = await ctx.orm.query.rls_role_docs.findMany();
     expect(allowed).toHaveLength(1);
   });
 
-  it('allows bypass via ctx.skipRules.table', async ({ ctx }) => {
+  it('allows bypass via ctx.orm.skipRules', async ({ ctx }) => {
     const viewerId = await ctx.db.insert('rls_users', { name: 'Viewer' });
     const otherId = await ctx.db.insert('rls_users', { name: 'Other' });
 
     ctx.viewerId = viewerId;
 
-    await ctx.skipRules.table
+    await ctx.orm.skipRules
       .insert(secrets)
       .values({ value: 'allowed', ownerId: otherId });
 
-    const rows = await ctx.skipRules.table.query.rls_secrets.findMany();
+    const rows = await ctx.orm.skipRules.query.rls_secrets.findMany();
 
     expect(rows).toHaveLength(1);
     expect(rows[0].ownerId).toEqual(otherId);

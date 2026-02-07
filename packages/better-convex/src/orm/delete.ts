@@ -217,7 +217,7 @@ export class ConvexDeleteBuilder<
       }
       if (!ormContext?.scheduler || !ormContext.scheduledMutationBatch) {
         throw new Error(
-          'executeAsync() requires createDatabase(..., { scheduler, scheduledMutationBatch }).'
+          'executeAsync() requires orm.db(ctx) configured with scheduling (missing scheduler, scheduledMutationBatch).'
         );
       }
       const asyncBatchSize = config?.batchSize ?? batchSize;
@@ -450,7 +450,7 @@ export class ConvexDeleteBuilder<
     const foreignKeyGraph = ormContext?.foreignKeyGraph;
     if (!foreignKeyGraph) {
       throw new Error(
-        'Foreign key actions require using createDatabase(...) with a schema.'
+        'Foreign key actions require orm.db(ctx) configured from createOrm({ schema, ... }).'
       );
     }
 
@@ -523,7 +523,7 @@ export class ConvexDeleteBuilder<
         );
         if (!ormContext?.scheduler || !ormContext.scheduledDelete) {
           throw new Error(
-            'scheduled() requires createDatabase(..., { scheduler, scheduledDelete }).'
+            'scheduled() requires orm.db(ctx) configured with scheduling (ormFunctions.scheduledDelete).'
           );
         }
         const delayMs = this.scheduledDelayMs ?? 0;

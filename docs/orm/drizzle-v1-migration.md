@@ -40,7 +40,7 @@ const postsRelations = relations(posts, ({ one }) => ({
 ### After (v1)
 
 ```ts
-export const ormSchema = defineRelations({ users, posts }, (r) => ({
+export const relations = defineRelations({ users, posts }, (r) => ({
   users: {
     posts: r.many.posts(),
   },

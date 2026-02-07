@@ -8,6 +8,7 @@
 import {
   bigint,
   boolean,
+  type ConvexTable,
   convexTable,
   defineSchema,
   foreignKey,
@@ -240,6 +241,10 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
   );
 
   type Result = InferSelectModel<typeof posts>;
+  type VectorIndexes =
+    typeof posts extends ConvexTable<any, any, any, infer TVectorIndexes>
+      ? TVectorIndexes
+      : never;
 
   Expect<
     Equal<
@@ -253,6 +258,10 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
       }
     >
   >;
+
+  Expect<Equal<keyof VectorIndexes, 'embedding_vec'>>;
+  Expect<Equal<VectorIndexes['embedding_vec']['vectorField'], 'embedding'>>;
+  Expect<Equal<VectorIndexes['embedding_vec']['filterFields'], 'type'>>;
 }
 
 // Test 6d: unique() constraint + column unique()

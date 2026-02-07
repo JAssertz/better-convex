@@ -185,6 +185,22 @@ type InferSearchIndexRecordFromExtraValue<TValue> =
       >
     : {};
 
+type InferVectorIndexRecordFromExtraValue<TValue> =
+  TValue extends ConvexVectorIndexBuilder<
+    infer TName extends string,
+    infer TVectorField extends ConvexIndexColumn,
+    infer TFilterFields extends readonly ConvexIndexColumn[]
+  >
+    ? Record<
+        TName,
+        {
+          vectorField: ColumnNameFromBuilder<TVectorField>;
+          dimensions: number;
+          filterFields: SearchFilterFieldsUnionFromColumns<TFilterFields>;
+        }
+      >
+    : {};
+
 type InferredDbIndexesFromExtraConfig<TExtraConfig> = UnionToIntersection<
   InferDbIndexRecordFromExtraValue<
     ExtraConfigValues<Exclude<TExtraConfig, undefined>>
@@ -193,6 +209,12 @@ type InferredDbIndexesFromExtraConfig<TExtraConfig> = UnionToIntersection<
 
 type InferredSearchIndexesFromExtraConfig<TExtraConfig> = UnionToIntersection<
   InferSearchIndexRecordFromExtraValue<
+    ExtraConfigValues<Exclude<TExtraConfig, undefined>>
+  >
+>;
+
+type InferredVectorIndexesFromExtraConfig<TExtraConfig> = UnionToIntersection<
+  InferVectorIndexRecordFromExtraValue<
     ExtraConfigValues<Exclude<TExtraConfig, undefined>>
   >
 >;
@@ -215,6 +237,20 @@ type NormalizeSearchIndexMap<TIndexMap> = {
     : never;
 };
 
+type NormalizeVectorIndexMap<TIndexMap> = {
+  [K in keyof TIndexMap as K extends string ? K : never]: TIndexMap[K] extends {
+    vectorField: infer TVectorField extends string;
+    dimensions: infer TDimensions extends number;
+    filterFields: infer TFilterFields extends string;
+  }
+    ? {
+        vectorField: TVectorField;
+        dimensions: TDimensions;
+        filterFields: TFilterFields;
+      }
+    : never;
+};
+
 type InferDbIndexesFromExtraConfig<TExtraConfig> = SimplifyObject<
   {
     by_creation_time: ['_creationTime'];
@@ -223,6 +259,10 @@ type InferDbIndexesFromExtraConfig<TExtraConfig> = SimplifyObject<
 
 type InferSearchIndexesFromExtraConfig<TExtraConfig> = SimplifyObject<
   NormalizeSearchIndexMap<InferredSearchIndexesFromExtraConfig<TExtraConfig>>
+>;
+
+type InferVectorIndexesFromExtraConfig<TExtraConfig> = SimplifyObject<
+  NormalizeVectorIndexMap<InferredVectorIndexesFromExtraConfig<TExtraConfig>>
 >;
 
 type ForeignKeyDefinition = {
@@ -820,6 +860,30 @@ class ConvexTableImpl<T extends TableConfig> {
   }
 
   /**
+   * Internal: expose vector index metadata for runtime query execution
+   */
+  getVectorIndexes(): {
+    name: string;
+    vectorField: string;
+    dimensions: number;
+    filterFields: string[];
+  }[] {
+    return this.vectorIndexes.map(
+      (entry: {
+        indexDescriptor: string;
+        vectorField: string;
+        dimensions: number;
+        filterFields: string[];
+      }) => ({
+        name: entry.indexDescriptor,
+        vectorField: entry.vectorField,
+        dimensions: entry.dimensions,
+        filterFields: entry.filterFields,
+      })
+    );
+  }
+
+  /**
    * Internal: attach an RLS policy to this table
    */
   addRlsPolicy(policy: RlsPolicy): void {
@@ -1118,7 +1182,8 @@ type ConvexTableFnInternal = <
     columns: ColumnsWithTableName<TColumns, TName>;
   },
   InferDbIndexesFromExtraConfig<TExtraConfig>,
-  InferSearchIndexesFromExtraConfig<TExtraConfig>
+  InferSearchIndexesFromExtraConfig<TExtraConfig>,
+  InferVectorIndexesFromExtraConfig<TExtraConfig>
 >;
 
 export interface ConvexTableFn extends ConvexTableFnInternal {

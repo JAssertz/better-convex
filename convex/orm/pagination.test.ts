@@ -24,7 +24,7 @@ test('basic pagination - null cursor returns first page', async () => {
   // Test: Paginate first page
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const result = await db.query.users.findMany({
       paginate: {
@@ -55,7 +55,7 @@ test('pagination - multiple pages with cursor', async () => {
   // Test: Paginate through all pages
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     // Page 1
     const page1 = await db.query.users.findMany({
@@ -112,7 +112,7 @@ test('predicate pagination honors maximumRowsRead', async () => {
 
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const page1 = await db.query.users.findMany({
       where: (row) => row.name.endsWith('0'),
@@ -151,7 +151,7 @@ test('pagination - empty result set', async () => {
   // Test: Paginate empty table
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const result = await db.query.users.findMany({
       paginate: {
@@ -182,7 +182,7 @@ test('pagination - single page (isDone: true)', async () => {
   // Test: Paginate with larger page size
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const result = await db.query.users.findMany({
       paginate: {
@@ -214,7 +214,7 @@ test('pagination with WHERE filter', async () => {
   // Test: Paginate only users age >= 25
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const result = await db.query.users.findMany({
       where: { age: { gte: 25 } },
@@ -248,7 +248,7 @@ test('pagination with index-union filter requires allowFullScan opt-in', async (
 
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await expect(
       db.query.users.findMany({
@@ -278,7 +278,7 @@ test('pagination with index-union filter works with allowFullScan', async () => 
 
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const page = await db.query.users.findMany({
       where: { status: { in: ['active', 'pending'] } },
@@ -311,7 +311,7 @@ test('pagination with ORDER BY ascending', async () => {
   // Test: Paginate with ascending order on non-indexed field (strict default)
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await expect(
       db.query.users.findMany({
@@ -349,7 +349,7 @@ test('pagination with ORDER BY _creationTime', async () => {
   // Test: Paginate posts by _creationTime descending (indexed)
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const result = await db.query.posts.findMany({
       orderBy: { _creationTime: 'desc' },
@@ -379,7 +379,7 @@ test('pagination - cursor stability (replaying cursor returns same results)', as
   // Test: Replay same cursor multiple times
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     // Get first page
     const page1 = await db.query.users.findMany({
@@ -429,7 +429,7 @@ test('pagination - default ordering (_creationTime desc)', async () => {
   // Test: Paginate without explicit orderBy (should default to _creationTime desc)
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const result = await db.query.users.findMany({
       paginate: {
@@ -463,7 +463,7 @@ test('pagination - large result set (100+ items)', async () => {
   // Test: Paginate through large dataset
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     let cursor: string | null = null;
     let totalFetched = 0;
@@ -518,7 +518,7 @@ test('pagination with combined WHERE and ORDER BY (non-indexed)', async () => {
   // Test: Paginate published posts ordered by likes (non-indexed)
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await expect(
       db.query.posts.findMany({

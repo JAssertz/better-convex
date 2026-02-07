@@ -1,0 +1,238 @@
+---
+title: Migrate from Convex Ents
+description: Move from Convex Ents to Better‑Convex ORM (Drizzle‑style)
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+Convex Ents is in maintenance mode. Better‑Convex ORM is the successor: a Drizzle‑style query builder with runtime constraints and RLS on top of Convex. This guide maps Ents patterns to ORM equivalents.
+
+## Migration Checklist
+
+- Replace `defineEntSchema` / `defineEnt` with `convexTable()` + `defineSchema()`
+- Convert edges to `defineRelations()`
+- Attach ORM to `ctx.orm` in your context (create once)
+- Replace edge traversal (`edge()`) with `with:` or explicit join-table queries
+- Replace ent mutations with `insert` / `update` / `delete`
+- Replace Ents rules with `rlsPolicy` (runtime RLS)
+- Revisit cascades, uniqueness under concurrency, and search
+
+## Schema & Relations
+
+**Before (Ents)**
+
+```ts title="convex/schema.ts"
+import { defineEnt, defineEntSchema } from 'convex-ents';
+import { v } from 'convex/values';
+
+const schema = defineEntSchema({
+  users: defineEnt({
+    name: v.string(),
+    email: v.string(),
+  })
+    .field('username', v.string(), { unique: true })
+    .edges('posts', { ref: true }),
+
+  posts: defineEnt({
+    title: v.string(),
+    body: v.string(),
+  }).edge('user', { field: 'userId' }),
+});
+```
+
+**After (ORM)**
+
+```ts title="convex/schema.ts"
+import {
+  convexTable,
+  defineSchema,
+  defineRelations,
+  text,
+  id,
+  uniqueIndex,
+  index,
+} from 'better-convex/orm';
+
+export const users = convexTable(
+  'users',
+  { name: text().notNull(), email: text().notNull(), username: text().notNull() },
+  (t) => [uniqueIndex('by_username').on(t.username)]
+);
+
+export const posts = convexTable(
+  'posts',
+  { title: text().notNull(), body: text().notNull(), userId: id('users') },
+  (t) => [index('by_user').on(t.userId)]
+);
+
+export const ormSchema = defineRelations({ users, posts }, (r) => ({
+  users: { posts: r.many.posts() },
+  posts: { user: r.one.users({ from: r.posts.userId, to: r.users._id }) },
+}));
+export default defineSchema({ users, posts });
+```
+
+<Callout icon={<InfoIcon />}>
+Ents auto‑creates edge indexes. In ORM you must add indexes for relation fields (`index('by_user').on(t.userId)`), or relation loading will throw unless `strict: false`.
+</Callout>
+
+## Context Setup
+
+**Ents**
+```ts
+const table = entsTableFactory(ctx, entDefinitions);
+```
+
+**ORM (attach once)**
+```ts
+const orm = createOrm({ schema: ormSchema });
+const ormDb = orm.db(ctx);
+return { ...ctx, orm: ormDb };
+```
+
+If you need RLS, pass `rls: { ctx }` when building `table`.
+
+## Query Mapping
+
+| Ents | ORM |
+|---|---|
+| `ctx.orm('users').get(id)` | `ctx.orm.query.users.findFirst({ where: { _id: id } })` |
+| `ctx.orm('users').getX(id)` | `const u = await ctx.orm.query.users.findFirst(...); if (!u) throw ...` |
+| `ctx.orm('users').get('email', v)` | `ctx.orm.query.users.findFirst({ where: { email: v } })` |
+| `ctx.orm('users').getMany(ids)` | `ctx.orm.query.users.findMany({ where: { _id: { in: ids } } })` |
+| `ctx.orm('users').order('desc').take(5)` | `ctx.orm.query.users.findMany({ orderBy: { _creationTime: 'desc' }, limit: 5 })` |
+| `ctx.orm('users').paginate(opts)` | `ctx.orm.query.users.findMany({ paginate: opts })` |
+| `ctx.orm('users').map(...)` | `ctx.orm.query.users.findMany(...).then(rows => rows.map(...))` or `extras` |
+| `ctx.orm('users').search(...)` | `ctx.orm.query.users.findMany({ search: { index, query, filters? } })` |
+
+## Relations & Edge Traversal
+
+Ents traversal:
+```ts
+const posts = await user.edge('posts').take(5);
+```
+
+ORM equivalent (relation loading):
+```ts
+const users = await ctx.orm.query.users.findMany({
+  with: { posts: { limit: 5 } },
+});
+```
+
+### Many‑to‑Many With Data
+
+Ents required two 1:many edges for payloads. ORM always uses explicit join tables:
+
+```ts title="convex/schema.ts"
+const memberships = convexTable('memberships', {
+  userId: id('users').notNull(),
+  groupId: id('groups').notNull(),
+  role: text().notNull(),
+});
+
+const ormSchema = defineRelations({ users, groups, memberships }, (r) => ({
+  users: { memberships: r.many.memberships() },
+  groups: { memberships: r.many.memberships() },
+  memberships: {
+    user: r.one.users({ from: r.memberships.userId, to: r.users._id }),
+    group: r.one.groups({ from: r.memberships.groupId, to: r.groups._id }),
+  },
+}));
+```
+
+<Callout icon={<InfoIcon />}>
+One‑way relations are allowed. Define only the sides you plan to query or load.
+</Callout>
+
+## Mutations
+
+| Ents | ORM |
+|---|---|
+| `ctx.orm('users').insert(data)` | `ctx.orm.insert(users).values(data)` |
+| `ctx.orm('users').insertMany([...])` | `ctx.orm.insert(users).values([...])` |
+| `ctx.orm('users').getX(id).patch(p)` | `ctx.orm.update(users).set(p).where(eq(users._id, id))` |
+| `ctx.orm('users').getX(id).replace(r)` | `ctx.orm.update(users).set(r).where(eq(users._id, id))` |
+| `ctx.orm('users').getX(id).delete()` | `ctx.orm.delete(users).where(eq(users._id, id))` |
+
+<Callout icon={<InfoIcon />}>
+`update().set(...)` is patch‑style. To mimic Ents `replace`, set all fields explicitly (including `null` for nullable columns).
+</Callout>
+
+**Many‑to‑many edge mutations** become join‑table inserts/deletes:
+
+```ts
+import { and, eq } from 'better-convex/orm';
+
+// Add edge
+await ctx.orm.insert(postsTags).values({ postId, tagId });
+
+// Remove edge
+await ctx.orm
+  .delete(postsTags)
+  .where(and(eq(postsTags.postId, postId), eq(postsTags.tagId, tagId)));
+```
+
+## Defaults, Constraints, and Types
+
+| Ents | ORM |
+|---|---|
+| `.field('x', v.string(), { default })` | `text().$defaultFn(...)` or `text().default(...)` |
+| `.field('x', v.string(), { unique: true })` | `uniqueIndex('by_x').on(t.x)` or `t.x.unique()` |
+| `.index('a_b', ['a','b'])` | `index('by_a_b').on(t.a, t.b)` |
+| `Ent<T>` / `EntWriter<T>` | `InferSelectModel<typeof table>` / `InferInsertModel<typeof table>` |
+
+Constraints are enforced at runtime by ORM mutations; direct `ctx.db` writes bypass them.
+
+## Rules → RLS
+
+Ents rules:
+```ts
+addEntRules(entDefinitions, {
+  secrets: { read: (s) => ctx.viewerId === s.userId },
+});
+```
+
+ORM RLS:
+```ts
+const secrets = convexTable.withRLS('secrets', { userId: id('users').notNull() }, (t) => [
+  rlsPolicy('read_own', { for: 'select', using: (ctx) => eq(t.userId, ctx.viewerId) }),
+]);
+```
+
+<Callout icon={<AlertTriangle />}>
+RLS runs at runtime and requires `ctx.orm` to be built with `rls: { ctx }`.  
+There is no per‑field write rule hook; enforce invariants in mutations or `check()` constraints.
+</Callout>
+
+## Deletes & Cascades
+
+- Ents auto‑cascade deletes based on edge definitions.
+- ORM requires explicit `foreignKey(...).onDelete('cascade')` and/or manual cleanup.
+- Soft/scheduled deletes are mutation‑time helpers:
+
+```ts
+await ctx.orm.delete(users).where(eq(users._id, userId)).soft();
+await ctx.orm
+  .delete(users)
+  .where(eq(users._id, userId))
+  .scheduled({ delayMs: 60_000 });
+```
+
+## Notes on Ents Gaps
+
+Better‑Convex ORM resolves or avoids common Ents pain points:
+
+- **Uniqueness under concurrency**: use `onConflictDoNothing()` / `onConflictDoUpdate()` and retries.
+- **Many‑to‑many with data**: explicit join tables with payload fields.
+- **Compound unique fields**: `unique()` / `uniqueIndex()` supported.
+- **One‑way relations**: supported by defining only the needed side.
+- **Edge write methods**: use join‑table mutations instead of `edge().add/remove`.
+
+## Next Steps
+
+<Cards>
+  <Card title="ORM Quickstart" href="/docs/db/orm/quickstart" />
+  <Card title="Relations" href="/docs/db/orm/relations" />
+  <Card title="RLS Policies" href="/docs/db/orm/rls" />
+  <Card title="Limitations" href="/docs/db/orm/limitations" />
+</Cards>

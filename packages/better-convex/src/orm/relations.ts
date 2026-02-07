@@ -505,6 +505,8 @@ export interface RelationFieldsFilterInternals<T> {
   gte?: T | Placeholder | undefined;
   lt?: T | Placeholder | undefined;
   lte?: T | Placeholder | undefined;
+  between?: [T | Placeholder, T | Placeholder] | Placeholder | undefined;
+  notBetween?: [T | Placeholder, T | Placeholder] | Placeholder | undefined;
   in?: (T | Placeholder)[] | Placeholder | undefined;
   notIn?: (T | Placeholder)[] | Placeholder | undefined;
   arrayContains?:

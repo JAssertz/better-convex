@@ -31,7 +31,7 @@ const test = baseTest.extend<{ ctx: TestCtx }>({
 
 describe('M5: like() operator', () => {
   test('like with %prefix% pattern matches substring', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -81,7 +81,7 @@ describe('M5: like() operator', () => {
   });
 
   test('like with prefix% pattern matches prefix', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -130,7 +130,7 @@ describe('M5: like() operator', () => {
   });
 
   test('like with %suffix pattern matches suffix', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -180,7 +180,7 @@ describe('M5: like() operator', () => {
   });
 
   test('like without wildcards matches exact', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -219,7 +219,7 @@ describe('M5: like() operator', () => {
   });
 
   test('notLike excludes pattern matches', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -263,7 +263,7 @@ describe('M5: like() operator', () => {
 
 describe('M5: ilike() operator', () => {
   test('ilike is case-insensitive', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -313,7 +313,7 @@ describe('M5: ilike() operator', () => {
   });
 
   test('notIlike excludes case-insensitive matches', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -357,7 +357,7 @@ describe('M5: ilike() operator', () => {
 
 describe('M5: like() prefix pattern', () => {
   test('like matches prefix', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -407,7 +407,7 @@ describe('M5: like() prefix pattern', () => {
   });
 
   test('like is case-sensitive', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -452,7 +452,7 @@ describe('M5: like() prefix pattern', () => {
 
 describe('M5: like() suffix pattern', () => {
   test('like matches suffix', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -502,7 +502,7 @@ describe('M5: like() suffix pattern', () => {
   });
 
   test('like is case-sensitive', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -547,7 +547,7 @@ describe('M5: like() suffix pattern', () => {
 
 describe('M5: like() substring pattern', () => {
   test('like matches substring', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -597,7 +597,7 @@ describe('M5: like() substring pattern', () => {
   });
 
   test('like is case-sensitive', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -642,7 +642,7 @@ describe('M5: like() substring pattern', () => {
 
 describe('M5: startsWith operator', () => {
   test('startsWith matches prefix', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -692,7 +692,7 @@ describe('M5: startsWith operator', () => {
 
 describe('M5: endsWith operator', () => {
   test('endsWith matches suffix', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -743,7 +743,7 @@ describe('M5: endsWith operator', () => {
 
 describe('M5: contains operator', () => {
   test('contains matches substring', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',

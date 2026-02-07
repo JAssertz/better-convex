@@ -220,7 +220,7 @@ This file tracks documentation parity work between Drizzle ORM docs and Better-C
 | `migrate/migrate-from-sequelize` | N/A (SQL-only) |  |  |
 | `migrate/migrate-from-typeorm` | N/A (SQL-only) |  |  |
 | `migrations` | N/A (SQL-only) |  | SQL migrations/tooling are not applicable to Convex. |
-| `operators` | PARTIALLY ADAPTED | `www/content/docs/db/orm/operators.mdx` | Better-Convex supports RQBv2 object filters + mutation filter helpers; SQL-only operators are N/A. |
+| `operators` | PARTIALLY ADAPTED | `www/content/docs/db/orm/operators.mdx` | Better-Convex supports RQBv2 object filters + mutation filter helpers; SQL-only operators (including `exists`/`notExists`) are N/A. |
 | `overview` | N/A (SQL-only) |  | Product overview not mirrored in Better-Convex ORM docs. |
 | `perf-queries` | N/A (SQL-only) |  | Drizzle performance guidance targets SQL engines and drivers. |
 | `perf-serverless` | N/A (SQL-only) |  | Drizzle performance guidance targets SQL engines and drivers. |
@@ -234,7 +234,7 @@ This file tracks documentation parity work between Drizzle ORM docs and Better-C
 | `relations-v2` | PARTIALLY ADAPTED | `www/content/docs/db/orm/relations.mdx` | Mirrors `defineRelations({ tables }, (r) => ...)` and `one/many` config; Convex uses `_id`. |
 | `rls` | PARTIALLY ADAPTED | `www/content/docs/db/orm/rls.mdx` | RLS is enforced at runtime by the ORM (not in the database). |
 | `rqb` | N/A (SQL-only) |  | Old Drizzle RQBv1 docs are not mirrored; Better-Convex targets v1 RC-style APIs. |
-| `rqb-v2` | PARTIALLY ADAPTED | `www/content/docs/db/orm/queries.mdx`<br/>`www/content/docs/db/orm/limitations.mdx` | `extras`, `RAW`, SQL placeholders, prepared statements are SQL-only and unsupported at runtime. |
+| `rqb-v2` | PARTIALLY ADAPTED | `www/content/docs/db/orm/queries.mdx`<br/>`www/content/docs/db/orm/limitations.mdx` | `extras`, `RAW`, SQL placeholders, prepared statements, and subquery operators (`exists`/`notExists`) are SQL-only and unsupported at runtime. |
 | `schemas` | N/A (SQL-only) |  |  |
 | `seed-functions` | N/A (SQL-only) |  | SQL migrations/tooling are not applicable to Convex. |
 | `seed-limitations` | N/A (SQL-only) |  | SQL migrations/tooling are not applicable to Convex. |

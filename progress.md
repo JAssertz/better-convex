@@ -1,5 +1,40 @@
 # Progress Log
 
+## Session: 2026-02-05 (ORM Performance Review)
+
+### Phase 1: Review Target & Setup
+- **Status:** complete
+- Actions completed:
+  - Checked current branch (feat/orm-5)
+  - Attempted PR metadata lookup (no PR found)
+  - Reviewed Convex performance guidance docs
+
+### Phase 2: Scan ORM For Non-Scalable Patterns
+- **Status:** complete
+- Actions completed:
+  - Reviewed relation loading in `packages/better-convex/src/orm/query.ts`
+  - Reviewed update/delete builders and FK cascade utilities
+
+### Phase 3: Synthesis & Todo Creation
+- **Status:** complete
+- Actions completed:
+  - Created todos 006-009 for performance findings
+
+### Phase 4: Summary & Reporting
+- **Status:** complete
+  - Summary delivered with todos and testing offer
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| (Not run) | N/A | N/A | N/A | — |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-02-05 | `gh pr view` unknown JSON field `linkedIssues` | 1 | Retried without field |
+| 2026-02-05 | `gh pr view` no PR found for branch | 1 | Proceeded with branch review |
+
 ## Session: 2026-02-04 (Schema Replacement & Test Restructure)
 
 ### Phase 1: Requirements & Discovery

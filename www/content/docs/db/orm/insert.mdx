@@ -19,7 +19,7 @@ import { users } from './schema';
 export const createUser = mutation({
   args: { email: v.string(), name: v.string() },
   handler: async (ctx, args) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await db.insert(users).values({
       email: args.email,

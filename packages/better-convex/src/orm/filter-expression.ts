@@ -355,6 +355,32 @@ export function lte<TBuilder extends ColumnBuilder<any, any, any>>(
   ]);
 }
 
+/**
+ * Between operator: field BETWEEN min AND max (inclusive)
+ *
+ * Sugar for and(gte(field, min), lte(field, max)).
+ */
+export function between<TBuilder extends ColumnBuilder<any, any, any>>(
+  col: ColumnArgument<TBuilder>,
+  min: ColumnToType<TBuilder>,
+  max: ColumnToType<TBuilder>
+): FilterExpression<boolean> {
+  return and(gte(col, min), lte(col, max))!;
+}
+
+/**
+ * Not between operator: field < min OR field > max
+ *
+ * Sugar for or(lt(field, min), gt(field, max)).
+ */
+export function notBetween<TBuilder extends ColumnBuilder<any, any, any>>(
+  col: ColumnArgument<TBuilder>,
+  min: ColumnToType<TBuilder>,
+  max: ColumnToType<TBuilder>
+): FilterExpression<boolean> {
+  return or(lt(col, min), gt(col, max))!;
+}
+
 // ============================================================================
 // Factory Functions - String Operators (M5)
 // ============================================================================

@@ -14,10 +14,30 @@ Better-Convex mirrors Drizzle v1’s relational query builder on top of Convex�
 These Drizzle features are SQL-specific and do not map to Convex:
 
 - SQL joins
+- SQL subqueries and operators that depend on them (`exists`, `notExists`)
+- ORM query-builder aggregations (`count`, `sum`, `avg`, `max`, `min`) should use Convex aggregate components
 - Raw SQL execution
 - RQB SQL-only features: `RAW` filters and SQL placeholders in `where`/`limit`/`offset` are not supported at runtime
 - Database migrations and database-side constraints/triggers
 - Custom SQL data types
+
+Use relation filters for Convex-style existence checks:
+
+```ts
+// Has at least one related post
+await db.query.users.findMany({
+  where: { posts: true },
+});
+
+// Has no related posts
+await db.query.users.findMany({
+  where: { NOT: { posts: true } },
+});
+```
+
+For aggregation use cases today, use the Convex aggregate component:
+- `@convex-dev/aggregate`
+- Guide: [/docs/db/aggregates](/docs/db/aggregates)
 
 ## Post-Fetch Behavior
 
@@ -85,12 +105,18 @@ const posts = convexTable(
 - Relation loading requires indexes on relation fields (missing indexes throw unless `allowFullScan: true`)
 - Non-paginated `findMany()` must be explicitly sized (`limit`, `paginate`, schema `defaultLimit`, or `allowFullScan: true`)
 - `many()` relation loading must be explicitly sized per parent (`with.<relation>.limit`, schema `defaultLimit`, or `allowFullScan: true`)
+- System tables (`_storage`, `_scheduled_functions`) are accessed via raw `db.system.get/query`, not `db.query.<table>.findMany()`
 - Predicate `where` requires explicit `index: { name, range? }` and runs post‑fetch via stream filtering
 - Search mode (`findMany({ search })`) is relevance-ordered; `orderBy` is not supported
 - Search mode supports base-table object `where`, but not predicate `where` or relation-based `where`
+- Vector mode (`findMany({ vectorSearch })`) does not support `paginate`, `where`, `orderBy`, `index`, or `offset`
 - Update/delete without `where()` throws unless `allowFullScan: true`
 - Update/delete matched rows are capped by `mutationMaxRows` (default `1000`) and collected in `mutationBatchSize` pages (default `100`)
 - For large update/delete workloads, use builder-level `paginate({ cursor, numItems })` to process one mutation page at a time
+- Async execution (`execute({ mode: 'async', batchSize?, delayMs? })` or `.executeAsync(...)`) runs the first update/delete batch inline and schedules remaining batches
+- Async execution also applies to FK/cascade fan-out paths; large fan-out is paged and continued via scheduler instead of volume-fail-fast
+- Explicit async APIs (`execute({ mode: 'async' })` / `.executeAsync(...)`) are incompatible with builder-level `paginate(...)`; use one strategy per call
+- Async execution is incompatible with delete `.scheduled(...)`
 - Paged update/delete currently does not support multi-probe filter plans (`inArray`, some `OR`, complement ranges)
 - Check constraints follow SQL-like NULL semantics: the check fails only when the expression is `false` (and passes on `unknown`)
 - Defaults are applied only by Better‑Convex ORM inserts/updates (`.default(...)`, `$defaultFn(...)`, `$onUpdateFn(...)`)
@@ -99,6 +125,7 @@ const posts = convexTable(
 **Default policy**
 - Query sizing has no implicit fallback (no hidden row default unless you set `defaults.defaultLimit`).
 - Mutation safety has built-in guardrail defaults (`mutationBatchSize=100`, `mutationMaxRows=1000`).
+- Non-paginated mutation mode defaults to sync (`defaults.mutationExecutionMode='sync'`) unless configured otherwise.
 
 <Callout icon={<AlertTriangle />}>
 **Uniqueness under concurrency**: runtime uniqueness checks are best‑effort within a mutation. Concurrent mutations can still race (including 1:1 relations).  
@@ -112,7 +139,8 @@ Recommended patterns:
 
 - Soft/scheduled deletes are **optional helpers** and not part of Drizzle v1
 - Soft deletes require a `deletionTime` field in your table
-- Scheduled deletes require wiring `scheduler` + `scheduledDelete` when you build `ctx.table`
+- Scheduled deletes require wiring `scheduler` + `scheduledDelete` when you build `ctx.orm`
+- Async mutation batches require wiring `scheduler` + `scheduledMutationBatch` when you build `ctx.orm`
 
 ## Performance Guidance
 
@@ -131,7 +159,8 @@ Recommended patterns:
 | `findMany({ paginate })` order changes | No index on primary sort | Add index on first `orderBy` field |
 | `findMany()` throws explicit sizing error | Non-paginated query has no `limit` and no schema `defaultLimit` | Add `limit`, use `paginate`, set `defaults.defaultLimit`, or opt in with `allowFullScan: true` |
 | `like` or `ilike` is slow | Post-fetch filtering | Use search indexes |
-| Relations not loading | Missing edges | Export `ormSchema` and `ormEdges` |
+| `vectorSearch` throws provider error | `createOrm(...).db(ctx)` was called without `vectorSearch` | Pass `vectorSearch: ctx.vectorSearch` when building ORM db |
+| Relations not loading | Incomplete relation metadata | Define both relation sides or explicit `from`/`to` |
 | `update()`/`delete()` exceeds row cap | Matched rows > `mutationMaxRows` | Narrow filters, increase `defaults.mutationMaxRows`, or switch to paged mutation execution |
 | Paged update/delete throws multi-probe error | Filter compiles to multiple index probes | Rewrite filter to a single index range (or use non-paged mode with row cap) |
 | Missing defaults | Direct `ctx.db` bypasses ORM defaults | Use ORM inserts or set defaults in code |

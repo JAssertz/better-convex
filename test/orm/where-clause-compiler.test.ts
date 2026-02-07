@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  between,
   eq,
   fieldRef,
   inArray,
@@ -7,6 +8,7 @@ import {
   isNull,
   like,
   ne,
+  notBetween,
   notInArray,
   or,
   startsWith,
@@ -68,6 +70,38 @@ describe('WhereClauseCompiler advanced index planning', () => {
     expect(result.strategy).toBe('rangeIndex');
     expect(result.selectedIndex?.indexName).toBe('by_title');
     expect(result.indexFilters).toHaveLength(2);
+  });
+
+  test('plans between as index range', () => {
+    const compiler = new WhereClauseCompiler('users', [
+      { indexName: 'by_age', indexFields: ['age'] },
+    ]);
+
+    const result = compiler.compile(
+      between(fieldRef<number>('age') as any, 18, 65)
+    ) as any;
+
+    expect(result.strategy).toBe('rangeIndex');
+    expect(result.selectedIndex?.indexName).toBe('by_age');
+    expect(result.indexFilters).toHaveLength(2);
+    expect(result.indexFilters[0].operator).toBe('gte');
+    expect(result.indexFilters[1].operator).toBe('lte');
+  });
+
+  test('plans notBetween as multi-probe complement ranges', () => {
+    const compiler = new WhereClauseCompiler('users', [
+      { indexName: 'by_age', indexFields: ['age'] },
+    ]);
+
+    const result = compiler.compile(
+      notBetween(fieldRef<number>('age') as any, 18, 65)
+    ) as any;
+
+    expect(result.strategy).toBe('multiProbe');
+    expect(result.selectedIndex?.indexName).toBe('by_age');
+    expect(result.probeFilters).toHaveLength(2);
+    expect(result.probeFilters[0][0].operator).toBe('lt');
+    expect(result.probeFilters[1][0].operator).toBe('gt');
   });
 
   test('plans OR eq branches on same field as multi-probe', () => {
@@ -161,6 +195,13 @@ describe('WhereClauseCompiler advanced index planning', () => {
     ).toBe('none');
     expect(
       compiler.compile(isNotNull(fieldRef<number | null>('deletedAt') as any))
+        .strategy
+    ).toBe('none');
+    expect(
+      compiler.compile(between(fieldRef<number>('age') as any, 18, 65)).strategy
+    ).toBe('none');
+    expect(
+      compiler.compile(notBetween(fieldRef<number>('age') as any, 18, 65))
         .strategy
     ).toBe('none');
   });

@@ -1,4 +1,6 @@
 import type {
+  VectorFilterBuilder as ConvexVectorFilterBuilder,
+  FilterExpression as ConvexVectorFilterExpression,
   GenericIndexFields,
   IndexRange,
   IndexRangeBuilder,
@@ -249,6 +251,11 @@ export type DBQueryConfig<
    */
   search?: SearchQueryConfig<TTableConfig> | undefined;
   /**
+   * Vector search query configuration.
+   * Only available on tables that declare vector indexes.
+   */
+  vectorSearch?: VectorQueryConfig<TTableConfig> | undefined;
+  /**
    * Explicit index for predicate where() path.
    */
   index?: PredicateWhereIndexConfig<TTableConfig> | undefined;
@@ -374,6 +381,70 @@ export type SearchQueryConfig<
 export type SearchWhereFilter<TTableConfig extends TableRelationalConfig> =
   TableFilter<TTableConfig['table']>;
 
+type VectorIndexMap<TTableConfig extends TableRelationalConfig> =
+  TTableConfig['table'] extends ConvexTable<any, any, any, infer TVectorIndexes>
+    ? TVectorIndexes
+    : Record<
+        string,
+        { vectorField: string; dimensions: number; filterFields: string }
+      >;
+
+type VectorIndexName<TTableConfig extends TableRelationalConfig> = Extract<
+  keyof VectorIndexMap<TTableConfig>,
+  string
+>;
+
+type VectorIndexConfigByName<
+  TTableConfig extends TableRelationalConfig,
+  TIndexName extends VectorIndexName<TTableConfig>,
+> = VectorIndexMap<TTableConfig>[TIndexName];
+
+type VectorFilterFieldNames<
+  TTableConfig extends TableRelationalConfig,
+  TIndexName extends VectorIndexName<TTableConfig>,
+> = VectorIndexConfigByName<TTableConfig, TIndexName> extends {
+  filterFields: infer TFilterFields extends string;
+}
+  ? TFilterFields
+  : never;
+
+type VectorFilterForIndex<
+  TTableConfig extends TableRelationalConfig,
+  TIndexName extends VectorIndexName<TTableConfig>,
+> = (
+  q: ConvexVectorFilterBuilder<
+    InferModelFromColumns<TableColumns<TTableConfig>>,
+    VectorIndexConfigByName<TTableConfig, TIndexName>
+  >
+) => ConvexVectorFilterExpression<boolean>;
+
+export type VectorQueryConfig<
+  TTableConfig extends TableRelationalConfig = TableRelationalConfig,
+> = [VectorIndexName<TTableConfig>] extends [never]
+  ? never
+  : {
+      [TIndexName in VectorIndexName<TTableConfig>]: {
+        index: TIndexName;
+        vector: number[];
+        limit: number;
+        filter?:
+          | (VectorFilterFieldNames<TTableConfig, TIndexName> extends never
+              ? never
+              : VectorFilterForIndex<TTableConfig, TIndexName>)
+          | undefined;
+      };
+    }[VectorIndexName<TTableConfig>];
+
+export type VectorSearchProvider = (
+  tableName: string,
+  indexName: string,
+  query: {
+    vector: number[];
+    limit: number;
+    filter?: ((q: any) => unknown) | undefined;
+  }
+) => Promise<Array<{ _id: GenericId<string> | string; _score: number }>>;
+
 type FullScanOperatorKey =
   | 'arrayContains'
   | 'arrayContained'
@@ -466,11 +537,43 @@ export type EnforceSearchConstraints<
   ? TConfig extends { search: infer TSearch }
     ? [TSearch] extends [undefined]
       ? TConfig
-      : Omit<TConfig, 'where' | 'orderBy' | 'index'> & {
+      : Omit<TConfig, 'where' | 'orderBy' | 'index' | 'vectorSearch'> & {
           search: TSearch;
           where?: SearchWhereFilter<TTableConfig> | undefined;
           orderBy?: never;
           index?: never;
+          vectorSearch?: never;
+        }
+    : TConfig
+  : TConfig;
+
+export type EnforceVectorSearchConstraints<
+  TConfig,
+  _TTableConfig extends TableRelationalConfig,
+> = 'vectorSearch' extends keyof TConfig
+  ? TConfig extends { vectorSearch: infer TVectorSearch }
+    ? [TVectorSearch] extends [undefined]
+      ? TConfig
+      : Omit<
+          TConfig,
+          | 'search'
+          | 'where'
+          | 'orderBy'
+          | 'paginate'
+          | 'index'
+          | 'offset'
+          | 'limit'
+          | 'allowFullScan'
+        > & {
+          vectorSearch: TVectorSearch;
+          search?: never;
+          where?: never;
+          orderBy?: never;
+          paginate?: never;
+          index?: never;
+          offset?: never;
+          limit?: never;
+          allowFullScan?: never;
         }
     : TConfig
   : TConfig;
@@ -511,6 +614,18 @@ export interface FilterOperators {
   lte<TBuilder extends ColumnBuilder<any, any, any>>(
     field: TBuilder,
     value: GetColumnData<TBuilder, 'raw'>
+  ): FilterExpression<boolean>;
+
+  between<TBuilder extends ColumnBuilder<any, any, any>>(
+    field: TBuilder,
+    min: GetColumnData<TBuilder, 'raw'>,
+    max: GetColumnData<TBuilder, 'raw'>
+  ): FilterExpression<boolean>;
+
+  notBetween<TBuilder extends ColumnBuilder<any, any, any>>(
+    field: TBuilder,
+    min: GetColumnData<TBuilder, 'raw'>,
+    max: GetColumnData<TBuilder, 'raw'>
   ): FilterExpression<boolean>;
 
   inArray<TBuilder extends ColumnBuilder<any, any, any>>(

@@ -9,6 +9,7 @@
  */
 
 import type * as functions from "../functions.js";
+import type * as orm from "../orm.js";
 import type * as types from "../types.js";
 
 import type {
@@ -19,6 +20,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   functions: typeof functions;
+  orm: typeof orm;
   types: typeof types;
 }>;
 

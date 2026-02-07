@@ -11,7 +11,7 @@ import {
   text,
 } from 'better-convex/orm';
 import { describe, expect, it } from 'vitest';
-import { withTableCtx } from '../setup.testing';
+import { withOrmCtx } from '../setup.testing';
 
 const users = convexTable(
   'fk_users',
@@ -64,38 +64,38 @@ const relations = defineRelations(rawSchema);
 const edges = extractRelationsConfig(relations);
 
 const withCtx = async <T>(
-  fn: (ctx: { table: DatabaseWithMutations<typeof relations> }) => Promise<T>
-) => withTableCtx(schema, relations, edges, async ({ table }) => fn({ table }));
+  fn: (ctx: { orm: DatabaseWithMutations<typeof relations> }) => Promise<T>
+) => withOrmCtx(schema, relations, async ({ orm }) => fn({ orm }));
 
 describe('foreign key enforcement', () => {
   it('enforces _id references on insert', async () =>
-    withCtx(async ({ table }) => {
-      const [user] = await table
+    withCtx(async ({ orm }) => {
+      const [user] = await orm
         .insert(users)
         .values({ name: 'Ada', slug: 'ada' })
         .returning();
 
-      await table.insert(profiles).values({ userId: user._id }).returning();
+      await orm.insert(profiles).values({ userId: user._id }).returning();
 
       await expect(
-        table.insert(profiles).values({ userId: 'missing' as any })
+        orm.insert(profiles).values({ userId: 'missing' as any })
       ).rejects.toThrow(/foreign/i);
     }));
 
   it('enforces _id references on update when changed', async () =>
-    withCtx(async ({ table }) => {
-      const [user] = await table
+    withCtx(async ({ orm }) => {
+      const [user] = await orm
         .insert(users)
         .values({ name: 'Ada', slug: 'ada' })
         .returning();
 
-      const [profile] = await table
+      const [profile] = await orm
         .insert(profiles)
         .values({ userId: user._id })
         .returning();
 
       await expect(
-        table
+        orm
           .update(profiles)
           .set({ userId: 'missing' as any })
           .where(eq(profiles._id, profile._id))
@@ -104,44 +104,38 @@ describe('foreign key enforcement', () => {
     }));
 
   it('allows null foreign keys', async () =>
-    withCtx(async ({ table }) => {
-      await table.insert(profiles).values({ userId: null });
+    withCtx(async ({ orm }) => {
+      await orm.insert(profiles).values({ userId: null });
     }));
 
   it('requires index for non-_id references', async () =>
-    withCtx(async ({ table }) => {
-      await table.insert(teams).values({ slug: 'alpha' }).returning();
+    withCtx(async ({ orm }) => {
+      await orm.insert(teams).values({ slug: 'alpha' }).returning();
 
       await expect(
-        table.insert(teamMembers).values({ teamSlug: 'alpha' })
+        orm.insert(teamMembers).values({ teamSlug: 'alpha' })
       ).rejects.toThrow(/index/i);
     }));
 
   it('enforces non-_id references when index exists', async () =>
-    withCtx(async ({ table }) => {
-      await table
-        .insert(users)
-        .values({ name: 'Ada', slug: 'ada' })
-        .returning();
+    withCtx(async ({ orm }) => {
+      await orm.insert(users).values({ name: 'Ada', slug: 'ada' }).returning();
 
-      await table.insert(memberships).values({ userSlug: 'ada' }).returning();
+      await orm.insert(memberships).values({ userSlug: 'ada' }).returning();
 
       await expect(
-        table.insert(memberships).values({ userSlug: 'missing' })
+        orm.insert(memberships).values({ userSlug: 'missing' })
       ).rejects.toThrow(/foreign/i);
     }));
 
   it('enforces column references', async () =>
-    withCtx(async ({ table }) => {
-      await table
-        .insert(users)
-        .values({ name: 'Ada', slug: 'ada' })
-        .returning();
+    withCtx(async ({ orm }) => {
+      await orm.insert(users).values({ name: 'Ada', slug: 'ada' }).returning();
 
-      await table.insert(profileSlugs).values({ userSlug: 'ada' }).returning();
+      await orm.insert(profileSlugs).values({ userSlug: 'ada' }).returning();
 
       await expect(
-        table.insert(profileSlugs).values({ userSlug: 'missing' })
+        orm.insert(profileSlugs).values({ userSlug: 'missing' })
       ).rejects.toThrow(/foreign/i);
     }));
 });

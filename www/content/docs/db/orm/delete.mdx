@@ -14,7 +14,7 @@ Better-Convex ORM provides a Drizzle-style `delete()` builder for Convex mutatio
 ```ts
 import { eq } from 'better-convex/orm';
 
-// db is ctx.table
+// db is ctx.orm
 await db.delete(users).where(eq(users.email, 'dan@example.com'));
 ```
 
@@ -89,6 +89,35 @@ Paged delete result:
 `paginate()` currently supports single-range index plans. Multi-probe filters (`inArray`, some `OR` patterns, complement ranges) are not yet supported in paged mutation mode.
 </Callout>
 
+## Async Batched Delete
+
+Use async mode when a delete can affect large sets.
+
+- Per call: `execute({ mode: 'async' })`
+- Convenience alias: `executeAsync(...)`
+- Global default: `defineSchema(..., { defaults: { mutationExecutionMode: 'async' } })`
+
+Async mode runs the first delete batch in the current mutation, then schedules remaining batches through Convex scheduler.
+
+```ts
+const firstBatch = await db
+  .delete(users)
+  .where(eq(users.status, 'inactive'))
+  .returning({ id: users._id })
+  .execute({ mode: 'async', batchSize: 200, delayMs: 0 });
+```
+
+Important behavior:
+- `execute()` in async mode returns the same type shape as sync `execute()` (with `.returning()`, rows from the first batch only).
+- Remaining batches are scheduled asynchronously.
+- Explicit async APIs (`execute({ mode: 'async' })` / `executeAsync()`) cannot be combined with `.paginate()` or `.scheduled(...)`.
+- `.paginate()` remains the caller-controlled execution path.
+- `batchSize` resolves as: per-call `batchSize` → `defaults.mutationBatchSize` → `100`.
+- `delayMs` resolves as: per-call `delayMs` → `defaults.mutationAsyncDelayMs` → `0`.
+- Cascade and other FK actions use the same async batching strategy (first page inline, continuation scheduled) when async mode is active.
+
+Async execution requires wiring `scheduler` + `scheduledMutationBatch` when building `ctx.orm`.
+
 ## Drizzle Differences
 
 <Callout icon={<AlertTriangle />}>
@@ -97,5 +126,5 @@ Paged delete result:
 </Callout>
 
 <Callout icon={<InfoIcon />}>
-Foreign key actions and RLS policies are enforced at runtime for ORM deletes when you attach ORM to `ctx.table`. Direct `ctx.db.delete(...)` bypasses these checks.
+Foreign key actions and RLS policies are enforced at runtime for ORM deletes when you attach ORM to `ctx.orm`. Direct `ctx.db.delete(...)` bypasses these checks.
 </Callout>

@@ -1,6 +1,6 @@
 import {
   convexTable,
-  createDatabase,
+  createOrm,
   defineRelations,
   extractRelationsConfig,
   type InferInsertModel,
@@ -60,7 +60,8 @@ void schemaRelationKeyBad;
 
 // Mock database reader for type testing
 const mockDb = {} as GenericDatabaseReader<any>;
-const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
+const orm = createOrm({ schema: schemaConfig });
+const db = orm.db(mockDb);
 
 // ============================================================================
 // DATABASE TYPE TESTS (Convex-backend inspired)
@@ -153,11 +154,33 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
   Expect<Equal<Expected, typeof result>>;
 }
 
+// Test 4c: between operator
+{
+  const result = await db.query.users.findMany({
+    where: { age: { between: [18, 65] } },
+  });
+
+  type Expected = UserRow[];
+
+  Expect<Equal<Expected, typeof result>>;
+}
+
+// Test 4d: notBetween operator
+{
+  const result = await db.query.users.findMany({
+    where: { age: { notBetween: [18, 65] } },
+  });
+
+  type Expected = UserRow[];
+
+  Expect<Equal<Expected, typeof result>>;
+}
+
 // ============================================================================
 // LOGICAL OPERATOR TYPE TESTS
 // ============================================================================
 
-// Test 4c: OR at table level
+// Test 4e: OR at table level
 {
   const result = await db.query.users.findMany({
     where: {
@@ -432,7 +455,8 @@ const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
   }));
 
   const edgesWhere = extractRelationsConfig(relationsWhere);
-  const dbWhere = createDatabase(mockDb, relationsWhere, edgesWhere);
+  const ormWhere = createOrm({ schema: relationsWhere });
+  const dbWhere = ormWhere.db(mockDb);
 
   const result = await dbWhere.query.books.findMany({
     with: {
@@ -813,6 +837,18 @@ db.query.users.findMany({
 db.query.users.findMany({
   // @ts-expect-error - Argument of type 'number' is not assignable to parameter of type 'string'
   where: { name: { gt: 100 } },
+});
+
+// between with wrong tuple element type
+db.query.users.findMany({
+  // @ts-expect-error - Type 'string' is not assignable to type 'number'
+  where: { age: { between: ['18', 65] } },
+});
+
+// notBetween expects tuple of two values
+db.query.users.findMany({
+  // @ts-expect-error - notBetween expects [min, max]
+  where: { age: { notBetween: [18] } },
 });
 
 // inArray with wrong value type
@@ -1498,6 +1534,162 @@ db.query.users.findMany({
   type Row = (typeof result)[number];
   type Author = Row['author'];
   Expect<Equal<Author extends object | null ? true : false, true>>;
+}
+
+// ============================================================================
+// VECTOR SEARCH TYPE TESTS
+// ============================================================================
+
+// vectorSearch works on tables with vector indexes
+{
+  const result = await db.query.posts.findMany({
+    vectorSearch: {
+      index: 'embedding_vec',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+    },
+  });
+
+  type Row = (typeof result)[number];
+  Expect<Equal<Row['text'], string>>;
+}
+
+// vectorSearch filter fields are typed from vector index filterFields
+{
+  await db.query.posts.findMany({
+    vectorSearch: {
+      index: 'embedding_vec',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+      filter: (q) => q.eq('type', 'article'),
+    },
+  });
+
+  await db.query.posts.findMany({
+    vectorSearch: {
+      index: 'embedding_vec',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+      // @ts-expect-error - only vector index filterFields are allowed
+      filter: (q) => q.eq('published', true),
+    },
+  });
+}
+
+// vectorSearch index name is strongly typed
+{
+  await db.query.posts.findMany({
+    // @ts-expect-error - invalid vector index name
+    vectorSearch: {
+      index: 'text_search',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+    },
+  });
+}
+
+// vectorSearch is disallowed on tables with no vector indexes
+{
+  await db.query.users.findMany({
+    // @ts-expect-error - users table has no vector indexes
+    vectorSearch: {
+      index: 'embedding_vec',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+    },
+  });
+}
+
+// vectorSearch + orderBy is disallowed
+{
+  await db.query.posts.findMany({
+    // @ts-expect-error - vector search results are similarity ordered and do not allow orderBy
+    vectorSearch: {
+      index: 'embedding_vec',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+    },
+    orderBy: { _creationTime: 'desc' },
+  });
+}
+
+// vectorSearch + paginate is disallowed
+{
+  await db.query.posts.findMany({
+    // @ts-expect-error - vector search does not support paginate
+    vectorSearch: {
+      index: 'embedding_vec',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+    },
+    // @ts-expect-error - vector search does not support paginate
+    paginate: { cursor: null, numItems: 5 },
+  });
+}
+
+// vectorSearch + where(object) is disallowed
+{
+  await db.query.posts.findMany({
+    // @ts-expect-error - vector search does not allow where object filters
+    vectorSearch: {
+      index: 'embedding_vec',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+    },
+    where: { type: 'article' },
+  });
+}
+
+// vectorSearch + where(fn) is disallowed
+{
+  await db.query.posts.findMany({
+    // @ts-expect-error - vector search does not allow predicate where
+    vectorSearch: {
+      index: 'embedding_vec',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+    },
+    where: (row: any) => row.type === 'article',
+  });
+}
+
+// vectorSearch + index is disallowed
+{
+  await db.query.posts.findMany({
+    // @ts-expect-error - vector search does not allow index config
+    vectorSearch: {
+      index: 'embedding_vec',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+    },
+    index: { name: 'by_author' },
+  });
+}
+
+// vectorSearch + offset is disallowed
+{
+  await db.query.posts.findMany({
+    // @ts-expect-error - vector search does not allow offset
+    vectorSearch: {
+      index: 'embedding_vec',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+    },
+    offset: 1,
+  });
+}
+
+// vectorSearch + top-level limit is disallowed (use vectorSearch.limit)
+{
+  await db.query.posts.findMany({
+    // @ts-expect-error - vector search uses vectorSearch.limit, not top-level limit
+    vectorSearch: {
+      index: 'embedding_vec',
+      vector: [0.1, 0.2, 0.3],
+      limit: 10,
+    },
+    limit: 1,
+  });
 }
 
 export {};

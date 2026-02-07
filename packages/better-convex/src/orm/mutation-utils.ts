@@ -905,7 +905,7 @@ export async function applyIncomingForeignKeyActionsOnDelete(
       if (!page.isDone && page.continueCursor !== null) {
         if (!options.scheduler || !options.scheduledMutationBatch) {
           throw new Error(
-            'Async mutation execution requires createDatabase(..., { scheduler, scheduledMutationBatch }).'
+            'Async mutation execution requires orm.db(ctx) configured with scheduling (ormFunctions.scheduledMutationBatch).'
           );
         }
         await options.scheduler.runAfter(
@@ -1093,7 +1093,7 @@ export async function applyIncomingForeignKeyActionsOnUpdate(
       if (!page.isDone && page.continueCursor !== null) {
         if (!options.scheduler || !options.scheduledMutationBatch) {
           throw new Error(
-            'Async mutation execution requires createDatabase(..., { scheduler, scheduledMutationBatch }).'
+            'Async mutation execution requires orm.db(ctx) configured with scheduling (ormFunctions.scheduledMutationBatch).'
           );
         }
         await options.scheduler.runAfter(

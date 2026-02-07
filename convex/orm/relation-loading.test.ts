@@ -22,7 +22,7 @@ import type { StorageActionWriter } from 'convex/server';
 import { test as baseTest, describe, expect } from 'vitest';
 import type { MutationCtx } from '../_generated/server';
 import { cities, posts, users } from '../schema';
-import { convexTest, getCtxWithTable, withTableCtx } from '../setup.testing';
+import { convexTest, getOrmCtx, withOrmCtx } from '../setup.testing';
 
 // M6.5 Phase 2: Comments table and relations for nested testing (local to this test file)
 const ormComments = convexTable(
@@ -65,7 +65,7 @@ const testSchemaWithComments = defineSchema(testTables, {
 });
 
 // M6.5 Phase 2: Relations for comments + posts (local to this test file)
-const testSchema = defineRelations(testTables, (r) => ({
+const testRelations = defineRelations(testTables, (r) => ({
   users: {
     posts: r.many.posts({
       from: r.users._id,
@@ -110,11 +110,11 @@ const testSchema = defineRelations(testTables, (r) => ({
   },
   cities: {},
 }));
-const edges = extractRelationsConfig(testSchema);
+const edges = extractRelationsConfig(testRelations);
 
 type TestCtx = MutationCtx & {
   storage: StorageActionWriter;
-  table: DatabaseWithMutations<typeof testSchema>;
+  orm: DatabaseWithMutations<typeof testRelations>;
 };
 
 // Test setup with convexTest
@@ -122,7 +122,7 @@ const test = baseTest.extend<{ ctx: TestCtx }>({
   ctx: async ({}, use) => {
     const t = convexTest(testSchemaWithComments);
     await t.run(async (baseCtx) => {
-      const ctx = getCtxWithTable(baseCtx, testSchema, edges);
+      const ctx = getOrmCtx(baseCtx, testRelations);
       await use(ctx);
     });
   },
@@ -139,7 +139,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
         email: 'alice@example.com',
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const users = await db.query.users.findMany({
         with: {
           posts: true,
@@ -172,7 +172,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const users = (await db.query.users.findMany({
         with: {
           posts: true,
@@ -231,7 +231,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
 
       // Charlie: 0 posts
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const users = (await db.query.users.findMany({
         with: {
           posts: true,
@@ -274,7 +274,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const users = await db.query.users.findMany({
         columns: { name: true },
         with: {
@@ -301,7 +301,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const users = await db.query.users.findMany({
         columns: {},
         with: {
@@ -329,7 +329,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const users = await db.query.users.findMany({
         with: {
           posts: {
@@ -364,7 +364,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const users = await db.query.users.findMany({
         with: {
           posts: {
@@ -396,7 +396,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const posts = (await db.query.posts.findMany({
         with: {
           author: true,
@@ -419,7 +419,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
         // authorId omitted (optional field)
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const posts = await db.query.posts.findMany({
         with: {
           author: true,
@@ -477,7 +477,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
         authorId: user2Id,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const posts = (await db.query.posts.findMany({
         with: {
           author: true,
@@ -526,7 +526,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const user = await db.query.users.findFirst({
         with: {
           posts: true,
@@ -568,7 +568,7 @@ describe('M6.5 Phase 2: Nested Relation Loading', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const users = await db.query.users.findMany({
         with: {
           posts: {
@@ -602,7 +602,7 @@ describe('M6.5 Phase 2: Nested Relation Loading', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const users = await db.query.users.findMany({
         with: {
           posts: {
@@ -677,7 +677,7 @@ describe('M6.5 Phase 2: Nested Relation Loading', () => {
         authorId: user2Id,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const users = await db.query.users.findMany({
         with: {
           posts: {
@@ -727,7 +727,7 @@ describe('M6.5 Phase 2: Nested Relation Loading', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
 
       // Depth 1: users
       // Depth 2: users.posts
@@ -778,7 +778,7 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
 
       // Import asc helper
       const { asc } = await import('better-convex/orm');
@@ -825,7 +825,7 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
 
       // Import desc helper
       const { desc } = await import('better-convex/orm');
@@ -900,7 +900,7 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
         authorId: user2Id,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
 
       const users = await db.query.users.findMany({
         with: {
@@ -972,7 +972,7 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
         authorId: user2Id,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
 
       const users = await db.query.users.findMany({
         with: {
@@ -1013,7 +1013,7 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
         groupId: groupC,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
 
       const users = await db.query.users.findMany({
         with: {
@@ -1071,7 +1071,7 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
         authorId: userId,
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const { desc } = await import('better-convex/orm');
 
       const users = await db.query.users.findMany({
@@ -1118,19 +1118,14 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
       const noIndexEdges = extractRelationsConfig(noIndexRelations);
 
       await expect(
-        withTableCtx(
-          noIndexSchema,
-          noIndexRelations,
-          noIndexEdges,
-          async (ctx) => {
-            await ctx.db.insert('noIndexUsers', { name: 'Alice' });
-            await ctx.table.query.noIndexUsers.findMany({
-              with: {
-                posts: true,
-              },
-            });
-          }
-        )
+        withOrmCtx(noIndexSchema, noIndexRelations, async (ctx) => {
+          await ctx.db.insert('noIndexUsers', { name: 'Alice' });
+          await ctx.orm.query.noIndexUsers.findMany({
+            with: {
+              posts: true,
+            },
+          });
+        })
       ).rejects.toThrow(/requires index/i);
     });
 
@@ -1174,19 +1169,14 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
       const noIndexEdges = extractRelationsConfig(noIndexRelations);
 
       await expect(
-        withTableCtx(
-          noIndexSchema,
-          noIndexRelations,
-          noIndexEdges,
-          async (ctx) => {
-            await ctx.db.insert('noIndexThroughUsers', { name: 'Alice' });
-            await ctx.table.query.noIndexThroughUsers.findMany({
-              with: {
-                groups: true,
-              },
-            });
-          }
-        )
+        withOrmCtx(noIndexSchema, noIndexRelations, async (ctx) => {
+          await ctx.db.insert('noIndexThroughUsers', { name: 'Alice' });
+          await ctx.orm.query.noIndexThroughUsers.findMany({
+            with: {
+              groups: true,
+            },
+          });
+        })
       ).rejects.toThrow(/requires index/i);
     });
 
@@ -1221,36 +1211,26 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
       const noIndexEdges = extractRelationsConfig(noIndexRelations);
 
       await expect(
-        withTableCtx(
-          noIndexSchema,
-          noIndexRelations,
-          noIndexEdges,
-          async (ctx) => {
-            await ctx.db.insert('noIndexRelaxedUsers', { name: 'Alice' });
-            await ctx.table.query.noIndexRelaxedUsers.findMany({
-              with: {
-                posts: true,
-              },
-            });
-          }
-        )
+        withOrmCtx(noIndexSchema, noIndexRelations, async (ctx) => {
+          await ctx.db.insert('noIndexRelaxedUsers', { name: 'Alice' });
+          await ctx.orm.query.noIndexRelaxedUsers.findMany({
+            with: {
+              posts: true,
+            },
+          });
+        })
       ).rejects.toThrow(/allowFullScan/i);
 
       await expect(
-        withTableCtx(
-          noIndexSchema,
-          noIndexRelations,
-          noIndexEdges,
-          async (ctx) => {
-            await ctx.db.insert('noIndexRelaxedUsers', { name: 'Alice' });
-            await ctx.table.query.noIndexRelaxedUsers.findMany({
-              allowFullScan: true,
-              with: {
-                posts: true,
-              },
-            });
-          }
-        )
+        withOrmCtx(noIndexSchema, noIndexRelations, async (ctx) => {
+          await ctx.db.insert('noIndexRelaxedUsers', { name: 'Alice' });
+          await ctx.orm.query.noIndexRelaxedUsers.findMany({
+            allowFullScan: true,
+            with: {
+              posts: true,
+            },
+          });
+        })
       ).resolves.toBeUndefined();
     });
   });

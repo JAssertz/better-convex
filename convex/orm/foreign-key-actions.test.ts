@@ -1,7 +1,6 @@
 import {
-  type CreateDatabaseOptions,
+  type CreateOrmDbOptions,
   convexTable,
-  createDatabase,
   type DatabaseWithMutations,
   defineRelations,
   defineSchema,
@@ -11,6 +10,7 @@ import {
   id,
   index,
   number,
+  scheduledMutationBatchFactory,
   text,
 } from 'better-convex/orm';
 import type {
@@ -18,7 +18,7 @@ import type {
   SchedulableFunctionReference,
 } from 'convex/server';
 import { describe, expect, it, vi } from 'vitest';
-import { withTableCtx } from '../setup.testing';
+import { withOrmCtx } from '../setup.testing';
 
 const users = convexTable(
   'fk_action_users',
@@ -157,136 +157,158 @@ const {
 } = createSchemaArtifacts({
   defaults: { mutationBatchSize: 1, mutationMaxRows: 5 },
 });
+const {
+  schema: asyncCappedSchema,
+  relations: asyncCappedRelations,
+  edges: asyncCappedEdges,
+} = createSchemaArtifacts({
+  defaults: {
+    mutationBatchSize: 1,
+    mutationMaxRows: 2,
+    mutationExecutionMode: 'async',
+  },
+});
 
 const withCtx = async <T>(
   fn: (ctx: {
-    table: DatabaseWithMutations<typeof relations>;
+    orm: DatabaseWithMutations<typeof relations>;
     db: GenericDatabaseWriter<any>;
   }) => Promise<T>,
-  options?: CreateDatabaseOptions
+  options?: CreateOrmDbOptions
 ) =>
-  withTableCtx(
+  withOrmCtx(
     schema,
     relations,
-    edges,
-    async ({ table, db }) => fn({ table, db }),
+    async ({ orm, db }) => fn({ orm, db }),
     options
   );
 
 const withCappedCtx = async <T>(
   fn: (ctx: {
-    table: DatabaseWithMutations<typeof cappedRelations>;
+    orm: DatabaseWithMutations<typeof cappedRelations>;
     db: GenericDatabaseWriter<any>;
   }) => Promise<T>,
-  options?: CreateDatabaseOptions
+  options?: CreateOrmDbOptions
 ) =>
-  withTableCtx(
+  withOrmCtx(
     cappedSchema,
     cappedRelations,
-    cappedEdges,
-    async ({ table, db }) => fn({ table, db }),
+    async ({ orm, db }) => fn({ orm, db }),
     options
   );
 
 const withRelaxedCapCtx = async <T>(
   fn: (ctx: {
-    table: DatabaseWithMutations<typeof relaxedCapRelations>;
+    orm: DatabaseWithMutations<typeof relaxedCapRelations>;
     db: GenericDatabaseWriter<any>;
   }) => Promise<T>,
-  options?: CreateDatabaseOptions
+  options?: CreateOrmDbOptions
 ) =>
-  withTableCtx(
+  withOrmCtx(
     relaxedCapSchema,
     relaxedCapRelations,
-    relaxedCapEdges,
-    async ({ table, db }) => fn({ table, db }),
+    async ({ orm, db }) => fn({ orm, db }),
+    options
+  );
+
+const withAsyncCappedCtx = async <T>(
+  fn: (ctx: {
+    orm: DatabaseWithMutations<typeof asyncCappedRelations>;
+    db: GenericDatabaseWriter<any>;
+  }) => Promise<T>,
+  options?: CreateOrmDbOptions
+) =>
+  withOrmCtx(
+    asyncCappedSchema,
+    asyncCappedRelations,
+    async ({ orm, db }) => fn({ orm, db }),
     options
   );
 
 describe('foreign key actions', () => {
   it('cascades deletes', async () =>
-    withCtx(async ({ table, db }) => {
-      const [user] = await table
+    withCtx(async ({ orm, db }) => {
+      const [user] = await orm
         .insert(users)
         .values({ slug: 'ada' })
         .returning();
 
-      const [member] = await table
+      const [member] = await orm
         .insert(membershipsCascade)
         .values({ userId: user._id })
         .returning();
 
-      await table.delete(users).where(eq(users._id, user._id)).execute();
+      await orm.delete(users).where(eq(users._id, user._id)).execute();
 
       expect(await db.get(member._id)).toBeNull();
     }));
 
   it('restricts deletes', async () =>
-    withCtx(async ({ table }) => {
-      const [user] = await table
+    withCtx(async ({ orm }) => {
+      const [user] = await orm
         .insert(users)
         .values({ slug: 'ada' })
         .returning();
 
-      await table
+      await orm
         .insert(membershipsRestrict)
         .values({ userId: user._id })
         .returning();
 
       await expect(
-        table.delete(users).where(eq(users._id, user._id)).execute()
+        orm.delete(users).where(eq(users._id, user._id)).execute()
       ).rejects.toThrow(/restrict/i);
     }));
 
   it('sets null on delete', async () =>
-    withCtx(async ({ table, db }) => {
-      const [user] = await table
+    withCtx(async ({ orm, db }) => {
+      const [user] = await orm
         .insert(users)
         .values({ slug: 'ada' })
         .returning();
 
-      const [member] = await table
+      const [member] = await orm
         .insert(membershipsSetNull)
         .values({ userId: user._id })
         .returning();
 
-      await table.delete(users).where(eq(users._id, user._id)).execute();
+      await orm.delete(users).where(eq(users._id, user._id)).execute();
 
       const updated = await db.get(member._id);
       expect(updated?.userId ?? null).toBeNull();
     }));
 
   it('sets default on delete', async () =>
-    withCtx(async ({ table, db }) => {
-      const [user] = await table
+    withCtx(async ({ orm, db }) => {
+      const [user] = await orm
         .insert(users)
         .values({ slug: 'ada' })
         .returning();
 
-      const [member] = await table
+      const [member] = await orm
         .insert(membershipsSetDefault)
         .values({ userSlug: 'ada' })
         .returning();
 
-      await table.delete(users).where(eq(users._id, user._id)).execute();
+      await orm.delete(users).where(eq(users._id, user._id)).execute();
 
       const updated = await db.get(member._id);
       expect(updated?.userSlug).toBe('unknown');
     }));
 
   it('cascades updates', async () =>
-    withCtx(async ({ table, db }) => {
-      const [user] = await table
+    withCtx(async ({ orm, db }) => {
+      const [user] = await orm
         .insert(users)
         .values({ slug: 'ada' })
         .returning();
 
-      const [member] = await table
+      const [member] = await orm
         .insert(membershipsUpdateCascade)
         .values({ userSlug: 'ada' })
         .returning();
 
-      await table
+      await orm
         .update(users)
         .set({ slug: 'ada-lovelace' })
         .where(eq(users._id, user._id))
@@ -297,19 +319,19 @@ describe('foreign key actions', () => {
     }));
 
   it('restricts updates', async () =>
-    withCtx(async ({ table }) => {
-      const [user] = await table
+    withCtx(async ({ orm }) => {
+      const [user] = await orm
         .insert(users)
         .values({ slug: 'ada' })
         .returning();
 
-      await table
+      await orm
         .insert(membershipsUpdateRestrict)
         .values({ userSlug: 'ada' })
         .returning();
 
       await expect(
-        table
+        orm
           .update(users)
           .set({ slug: 'ada-lovelace' })
           .where(eq(users._id, user._id))
@@ -328,36 +350,35 @@ describe('foreign key actions', () => {
     });
     const edgesWithNoIndex = extractRelationsConfig(relationsWithNoIndex);
 
-    await withTableCtx(
+    await withOrmCtx(
       schemaWithNoIndex,
       relationsWithNoIndex,
-      edgesWithNoIndex,
-      async ({ table }) => {
-        const [user] = await table
+      async ({ orm }) => {
+        const [user] = await orm
           .insert(users)
           .values({ slug: 'ada' })
           .returning();
 
-        await table
+        await orm
           .insert(membershipsNoIndex)
           .values({ userId: user._id })
           .returning();
 
         await expect(
-          table.delete(users).where(eq(users._id, user._id)).execute()
+          orm.delete(users).where(eq(users._id, user._id)).execute()
         ).rejects.toThrow(/index/i);
       }
     );
   });
 
   it('fails fast when cascade delete exceeds mutationMaxRows', async () =>
-    withCappedCtx(async ({ table }) => {
-      const [user] = await table
+    withCappedCtx(async ({ orm }) => {
+      const [user] = await orm
         .insert(users)
         .values({ slug: 'ada' })
         .returning();
 
-      await table
+      await orm
         .insert(membershipsCascade)
         .values([
           { userId: user._id },
@@ -366,18 +387,18 @@ describe('foreign key actions', () => {
         ]);
 
       await expect(
-        table.delete(users).where(eq(users._id, user._id)).execute()
+        orm.delete(users).where(eq(users._id, user._id)).execute()
       ).rejects.toThrow(/mutationMaxRows|matched more than|exceed/i);
     }));
 
   it('fails fast when cascade update exceeds mutationMaxRows', async () =>
-    withCappedCtx(async ({ table }) => {
-      const [user] = await table
+    withCappedCtx(async ({ orm }) => {
+      const [user] = await orm
         .insert(users)
         .values({ slug: 'ada' })
         .returning();
 
-      await table
+      await orm
         .insert(membershipsUpdateCascade)
         .values([
           { userSlug: 'ada' },
@@ -386,7 +407,7 @@ describe('foreign key actions', () => {
         ]);
 
       await expect(
-        table
+        orm
           .update(users)
           .set({ slug: 'ada-lovelace' })
           .where(eq(users._id, user._id))
@@ -395,13 +416,13 @@ describe('foreign key actions', () => {
     }));
 
   it('allows larger cascade fan-out when mutationMaxRows is increased', async () =>
-    withRelaxedCapCtx(async ({ table, db }) => {
-      const [user] = await table
+    withRelaxedCapCtx(async ({ orm, db }) => {
+      const [user] = await orm
         .insert(users)
         .values({ slug: 'ada' })
         .returning();
 
-      await table
+      await orm
         .insert(membershipsCascade)
         .values([
           { userId: user._id },
@@ -409,7 +430,7 @@ describe('foreign key actions', () => {
           { userId: user._id },
         ]);
 
-      await table.delete(users).where(eq(users._id, user._id)).execute();
+      await orm.delete(users).where(eq(users._id, user._id)).execute();
 
       const remaining = await db
         .query('fk_action_memberships_cascade')
@@ -417,17 +438,120 @@ describe('foreign key actions', () => {
         .collect();
       expect(remaining).toHaveLength(0);
     }));
+
+  it('async mode batches cascade delete fan-out beyond mutationMaxRows', async () => {
+    const queue: any[] = [];
+    const scheduler = {
+      runAfter: vi.fn(async (_delay: number, _ref: any, args: any) => {
+        queue.push(args);
+        return 'scheduled';
+      }),
+      runAt: vi.fn(async () => 'scheduled'),
+      cancel: vi.fn(async () => undefined),
+    };
+    const scheduledMutationBatch = {} as SchedulableFunctionReference;
+    const worker = scheduledMutationBatchFactory(
+      asyncCappedRelations,
+      asyncCappedEdges,
+      scheduledMutationBatch
+    );
+
+    await withAsyncCappedCtx(
+      async ({ orm, db }) => {
+        const [user] = await orm
+          .insert(users)
+          .values({ slug: 'ada' })
+          .returning();
+
+        await orm
+          .insert(membershipsCascade)
+          .values([
+            { userId: user._id },
+            { userId: user._id },
+            { userId: user._id },
+          ]);
+
+        await orm.delete(users).where(eq(users._id, user._id)).execute();
+
+        while (queue.length > 0) {
+          const args = queue.shift();
+          await worker({ db, scheduler: scheduler as any }, args);
+        }
+
+        expect(await db.get(user._id)).toBeNull();
+        const remaining = await db
+          .query('fk_action_memberships_cascade')
+          .withIndex('by_user', (q) => q.eq('userId', user._id))
+          .collect();
+        expect(remaining).toHaveLength(0);
+      },
+      { scheduler: scheduler as any, scheduledMutationBatch }
+    );
+  });
+
+  it('async mode batches cascade update fan-out beyond mutationMaxRows', async () => {
+    const queue: any[] = [];
+    const scheduler = {
+      runAfter: vi.fn(async (_delay: number, _ref: any, args: any) => {
+        queue.push(args);
+        return 'scheduled';
+      }),
+      runAt: vi.fn(async () => 'scheduled'),
+      cancel: vi.fn(async () => undefined),
+    };
+    const scheduledMutationBatch = {} as SchedulableFunctionReference;
+    const worker = scheduledMutationBatchFactory(
+      asyncCappedRelations,
+      asyncCappedEdges,
+      scheduledMutationBatch
+    );
+
+    await withAsyncCappedCtx(
+      async ({ orm, db }) => {
+        const [user] = await orm
+          .insert(users)
+          .values({ slug: 'ada' })
+          .returning();
+
+        await orm
+          .insert(membershipsUpdateCascade)
+          .values([
+            { userSlug: 'ada' },
+            { userSlug: 'ada' },
+            { userSlug: 'ada' },
+          ]);
+
+        await orm
+          .update(users)
+          .set({ slug: 'ada-lovelace' })
+          .where(eq(users._id, user._id))
+          .execute();
+
+        while (queue.length > 0) {
+          const args = queue.shift();
+          await worker({ db, scheduler: scheduler as any }, args);
+        }
+
+        const updated = await db
+          .query('fk_action_memberships_update_cascade')
+          .withIndex('by_user_slug', (q) => q.eq('userSlug', 'ada-lovelace'))
+          .collect();
+        expect(updated).toHaveLength(3);
+      },
+      { scheduler: scheduler as any, scheduledMutationBatch }
+    );
+  });
 });
 
 describe('soft and scheduled deletes', () => {
   it('soft deletes set deletionTime', async () =>
-    withCtx(async ({ table, db }) => {
-      const [user] = await table
+    withCtx(async ({ orm, db }) => {
+      const [user] = await orm
         .insert(users)
         .values({ slug: 'ada' })
         .returning();
 
-      await table.delete(users).where(eq(users._id, user._id)).soft().execute();
+      await orm.delete(users).where(eq(users._id, user._id)).soft().execute();
 
       const updated = await db.get(user._id);
       expect(updated?.deletionTime).toBeTypeOf('number');
@@ -442,13 +566,13 @@ describe('soft and scheduled deletes', () => {
     const scheduledDelete = {} as SchedulableFunctionReference;
 
     await withCtx(
-      async ({ table }) => {
-        const [user] = await table
+      async ({ orm }) => {
+        const [user] = await orm
           .insert(users)
           .values({ slug: 'ada' })
           .returning();
 
-        await table
+        await orm
           .delete(users)
           .where(eq(users._id, user._id))
           .scheduled({ delayMs: 500 })

@@ -28,6 +28,7 @@ import {
   OrmSchemaOptions,
 } from './symbols';
 import type { ConvexTable } from './table';
+import type { VectorSearchProvider } from './types';
 import { ConvexUpdateBuilder } from './update';
 
 /**
@@ -60,7 +61,7 @@ export type DatabaseWithQuery<TSchema extends TablesRelationalConfig> =
     stream: () => StreamDatabaseReader<SchemaDefOf<TSchema>>;
   };
 
-export type DatabaseWithSkipRules<T> = T & { skipRules: { table: T } };
+export type DatabaseWithSkipRules<T> = T & { skipRules: T };
 
 export type DatabaseWithMutations<TSchema extends TablesRelationalConfig> =
   DatabaseWithQuery<TSchema> &
@@ -80,6 +81,7 @@ export type CreateDatabaseOptions = {
   scheduler?: Scheduler;
   scheduledDelete?: SchedulableFunctionReference;
   scheduledMutationBatch?: SchedulableFunctionReference;
+  vectorSearch?: VectorSearchProvider;
   rls?: RlsContext;
   relationLoading?: {
     concurrency?: number;
@@ -157,7 +159,8 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
         db,
         edgeMetadata, // M6.5 Phase 2: Pass all edges for nested relation loading
         rls,
-        options?.relationLoading
+        options?.relationLoading,
+        options?.vectorSearch
       );
     }
 
@@ -242,7 +245,7 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
 
   return {
     ...table,
-    skipRules: { table: skipRulesTable },
+    skipRules: skipRulesTable,
   } as DatabaseWithSkipRules<DatabaseWithQuery<TSchema>>;
 }
 

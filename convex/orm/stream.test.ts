@@ -23,7 +23,7 @@ describe('ORM stream', () => {
       email: 'alice@example.com',
     });
 
-    const db = ctx.table;
+    const db = ctx.orm;
     const rows = await db.stream().query('users').take(1);
 
     expect(rows).toHaveLength(1);

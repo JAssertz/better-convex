@@ -26,9 +26,10 @@
  *
  * Milestone 3 (M3): Query Builder - Read Operations
  * @example
- * import { createDatabase } from 'better-convex/orm';
+ * import { createOrm } from 'better-convex/orm';
  *
- * const db = createDatabase(ctx.db, schema, edges);
+ * const orm = createOrm({ schema });
+ * const db = orm.db(ctx);
  * const users = await db.query.users.findMany({
  *   with: { posts: { limit: 5 } }
  * });
@@ -85,9 +86,7 @@ export {
   bigint,
   boolean,
   bytes,
-  ConvexColumnBuilder,
   custom,
-  entityKind,
   id,
   integer,
   json,
@@ -109,14 +108,22 @@ export {
   unique,
 } from './constraints';
 export type {
-  CreateDatabaseOptions,
+  CreateOrmDbOptions,
+  OrmApiResult,
+  OrmClientBase,
+  OrmClientWithApi,
+  OrmDbReaderCtx,
+  OrmDbWriterCtx,
+  OrmFunctions,
+} from './create-orm';
+export { createOrm } from './create-orm';
+export type {
   DatabaseWithMutations,
   DatabaseWithQuery,
   DatabaseWithSkipRules,
 } from './database';
 // M3: Database Context
-export { buildSchema, createDatabase } from './database';
-export { ConvexDeleteBuilder } from './delete';
+export { buildSchema } from './database';
 export type { EdgeMetadata } from './extractRelationsConfig';
 // M2: Schema Extraction
 export { extractRelationsConfig } from './extractRelationsConfig';
@@ -132,6 +139,7 @@ export type {
 // M5: String Operators
 export {
   and,
+  between,
   contains,
   endsWith,
   eq,
@@ -148,6 +156,7 @@ export {
   lte,
   ne,
   not,
+  notBetween,
   notInArray,
   or,
   startsWith,
@@ -167,7 +176,6 @@ export {
   uniqueIndex,
   vectorIndex,
 } from './indexes';
-export { ConvexInsertBuilder } from './insert';
 export {
   getTableColumns,
   getTableConfig,
@@ -176,10 +184,6 @@ export {
 // M5: OrderBy
 export { asc, desc } from './order-by';
 export type { IndexKey as PaginationIndexKey } from './pagination';
-export { GelRelationalQuery } from './query';
-// M3: Query Builder
-export { RelationalQueryBuilder } from './query-builder';
-export { QueryPromise } from './query-promise';
 export type {
   ExtractTablesWithRelations,
   ManyConfig,
@@ -248,8 +252,8 @@ export type {
   ReturningResult,
   ReturningSelection,
   UpdateSet,
+  VectorQueryConfig,
+  VectorSearchProvider,
 } from './types';
-export { ConvexUpdateBuilder } from './update';
 // M4: Where Clause Compiler
 export type { WhereClauseResult } from './where-clause-compiler';
-export { WhereClauseCompiler } from './where-clause-compiler';

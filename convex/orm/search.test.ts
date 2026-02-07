@@ -34,7 +34,7 @@ test('search query returns matching rows in relevance mode', async () => {
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
 
-    const rows = await ctx.table.query.posts.findMany({
+    const rows = await ctx.orm.query.posts.findMany({
       search: {
         index: 'text_search',
         query: 'galaxy',
@@ -72,7 +72,7 @@ test('search filters are pushed into search index', async () => {
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
 
-    const rows = await ctx.table.query.posts.findMany({
+    const rows = await ctx.orm.query.posts.findMany({
       search: {
         index: 'text_search',
         query: 'galaxy',
@@ -113,7 +113,7 @@ test('search supports post-search object where on base fields', async () => {
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
 
-    const rows = await ctx.table.query.posts.findMany({
+    const rows = await ctx.orm.query.posts.findMany({
       search: {
         index: 'text_search',
         query: 'galaxy',
@@ -148,7 +148,7 @@ test('search supports eager relation loading with with', async () => {
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
 
-    const rows = await ctx.table.query.posts.findMany({
+    const rows = await ctx.orm.query.posts.findMany({
       search: {
         index: 'text_search',
         query: 'galaxy',
@@ -190,7 +190,7 @@ test('search pagination works with cursor flow', async () => {
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
 
-    const page1 = await ctx.table.query.posts.findMany({
+    const page1 = await ctx.orm.query.posts.findMany({
       search: {
         index: 'text_search',
         query: 'galaxy',
@@ -205,7 +205,7 @@ test('search pagination works with cursor flow', async () => {
     expect(page1.isDone).toBe(false);
     expect(page1.continueCursor).not.toBeNull();
 
-    const page2 = await ctx.table.query.posts.findMany({
+    const page2 = await ctx.orm.query.posts.findMany({
       search: {
         index: 'text_search',
         query: 'galaxy',
@@ -227,7 +227,7 @@ test('search + orderBy throws guardrail error', async () => {
     const ctx = await runCtx(baseCtx);
 
     await expect(
-      ctx.table.query.posts.findMany({
+      ctx.orm.query.posts.findMany({
         search: {
           index: 'text_search',
           query: 'galaxy',
@@ -245,7 +245,7 @@ test('search + where(fn) throws guardrail error', async () => {
     const ctx = await runCtx(baseCtx);
 
     await expect(
-      ctx.table.query.posts.findMany({
+      ctx.orm.query.posts.findMany({
         search: {
           index: 'text_search',
           query: 'galaxy',
@@ -263,7 +263,7 @@ test('search + relation where throws guardrail error', async () => {
     const ctx = await runCtx(baseCtx);
 
     await expect(
-      ctx.table.query.posts.findMany({
+      ctx.orm.query.posts.findMany({
         search: {
           index: 'text_search',
           query: 'galaxy',
@@ -299,7 +299,7 @@ test('search where eq conflicts with search.filters and throws', async () => {
     const ctx = await runCtx(baseCtx);
 
     await expect(
-      ctx.table.query.posts.findMany({
+      ctx.orm.query.posts.findMany({
         search: {
           index: 'text_search',
           query: 'galaxy',
@@ -336,7 +336,7 @@ test('search where eq object conflicts with search.filters and throws', async ()
     const ctx = await runCtx(baseCtx);
 
     await expect(
-      ctx.table.query.posts.findMany({
+      ctx.orm.query.posts.findMany({
         search: {
           index: 'text_search',
           query: 'galaxy',

@@ -33,7 +33,7 @@ const test = baseTest.extend<{ ctx: TestCtx }>({
 
 describe('M5: OrderBy - Basic Ordering', () => {
   test('asc() orders by field ascending', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     // Create test data with different creation times
     const user1 = await ctx.db.insert('users', {
@@ -92,7 +92,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
   });
 
   test('desc() orders by field descending', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     // Create test data
     const user1 = await ctx.db.insert('users', {
@@ -153,7 +153,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
   test('orderBy callback accepts column builder (defaults to asc)', async ({
     ctx,
   }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -202,7 +202,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
   });
 
   test('orderBy by _creationTime uses default index', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     // Create test data
     const user = await ctx.db.insert('users', {
@@ -266,7 +266,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
 
 describe('M5: OrderBy - Combined with WHERE', () => {
   test('orderBy works with where filtering', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -333,7 +333,7 @@ describe('M5: OrderBy - Combined with WHERE', () => {
 
 describe('M5: OrderBy - Combined with Pagination', () => {
   test('orderBy works with limit', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -393,7 +393,7 @@ describe('M5: OrderBy - Combined with Pagination', () => {
   });
 
   test('orderBy works with offset', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -460,7 +460,7 @@ describe('M5: OrderBy - Combined with Pagination', () => {
 
 describe('M5: OrderBy - Multiple Fields', () => {
   test('orderBy callback supports multiple fields', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',
@@ -511,8 +511,10 @@ describe('M5: OrderBy - Multiple Fields', () => {
     expect(posts[2].title).toBe('B Title');
   });
 
-  test('multi-field orderBy applies sort before offset/limit', async ({ ctx }) => {
-    const db = ctx.table;
+  test('multi-field orderBy applies sort before offset/limit', async ({
+    ctx,
+  }) => {
+    const db = ctx.orm;
 
     const user = await ctx.db.insert('users', {
       name: 'Alice',

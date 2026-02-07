@@ -14,7 +14,7 @@ import {
   unique,
 } from 'better-convex/orm';
 import { describe, expect, it } from 'vitest';
-import { withTableCtx } from '../setup.testing';
+import { withOrmCtx } from '../setup.testing';
 
 let hookUpdatedAtCalls = 0;
 
@@ -96,13 +96,13 @@ const relations = defineRelations(rawSchema);
 const edges = extractRelationsConfig(relations);
 
 const withCtx = async <T>(
-  fn: (ctx: { table: DatabaseWithMutations<typeof relations> }) => Promise<T>
-) => withTableCtx(schema, relations, edges, async ({ table }) => fn({ table }));
+  fn: (ctx: { orm: DatabaseWithMutations<typeof relations> }) => Promise<T>
+) => withOrmCtx(schema, relations, async ({ orm }) => fn({ orm }));
 
 describe('defaults enforcement', () => {
   it('applies defaults when value is undefined', async () =>
-    withCtx(async ({ table }) => {
-      const [user] = await table
+    withCtx(async ({ orm }) => {
+      const [user] = await orm
         .insert(defaultUsers)
         .values({ name: 'Ada' })
         .returning();
@@ -112,8 +112,8 @@ describe('defaults enforcement', () => {
     }));
 
   it('does not override explicit null', async () =>
-    withCtx(async ({ table }) => {
-      const [user] = await table
+    withCtx(async ({ orm }) => {
+      const [user] = await orm
         .insert(defaultUsers)
         .values({ name: 'Ada', nickname: null })
         .returning();
@@ -124,10 +124,10 @@ describe('defaults enforcement', () => {
 
 describe('column hooks', () => {
   it('$defaultFn applies when value is missing', async () =>
-    withCtx(async ({ table }) => {
+    withCtx(async ({ orm }) => {
       hookUpdatedAtCalls = 0;
 
-      const [user] = await table
+      const [user] = await orm
         .insert(hookUsers)
         .values({ name: 'Ada' })
         .returning();
@@ -138,8 +138,8 @@ describe('column hooks', () => {
     }));
 
   it('$defaultFn does not override explicit null', async () =>
-    withCtx(async ({ table }) => {
-      const [user] = await table
+    withCtx(async ({ orm }) => {
+      const [user] = await orm
         .insert(hookUsers)
         .values({ name: 'Ada', nickname: null })
         .returning();
@@ -148,14 +148,12 @@ describe('column hooks', () => {
     }));
 
   it('$onUpdateFn applies on update when not explicitly set', async () =>
-    withCtx(async ({ table }) => {
+    withCtx(async ({ orm }) => {
       hookUpdatedAtCalls = 0;
 
-      await table
-        .insert(hookUsers)
-        .values([{ name: 'Ada' }, { name: 'Grace' }]);
+      await orm.insert(hookUsers).values([{ name: 'Ada' }, { name: 'Grace' }]);
 
-      const updated = await table
+      const updated = await orm
         .update(hookUsers)
         .set({ name: 'Updated' })
         .where(inArray(hookUsers.name, ['Ada', 'Grace']))
@@ -170,15 +168,15 @@ describe('column hooks', () => {
     }));
 
   it('$onUpdateFn does not override explicit set', async () =>
-    withCtx(async ({ table }) => {
+    withCtx(async ({ orm }) => {
       hookUpdatedAtCalls = 0;
 
-      const [user] = await table
+      const [user] = await orm
         .insert(hookUsers)
         .values({ name: 'Ada' })
         .returning();
 
-      const [updated] = await table
+      const [updated] = await orm
         .update(hookUsers)
         .set({ updatedAt: 'manual' })
         .where(eq(hookUsers._id, user._id))
@@ -191,27 +189,27 @@ describe('column hooks', () => {
 
 describe('check constraints enforcement', () => {
   it('rejects inserts when check evaluates to false', async () =>
-    withCtx(async ({ table }) => {
+    withCtx(async ({ orm }) => {
       await expect(
-        table.insert(checkUsers).values({ name: 'Ada', age: 18 })
+        orm.insert(checkUsers).values({ name: 'Ada', age: 18 })
       ).rejects.toThrow(/check/i);
     }));
 
   it('allows inserts when check evaluates to unknown (null/undefined)', async () =>
-    withCtx(async ({ table }) => {
-      await table.insert(checkUsers).values({ name: 'Ada', age: null });
-      await table.insert(checkUsers).values({ name: 'Grace' });
+    withCtx(async ({ orm }) => {
+      await orm.insert(checkUsers).values({ name: 'Ada', age: null });
+      await orm.insert(checkUsers).values({ name: 'Grace' });
     }));
 
   it('rejects updates when new row violates check', async () =>
-    withCtx(async ({ table }) => {
-      const [user] = await table
+    withCtx(async ({ orm }) => {
+      const [user] = await orm
         .insert(checkUsers)
         .values({ name: 'Ada', age: 25 })
         .returning();
 
       await expect(
-        table
+        orm
           .update(checkUsers)
           .set({ age: 18 })
           .where(eq(checkUsers._id, user._id))
@@ -222,14 +220,14 @@ describe('check constraints enforcement', () => {
 
 describe('unique constraints enforcement', () => {
   it('rejects duplicate column unique values', async () =>
-    withCtx(async ({ table }) => {
-      await table
+    withCtx(async ({ orm }) => {
+      await orm
         .insert(uniqueColumnUsers)
         .values({ email: 'alice@example.com', handle: 'alice' })
         .returning();
 
       await expect(
-        table.insert(uniqueColumnUsers).values({
+        orm.insert(uniqueColumnUsers).values({
           email: 'alice@example.com',
           handle: 'alice2',
         })
@@ -237,14 +235,14 @@ describe('unique constraints enforcement', () => {
     }));
 
   it('rejects duplicate table unique values', async () =>
-    withCtx(async ({ table }) => {
-      await table
+    withCtx(async ({ orm }) => {
+      await orm
         .insert(uniqueTableUsers)
         .values({ firstName: 'Ada', lastName: 'Lovelace' })
         .returning();
 
       await expect(
-        table.insert(uniqueTableUsers).values({
+        orm.insert(uniqueTableUsers).values({
           firstName: 'Ada',
           lastName: 'Lovelace',
         })
@@ -252,28 +250,28 @@ describe('unique constraints enforcement', () => {
     }));
 
   it('allows multiple nulls when nulls are distinct', async () =>
-    withCtx(async ({ table }) => {
-      await table.insert(uniqueNulls).values({ code: null });
-      await table.insert(uniqueNulls).values({ code: null });
+    withCtx(async ({ orm }) => {
+      await orm.insert(uniqueNulls).values({ code: null });
+      await orm.insert(uniqueNulls).values({ code: null });
     }));
 
   it('rejects multiple nulls when nulls are not distinct', async () =>
-    withCtx(async ({ table }) => {
-      await table.insert(uniqueNullsStrict).values({ code: null });
+    withCtx(async ({ orm }) => {
+      await orm.insert(uniqueNullsStrict).values({ code: null });
       await expect(
-        table.insert(uniqueNullsStrict).values({ code: null })
+        orm.insert(uniqueNullsStrict).values({ code: null })
       ).rejects.toThrow(/unique/i);
     }));
 
   it('enforces column unique nullsNotDistinct', async () =>
-    withCtx(async ({ table }) => {
-      await table.insert(uniqueColumnUsers).values({
+    withCtx(async ({ orm }) => {
+      await orm.insert(uniqueColumnUsers).values({
         email: 'bob@example.com',
         handle: null,
       });
 
       await expect(
-        table.insert(uniqueColumnUsers).values({
+        orm.insert(uniqueColumnUsers).values({
           email: 'charlie@example.com',
           handle: null,
         })

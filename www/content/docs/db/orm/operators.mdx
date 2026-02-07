@@ -45,12 +45,17 @@ where: {
   age: { gte: 15 },
   age: { lt: 15 },
   age: { lte: 15 },
+  age: { between: [18, 65] },
+  age: { notBetween: [18, 65] },
   status: { in: ['active', 'pending'] },
   status: { notIn: ['deleted'] },
   deletedAt: { isNull: true },
   email: { isNotNull: true },
 }
 ```
+
+`between` is inclusive (`>= min` and `<= max`).
+`notBetween` is strict outside-range (`< min` or `> max`).
 
 ### String operators (post-fetch)
 
@@ -100,6 +105,7 @@ await db.update(users).set({ role: 'admin' }).where(
 ### Common helpers
 
 - `eq`, `ne`, `gt`, `gte`, `lt`, `lte`
+- `between`, `notBetween`
 - `inArray`, `notInArray`
 - `and`, `or`, `not`
 - `isNull`, `isNotNull`
@@ -113,4 +119,17 @@ Mutation/RLS operators accept **column builders** (like `users.email`) and use b
 <Callout icon={<AlertTriangle />}>
 - `RAW` filters and SQL placeholders (`sql.placeholder(...)`) are not supported at runtime
 - Prepared statements are not supported
+- SQL subquery operators `exists` / `notExists` are not supported (Convex has no SQL subquery runtime)
 </Callout>
+
+Use relation filters for existence checks:
+
+```ts
+await db.query.users.findMany({
+  where: { posts: true },
+});
+
+await db.query.users.findMany({
+  where: { NOT: { posts: true } },
+});
+```

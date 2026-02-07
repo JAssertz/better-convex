@@ -58,7 +58,7 @@ extractRelationsConfig(schema)
 
 **Queries:**
 ```ts
-const db = ctx.table
+const db = ctx.orm
 
 await db.query.table.findMany({
   where: { field: value },
@@ -96,7 +96,7 @@ await db.delete(table).where(eq(table.email, email)).allowFullScan()
 
 **RLS:**
 ```ts
-const db = ctx.table
+const db = ctx.orm
 const secret = convexTable.withRLS('secrets', { /* ... */ }, (t) => [
   rlsPolicy('read_own', { for: 'select', using: (ctx) => eq(t.ownerId, ctx.viewerId) }),
 ])
@@ -110,6 +110,8 @@ const secret = convexTable.withRLS('secrets', { /* ... */ }, (t) => [
 { field: { gte: value } }
 { field: { lt: value } }
 { field: { lte: value } }
+{ field: { between: [min, max] } }
+{ field: { notBetween: [min, max] } }
 { field: { in: [a, b] } }
 { field: { notIn: [a, b] } }
 { field: { isNull: true } }
@@ -127,6 +129,8 @@ gt(field, value)
 gte(field, value)
 lt(field, value)
 lte(field, value)
+between(field, min, max)
+notBetween(field, min, max)
 inArray(field, values)
 notInArray(field, values)
 and(...filters)
@@ -149,18 +153,21 @@ isNotNull(field)
 - Column selection (post‑fetch)
 - String operators (post‑fetch)
 - Mutations (insert, update, delete, returning)
+- Aggregation workaround via `/docs/db/aggregates` (`@convex-dev/aggregate`)
 
 **Unavailable in Convex:**
 - Raw SQL queries
 - Database migrations
 - SQL joins
+- ORM query-builder aggregations (`count`, `sum`, `avg`, `max`, `min`) should use Convex aggregate components
 
 ## Error Messages & Solutions
 
 - `where is not a function` → Use object form: `where: { field: value }`
-- `Property 'query' does not exist` → Ensure ORM is attached as `ctx.table`
+- `Property 'query' does not exist` → Ensure ORM is attached as `ctx.orm`
 - `Type error: missing required field` → Check `.notNull()` in schema
 - `findUnique is not a function` → Use `findFirst` with `where`
+- `count/sum/avg/max/min is not on db.query.*` → Use `/docs/db/aggregates` (`@convex-dev/aggregate`)
 - `'include' does not exist` → Use `with` instead of `include`
 - `findMany() requires explicit sizing` → Add `limit`, use `paginate`, set schema `defaultLimit`, or opt in with `allowFullScan: true`
 - `allowFullScan required` → Predicate `where`, missing relation index, or unbounded update/delete requires `allowFullScan: true`
@@ -169,6 +176,7 @@ isNotNull(field)
 
 **Index-compiled operators (when indexed):**
 - `eq`, `ne`, `gt`, `gte`, `lt`, `lte`
+- `between`, `notBetween`
 - `in`, `notIn`
 - `isNull`, `isNotNull`
 - `startsWith`

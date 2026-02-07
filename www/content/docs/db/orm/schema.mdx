@@ -69,7 +69,7 @@ See [Column Types](/docs/db/orm/column-types) for the full Better-Convex builder
 Use Drizzle‑style `defineRelations()` with `_id` references.
 
 ```ts title="convex/schema.ts"
-import { defineRelations, extractRelationsConfig } from 'better-convex/orm';
+import { defineRelations } from 'better-convex/orm';
 
 export const posts = convexTable('posts', {
   title: text().notNull(),
@@ -82,8 +82,6 @@ export const ormSchema = defineRelations({ users, posts }, (r) => ({
     author: r.one.users({ from: r.posts.authorId, to: r.users._id }),
   },
 }));
-
-export const ormEdges = extractRelationsConfig(ormSchema);
 ```
 
 ## Schema Options
@@ -107,18 +105,21 @@ Use `defaults` to set global runtime guardrails.
 export default defineSchema({ users, posts }, {
   strict: true,
   defaults: {
-    defaultLimit: 100,      // non-paginated findMany() fallback
-    mutationBatchSize: 100, // update/delete fetch batch size
-    mutationMaxRows: 1000,  // max rows matched by update/delete
+    defaultLimit: 100,             // non-paginated findMany() fallback
+    mutationBatchSize: 100,        // update/delete batch size
+    mutationMaxRows: 1000,         // sync-mode hard cap
+    mutationExecutionMode: 'sync', // or 'async'
+    mutationAsyncDelayMs: 0,       // scheduler delay between async batches
   },
 });
 ```
 
-- `defaults.defaultLimit`: used when `findMany()` is non-paginated and `limit` is omitted.
 - `defaults.defaultLimit`: used when `findMany()` is non-paginated and `limit` is omitted. No implicit built-in fallback is applied when this is unset.
 - `defaults.mutationBatchSize`: page size used to collect rows for `update()`/`delete()`. Built-in fallback: `100`.
-- `defaults.mutationMaxRows`: hard cap for matched rows in `update()`/`delete()`. Built-in fallback: `1000`.
-- All defaults must be positive integers.
+- `defaults.mutationMaxRows`: sync-mode hard cap for matched rows in `update()`/`delete()`. Built-in fallback: `1000`.
+- `defaults.mutationExecutionMode`: default execution mode for non-paginated `execute()` calls (`'sync'` or `'async'`). Built-in fallback: `'sync'`.
+- `defaults.mutationAsyncDelayMs`: default scheduler delay used by async mutation continuation. Built-in fallback: `0`.
+- Numeric defaults must be integers (`mutationAsyncDelayMs` allows `0`; others must be `>= 1`).
 
 ### Strict Policy (Guardrails)
 
@@ -132,7 +133,7 @@ Strict guardrails now cover relation indexes, predicate where(), and unbounded u
 | Unsized non-paginated `findMany()` | throws unless `limit`/`paginate`/`defaultLimit`/`allowFullScan` | same | same |
 | `many()` relation without per-parent limit | throws unless relation `limit`/`defaultLimit`/`allowFullScan` | same | same |
 | Update/delete without `where()` | throws unless `allowFullScan` | throws unless `allowFullScan`; warns when scanning | throws unless `allowFullScan`; no strict warning |
-| Update/delete row count exceeds `mutationMaxRows` | throws | throws | throws |
+| Update/delete row count exceeds `mutationMaxRows` | sync mode throws; async mode schedules continuation | sync mode throws; async mode schedules continuation | sync mode throws; async mode schedules continuation |
 
 ## Indexes
 
@@ -210,7 +211,7 @@ Constraints and defaults are enforced only by ORM mutations. Direct `ctx.db` wri
 |---|---|
 | Defining `_id` manually | Convex creates `_id` automatically |
 | Fields unexpectedly nullable | Use `.notNull()` |
-| Relations not loading | Define both sides and export `ormEdges` |
+| Relations not loading | Define both sides or use explicit `from`/`to` |
 | Slow ordering | Add `index('...').on(t.field)` for the primary `orderBy` field |
 
 ## Next Steps

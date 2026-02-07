@@ -161,6 +161,17 @@ declare const ops: FilterOperators;
   ops.gt(age, 'nope');
 }
 
+// between / notBetween must use matching min/max types
+{
+  const age = integer().notNull();
+  ops.between(age, 18, 65);
+  ops.notBetween(age, 18, 65);
+  // @ts-expect-error - min value must match column type
+  ops.between(age, '18', 65);
+  // @ts-expect-error - max value must match column type
+  ops.notBetween(age, 18, '65');
+}
+
 // isNull should reject notNull fields
 {
   const nullableName = text();
@@ -185,9 +196,13 @@ declare const ops: FilterOperators;
 {
   type EqReturn = ReturnType<FilterOperators['eq']>;
   type InArrayReturn = ReturnType<FilterOperators['inArray']>;
+  type BetweenReturn = ReturnType<FilterOperators['between']>;
+  type NotBetweenReturn = ReturnType<FilterOperators['notBetween']>;
 
   Expect<Not<IsAny<EqReturn>>>;
   Expect<Not<IsAny<InArrayReturn>>>;
+  Expect<Not<IsAny<BetweenReturn>>>;
+  Expect<Not<IsAny<NotBetweenReturn>>>;
 }
 
 export {};

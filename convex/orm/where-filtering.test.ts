@@ -36,7 +36,7 @@ const test = baseTest.extend<{ ctx: TestCtx }>({
 
 describe('M4 Where Filtering - Binary Operators', () => {
   test('should filter with eq operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -62,7 +62,7 @@ describe('M4 Where Filtering - Binary Operators', () => {
   });
 
   test('should filter with ne operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -88,7 +88,7 @@ describe('M4 Where Filtering - Binary Operators', () => {
   });
 
   test('should filter with gt operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -114,7 +114,7 @@ describe('M4 Where Filtering - Binary Operators', () => {
   });
 
   test('should filter with gte operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -147,7 +147,7 @@ describe('M4 Where Filtering - Binary Operators', () => {
   });
 
   test('should filter with lt operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -173,7 +173,7 @@ describe('M4 Where Filtering - Binary Operators', () => {
   });
 
   test('should filter with lte operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -204,6 +204,90 @@ describe('M4 Where Filtering - Binary Operators', () => {
     expect(result).toHaveLength(2);
     expect(result.map((u: any) => u.name).sort()).toEqual(['Alice', 'Bob']);
   });
+
+  test('should filter with between operator (inclusive)', async ({ ctx }) => {
+    const db = ctx.orm;
+
+    await ctx.db.insert('users', {
+      name: 'Alice',
+      email: 'alice@example.com',
+      age: 18,
+      status: 'active',
+      deletedAt: null,
+    });
+    await ctx.db.insert('users', {
+      name: 'Bob',
+      email: 'bob@example.com',
+      age: 30,
+      status: 'active',
+      deletedAt: null,
+    });
+    await ctx.db.insert('users', {
+      name: 'Charlie',
+      email: 'charlie@example.com',
+      age: 65,
+      status: 'active',
+      deletedAt: null,
+    });
+    await ctx.db.insert('users', {
+      name: 'David',
+      email: 'david@example.com',
+      age: 70,
+      status: 'active',
+      deletedAt: null,
+    });
+
+    const result = await db.query.users.findMany({
+      where: { age: { between: [18, 65] } },
+    });
+
+    expect(result.map((u: any) => u.name).sort()).toEqual([
+      'Alice',
+      'Bob',
+      'Charlie',
+    ]);
+  });
+
+  test('should filter with notBetween operator (strict outside range)', async ({
+    ctx,
+  }) => {
+    const db = ctx.orm;
+
+    await ctx.db.insert('users', {
+      name: 'Alice',
+      email: 'alice@example.com',
+      age: 18,
+      status: 'active',
+      deletedAt: null,
+    });
+    await ctx.db.insert('users', {
+      name: 'Bob',
+      email: 'bob@example.com',
+      age: 30,
+      status: 'active',
+      deletedAt: null,
+    });
+    await ctx.db.insert('users', {
+      name: 'Charlie',
+      email: 'charlie@example.com',
+      age: 65,
+      status: 'active',
+      deletedAt: null,
+    });
+    await ctx.db.insert('users', {
+      name: 'David',
+      email: 'david@example.com',
+      age: 70,
+      status: 'active',
+      deletedAt: null,
+    });
+
+    const result = await db.query.users.findMany({
+      where: { age: { notBetween: [18, 65] } },
+    });
+
+    expect(result.map((u: any) => u.name).sort()).toEqual(['David']);
+  });
 });
 
 // ============================================================================
@@ -212,7 +296,7 @@ describe('M4 Where Filtering - Binary Operators', () => {
 
 describe('M4 Where Filtering - Logical Operators', () => {
   test('should combine filters with and operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -248,7 +332,7 @@ describe('M4 Where Filtering - Logical Operators', () => {
   });
 
   test('should combine filters with or operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -283,7 +367,7 @@ describe('M4 Where Filtering - Logical Operators', () => {
   });
 
   test('should negate filter with not operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -312,7 +396,7 @@ describe('M4 Where Filtering - Logical Operators', () => {
   });
 
   test('should handle complex nested logical expressions', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -348,7 +432,7 @@ describe('M4 Where Filtering - Logical Operators', () => {
   });
 
   test('should filter out undefined expressions in and()', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -379,7 +463,7 @@ describe('M4 Where Filtering - Logical Operators', () => {
   });
 
   test('should filter out undefined expressions in or()', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -420,7 +504,7 @@ describe('M4 Where Filtering - Logical Operators', () => {
 
 describe('M4 Where Filtering - Column Logical Operators', () => {
   test('should apply OR within a single column filter', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -456,7 +540,7 @@ describe('M4 Where Filtering - Column Logical Operators', () => {
   });
 
   test('should apply AND within a single column filter', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -491,7 +575,7 @@ describe('M4 Where Filtering - Column Logical Operators', () => {
   });
 
   test('should apply NOT within a single column filter', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -533,7 +617,7 @@ describe('M4 Where Filtering - Column Logical Operators', () => {
 
 describe('M4 Where Filtering - Array Operators', () => {
   test('should filter with inArray operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -566,7 +650,7 @@ describe('M4 Where Filtering - Array Operators', () => {
   });
 
   test('should filter with notInArray operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -610,7 +694,7 @@ describe('M4 Where Filtering - Array Operators', () => {
 
 describe('M4 Where Filtering - Null Operators', () => {
   test('should filter with isNull operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -636,7 +720,7 @@ describe('M4 Where Filtering - Null Operators', () => {
   });
 
   test('should filter with isNotNull operator', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -669,7 +753,7 @@ describe('M4 Where Filtering - Null Operators', () => {
 describe('M4 Where Filtering - Pagination', () => {
   // TODO M4.5: Convex doesn't have skip() - need cursor-based pagination
   test.skip('should use skip() before take() for offset', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -712,7 +796,7 @@ describe('M4 Where Filtering - Pagination', () => {
   });
 
   test('should not apply offset when not provided', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -743,7 +827,7 @@ describe('M4 Where Filtering - Pagination', () => {
 
 describe('M4 Where Filtering - Edge Cases', () => {
   test('should handle undefined where clause', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -793,7 +877,7 @@ describe('M4 Where Filtering - Edge Cases', () => {
   test('should handle complex filter with all operator types', async ({
     ctx,
   }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -832,7 +916,7 @@ describe('M4 Where Filtering - Edge Cases', () => {
   });
 
   test('should throw when RAW filter is provided', async ({ ctx }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     await ctx.db.insert('users', {
       name: 'Alice',
@@ -861,7 +945,7 @@ describe('M4 Where Filtering - Type Safety', () => {
   test('should provide typed column access in where clause', async ({
     ctx,
   }) => {
-    const db = ctx.table;
+    const db = ctx.orm;
 
     // TypeScript should allow accessing valid columns
     await db.query.users.findMany({

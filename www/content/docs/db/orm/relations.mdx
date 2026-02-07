@@ -343,8 +343,6 @@ export const ormSchema = defineRelations({ users, posts }, (r) => ({
   users: { posts: r.many.posts() },
   posts: { author: r.one.users({ from: r.posts.userId, to: r.users._id }) },
 }));
-
-export const ormEdges = extractRelationsConfig(ormSchema);
 ```
 
 ### Split Relations with `defineRelationsPart`
@@ -429,7 +427,7 @@ const ormSchema = defineRelations({ users, posts }, (r) => ({
 Better-Convex ORM supports Drizzle-style relation loading:
 
 ```ts
-const db = ctx.table;
+const db = ctx.orm;
 
 const usersWithPosts = await db.query.users.findMany({
   with: {
@@ -472,11 +470,11 @@ const usersOnlyPosts = await db.query.users.findMany({
 
 | Issue | Solution |
 |-------|----------|
-| **Relations not working** | Define relations in `defineRelations()` and use `ormEdges` when building `ctx.table` |
+| **Relations not working** | Define relations in `defineRelations()` and verify both sides (or explicit `from`/`to`) |
 | **Foreign key field missing** | Define the FK column yourself (e.g., `userId: id('users')`) |
 | **Type errors in `from`/`to`** | Ensure `from` columns belong to the source table and `to` columns belong to the target table |
 | **Self-referencing conflicts** | Use unique `alias` for each self-referencing relation |
-| **`with:` not working** | Ensure relations are defined on both tables and `ormEdges` is used in `ctx.table` setup |
+| **`with:` not working** | Ensure relations are defined on both tables (or explicit `from`/`to`) |
 | **`many()` relation throws sizing error** | Add `with.<relation>.limit`, configure `defaults.defaultLimit`, or set `allowFullScan: true` |
 
 ## Next Steps

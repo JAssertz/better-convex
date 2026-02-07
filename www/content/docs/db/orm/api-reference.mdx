@@ -221,46 +221,74 @@ defineRelations(schema, (r) => ({
 }))
 ```
 
-### `extractRelationsConfig()`
-
-```ts
-const ormEdges = extractRelationsConfig(ormSchema);
-```
-
 ### `buildSchema()`
 
 ```ts
-const ormSchema = buildSchema({ users, posts });
+const relations = buildSchema({ users, posts });
 ```
 
 Builds a schema config without relations. Use this when you don’t need `with` loading.
 
 ## Database
 
-### `createDatabase()`
+### `createOrm()`
 
 ```ts
-createDatabase(db, ormSchema, ormEdges)
+const orm = createOrm({ schema: relations });
+const db = orm.db(ctx);
 ```
 
-Creates a typed query/mutation client. If `db` is a writer context, mutation methods are available.
+Creates a unified ORM setup object. Use `orm.db(ctx)` to build a typed query/mutation client.
+
+For async mutation batching, pass scheduler function refs and export generated handlers:
+
+```ts
+import { createOrm } from 'better-convex/orm';
+import { internal } from './_generated/api';
+import { internalMutation } from './functions';
+
+const orm = createOrm({
+  schema: relations,
+  ormFunctions: internal.orm,
+  internalMutation,
+});
+
+export const { scheduledMutationBatch, scheduledDelete } = orm.api();
+```
 
 <Callout icon={<InfoIcon />}>
-Recommended: call `createDatabase` once in your context layer and attach the result to `ctx.table`.
+Recommended: create `orm` once in your context layer and attach `orm.db(ctx)` to `ctx.orm`.
 </Callout>
 
 **RLS options**
 
 ```ts
-createDatabase(db, ormSchema, ormEdges, {
+const ormDb = orm.db(ctx, {
   rls: {
     ctx,
     roleResolver: (ctx) => ctx.roles ?? [],
   },
+  vectorSearch: ctx.vectorSearch,
 })
 ```
 
-Use `ctx.skipRules.table` (or `db.skipRules.table`) for an explicit bypass of RLS.
+Use `ctx.orm.skipRules` (or `ormDb.skipRules`) for an explicit bypass of RLS.
+Pass `vectorSearch` when you want ORM `findMany({ vectorSearch })` support.
+
+### `db.system`
+
+`db.system` exposes raw Convex system-table reads for `_storage` and `_scheduled_functions`.
+
+```ts
+await db.system.get(jobId);
+await db.system.query('_scheduled_functions').collect();
+await db.system.query('_storage').take(20);
+```
+
+**Scope**
+- Raw passthrough methods like `get` and `query`
+- Not ORM query-builder APIs (`findMany`, `findFirst`)
+- Not relation loading (`with`) or ORM-specific helpers/rules
 
 ## Query Builder
 
@@ -280,11 +308,12 @@ await db.query.users.findMany({
 **Options**
 - `where`: object filter (Drizzle v1 shape) or predicate function
 - `search`: `{ index, query, filters? }` (full‑text search mode; only on tables with search indexes)
+- `vectorSearch`: `{ index, vector, limit, filter? }` (vector similarity mode; only on tables with vector indexes)
 - `index`: required when `where` is a function (`{ name, range? }`)
 - `orderBy`: `{ field: 'asc' | 'desc' }`
 - `limit`, `offset`
 - `paginate`: `{ cursor, numItems, maximumRowsRead? }` (cursor pagination)
-- `allowFullScan`: opt‑in for object-filter full scans when no index is available (not used with predicate `where` or `search`)
+- `allowFullScan`: opt‑in for object-filter full scans when no index is available (not used with predicate `where`, `search`, or `vectorSearch`)
 - `with`: relation loading
 - `columns`: post‑fetch projection
 - `extras`: post‑fetch computed fields
@@ -304,6 +333,15 @@ For `with` + `many()` relations, set relation `limit` or `defaults.defaultLimit`
 - object `where` on base table fields is allowed (post-search filter)
 - `with` is allowed
 
+**Vector mode constraints**
+- `limit` is required inside `vectorSearch` (`1..256`)
+- `orderBy` is not allowed
+- `paginate` is not allowed
+- `where` is not allowed
+- `index` is not allowed
+- `offset` is not allowed
+- `with` is allowed
+
 ### `findMany({ search })`
 
 ```ts
@@ -314,6 +352,20 @@ await db.query.posts.findMany({
     filters: { type: 'news' },
   },
   paginate: { cursor: null, numItems: 20 },
+});
+```
+
+### `findMany({ vectorSearch })`
+
+```ts
+await db.query.posts.findMany({
+  vectorSearch: {
+    index: 'embedding_vec',
+    vector: args.embedding,
+    limit: 10,
+    filter: (q) => q.eq('type', 'news'),
+  },
+  with: { author: true },
 });
 ```
 
@@ -349,6 +401,7 @@ Most queries should use `findMany()` / `findFirst()`.
 
 **Core operators**
 - `eq`, `ne`, `gt`, `gte`, `lt`, `lte`
+- `between`, `notBetween`
 - `in`, `notIn`
 - `isNull`, `isNotNull`
 - `AND`, `OR`, `NOT`
@@ -357,9 +410,13 @@ Most queries should use `findMany()` / `findFirst()`.
 - `like`, `ilike`, `notLike`, `notIlike`
 - `startsWith`, `endsWith`, `contains`
 
+**Not supported (SQL subquery operators)**
+- `exists`, `notExists` (require SQL subqueries, which Convex does not support at runtime)
+- Use relation existence filters instead (`where: { posts: true }` or `where: { NOT: { posts: true } }`)
+
 **Index compilation**
 - Index-backed by default when possible.
-- Currently index-compiled: `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`, `isNull`, `isNotNull`, `startsWith`, `like('prefix%')`, and same-field equality `OR`.
+- Currently index-compiled: `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `between`, `notBetween`, `in`, `notIn`, `isNull`, `isNotNull`, `startsWith`, `like('prefix%')`, and same-field equality `OR`.
 - Remaining operators still require `.allowFullScan()` when no indexable path exists.
 
 **Workarounds for remaining full-scan operators**
@@ -392,9 +449,12 @@ await db
 - `update()` without `where()` throws unless you call `.allowFullScan()`.
 - Non‑`_id` filters require `.allowFullScan()` only when no index is available.
 - Matched rows are capped by `mutationMaxRows` (default `1000`), collected in `mutationBatchSize` pages (default `100`).
-- Override caps via `defineSchema(..., { defaults: { mutationMaxRows, mutationBatchSize } })`.
+- Override defaults via `defineSchema(..., { defaults: { mutationMaxRows, mutationBatchSize, mutationExecutionMode, mutationAsyncDelayMs } })`.
 - For large workloads, use `.paginate({ cursor, numItems })` to execute one batch per mutation call.
+- Use `execute({ mode: 'async', batchSize?, delayMs? })` (or `.executeAsync(...)`) to run the first batch inline and schedule continuation.
+- Explicit async APIs cannot be combined with `.paginate()`.
 - Paged mode returns `{ continueCursor, isDone, numAffected }` (+ `page` when using `.returning()`).
+- Async `execute()` returns the same shape as sync `execute()` (`void` or first-batch `returning()` rows).
 - Paged mode currently supports single-range index plans only.
 
 ```ts
@@ -416,9 +476,12 @@ await db.delete(users).where(eq(users._id, userId));
 - `delete()` without `where()` throws unless you call `.allowFullScan()`.
 - Non‑`_id` filters require `.allowFullScan()` only when no index is available.
 - Matched rows are capped by `mutationMaxRows` (default `1000`), collected in `mutationBatchSize` pages (default `100`).
-- Override caps via `defineSchema(..., { defaults: { mutationMaxRows, mutationBatchSize } })`.
+- Override defaults via `defineSchema(..., { defaults: { mutationMaxRows, mutationBatchSize, mutationExecutionMode, mutationAsyncDelayMs } })`.
 - For large workloads, use `.paginate({ cursor, numItems })` to execute one batch per mutation call.
+- Use `execute({ mode: 'async', batchSize?, delayMs? })` (or `.executeAsync(...)`) to run the first batch inline and schedule continuation.
+- Explicit async APIs cannot be combined with `.paginate()` (and delete `.scheduled(...)`).
 - Paged mode returns `{ continueCursor, isDone, numAffected }` (+ `page` when using `.returning()`).
+- Async `execute()` returns the same shape as sync `execute()` (`void` or first-batch `returning()` rows).
 - Paged mode currently supports single-range index plans only.
 
 ```ts
@@ -444,8 +507,12 @@ await db
   .scheduled({ delayMs: 60_000 });
 ```
 
-Scheduled deletes require passing `{ scheduler, scheduledDelete }` when building `ctx.table`
+Scheduled deletes require passing `{ scheduler, scheduledDelete }` when building `ctx.orm`
 and exposing `scheduledDeleteFactory(schema, edges)` as an internal mutation.
+
+Async mutation batches (`execute({ mode: 'async' })` / `.executeAsync()` for update/delete) require passing
+`{ scheduler, scheduledMutationBatch }` when building `ctx.orm` and exposing
+`scheduledMutationBatchFactory(schema, edges, internalRef)` as an internal mutation.
 
 ### `returning()`
 
@@ -489,6 +556,8 @@ gt(field, value)
 gte(field, value)
 lt(field, value)
 lte(field, value)
+between(field, min, max)
+notBetween(field, min, max)
 inArray(field, values)
 notInArray(field, values)
 and(...filters)
@@ -497,6 +566,9 @@ not(filter)
 isNull(field)
 isNotNull(field)
 ```
+
+`between` is inclusive of endpoints.
+`notBetween` matches values strictly outside the range.
 
 ## Type Helpers
 

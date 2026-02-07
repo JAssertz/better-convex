@@ -9,7 +9,7 @@ import {
   uniqueIndex,
 } from 'better-convex/orm';
 import { describe, expect, it } from 'vitest';
-import { withTableCtx } from '../setup.testing';
+import { withOrmCtx } from '../setup.testing';
 
 let upsertUpdatedAtCalls = 0;
 
@@ -58,19 +58,19 @@ const relations = defineRelations(rawSchema);
 const edges = extractRelationsConfig(relations);
 
 const withCtx = async <T>(
-  fn: (ctx: { table: DatabaseWithMutations<typeof relations> }) => Promise<T>
-) => withTableCtx(schema, relations, edges, async ({ table }) => fn({ table }));
+  fn: (ctx: { orm: DatabaseWithMutations<typeof relations> }) => Promise<T>
+) => withOrmCtx(schema, relations, async ({ orm }) => fn({ orm }));
 
 describe('uniqueIndex enforcement', () => {
   it('rejects duplicate inserts', async () =>
-    withCtx(async ({ table }) => {
-      await table.insert(uniqueUsers).values({
+    withCtx(async ({ orm }) => {
+      await orm.insert(uniqueUsers).values({
         email: 'alice@example.com',
         name: 'Alice',
       });
 
       await expect(
-        table.insert(uniqueUsers).values({
+        orm.insert(uniqueUsers).values({
           email: 'alice@example.com',
           name: 'Alice Duplicate',
         })
@@ -78,19 +78,19 @@ describe('uniqueIndex enforcement', () => {
     }));
 
   it('rejects updates that violate unique indexes', async () =>
-    withCtx(async ({ table }) => {
-      const [first] = await table
+    withCtx(async ({ orm }) => {
+      const [first] = await orm
         .insert(uniqueUsers)
         .values({ email: 'alice@example.com', name: 'Alice' })
         .returning();
 
-      const [second] = await table
+      const [second] = await orm
         .insert(uniqueUsers)
         .values({ email: 'bob@example.com', name: 'Bob' })
         .returning();
 
       await expect(
-        table
+        orm
           .update(uniqueUsers)
           .set({ email: first.email })
           .where(eq(uniqueUsers._id, second._id))
@@ -99,13 +99,13 @@ describe('uniqueIndex enforcement', () => {
     }));
 
   it('allows onConflictDoNothing with unique indexes', async () =>
-    withCtx(async ({ table }) => {
-      await table
+    withCtx(async ({ orm }) => {
+      await orm
         .insert(uniqueUsers)
         .values({ email: 'alice@example.com', name: 'Alice' })
         .returning();
 
-      const result = await table
+      const result = await orm
         .insert(uniqueUsers)
         .values({ email: 'alice@example.com', name: 'Duplicate' })
         .onConflictDoNothing({ target: uniqueUsers.email })
@@ -115,13 +115,13 @@ describe('uniqueIndex enforcement', () => {
     }));
 
   it('allows onConflictDoNothing without target (any unique conflict)', async () =>
-    withCtx(async ({ table }) => {
-      await table
+    withCtx(async ({ orm }) => {
+      await orm
         .insert(uniqueUsers)
         .values({ email: 'alice@example.com', name: 'Alice' })
         .returning();
 
-      const result = await table
+      const result = await orm
         .insert(uniqueUsers)
         .values({ email: 'alice@example.com', name: 'Duplicate' })
         .onConflictDoNothing()
@@ -131,13 +131,13 @@ describe('uniqueIndex enforcement', () => {
     }));
 
   it('allows onConflictDoUpdate with unique indexes', async () =>
-    withCtx(async ({ table }) => {
-      await table
+    withCtx(async ({ orm }) => {
+      await orm
         .insert(uniqueUsers)
         .values({ email: 'alice@example.com', name: 'Alice' })
         .returning();
 
-      const [updated] = await table
+      const [updated] = await orm
         .insert(uniqueUsers)
         .values({ email: 'alice@example.com', name: 'Duplicate' })
         .onConflictDoUpdate({
@@ -150,17 +150,17 @@ describe('uniqueIndex enforcement', () => {
     }));
 
   it('applies $onUpdateFn during onConflictDoUpdate when not set', async () =>
-    withCtx(async ({ table }) => {
+    withCtx(async ({ orm }) => {
       upsertUpdatedAtCalls = 0;
 
-      const [created] = await table
+      const [created] = await orm
         .insert(upsertUsers)
         .values({ email: 'alice@example.com', name: 'Alice' })
         .returning();
 
       expect(created.updatedAt).toBe('initial');
 
-      const [updated] = await table
+      const [updated] = await orm
         .insert(upsertUsers)
         .values({ email: 'alice@example.com', name: 'Duplicate' })
         .onConflictDoUpdate({
@@ -174,19 +174,19 @@ describe('uniqueIndex enforcement', () => {
     }));
 
   it('enforces composite unique indexes', async () =>
-    withCtx(async ({ table }) => {
-      await table
+    withCtx(async ({ orm }) => {
+      await orm
         .insert(uniqueTeams)
         .values({ tenantId: 't1', email: 'alice@example.com', name: 'Alice' })
         .returning();
 
-      await table
+      await orm
         .insert(uniqueTeams)
         .values({ tenantId: 't2', email: 'alice@example.com', name: 'Alice' })
         .returning();
 
       await expect(
-        table.insert(uniqueTeams).values({
+        orm.insert(uniqueTeams).values({
           tenantId: 't1',
           email: 'alice@example.com',
           name: 'Alice Duplicate',

@@ -19,12 +19,7 @@ import {
 } from 'better-convex/orm';
 import { it as baseIt, describe, expect } from 'vitest';
 import schema from '../schema';
-import {
-  convexTest,
-  runCtx,
-  type TestCtx,
-  withTableCtx,
-} from '../setup.testing';
+import { convexTest, runCtx, type TestCtx, withOrmCtx } from '../setup.testing';
 
 // Test setup with convexTest
 const it = baseIt.extend<{ ctx: TestCtx }>({
@@ -40,7 +35,7 @@ const it = baseIt.extend<{ ctx: TestCtx }>({
 describe('M3 Query Builder', () => {
   describe('Builder Creation', () => {
     it('should create query builders for tables', ({ ctx }) => {
-      const db = ctx.table;
+      const db = ctx.orm;
 
       expect(db.query).toBeDefined();
       expect(db.query.users).toBeDefined();
@@ -54,7 +49,7 @@ describe('M3 Query Builder', () => {
         email: 'alice@example.com',
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       await expect(
         (db.query.users.findMany as any)({
           where: (row: any) => row.name === 'Alice',
@@ -73,7 +68,7 @@ describe('M3 Query Builder', () => {
 
   describe('findMany()', () => {
     it('should return QueryPromise instance', ({ ctx }) => {
-      const db = ctx.table;
+      const db = ctx.orm;
       const query = db.query.users.findMany();
 
       expect(query).toBeDefined();
@@ -83,7 +78,7 @@ describe('M3 Query Builder', () => {
     });
 
     it('should execute query and return empty array', async ({ ctx }) => {
-      const db = ctx.table;
+      const db = ctx.orm;
       const result = await db.query.users.findMany();
 
       expect(Array.isArray(result)).toBe(true);
@@ -100,7 +95,7 @@ describe('M3 Query Builder', () => {
         email: 'bob@example.com',
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const result = await db.query.users.findMany();
 
       expect(result).toHaveLength(2);
@@ -118,9 +113,9 @@ describe('M3 Query Builder', () => {
       const localEdges = extractRelationsConfig(localRelations);
 
       await expect(
-        withTableCtx(localSchema, localRelations, localEdges, async (ctx) => {
+        withOrmCtx(localSchema, localRelations, async (ctx) => {
           await ctx.db.insert('localUsers', { name: 'Alice' });
-          await ctx.table.query.localUsers.findMany();
+          await ctx.orm.query.localUsers.findMany();
         })
       ).rejects.toThrow(/limit|paginate|allowFullScan|defaultLimit/i);
     });
@@ -134,19 +129,14 @@ describe('M3 Query Builder', () => {
       const localRelations = defineRelations(localTables);
       const localEdges = extractRelationsConfig(localRelations);
 
-      await withTableCtx(
-        localSchema,
-        localRelations,
-        localEdges,
-        async (ctx) => {
-          await ctx.db.insert('localUsers', { name: 'Alice' });
-          await ctx.db.insert('localUsers', { name: 'Bob' });
-          const rows = await ctx.table.query.localUsers.findMany({
-            allowFullScan: true,
-          });
-          expect(rows).toHaveLength(2);
-        }
-      );
+      await withOrmCtx(localSchema, localRelations, async (ctx) => {
+        await ctx.db.insert('localUsers', { name: 'Alice' });
+        await ctx.db.insert('localUsers', { name: 'Bob' });
+        const rows = await ctx.orm.query.localUsers.findMany({
+          allowFullScan: true,
+        });
+        expect(rows).toHaveLength(2);
+      });
     });
 
     it('should apply schema defaultLimit for unsized findMany', async () => {
@@ -160,17 +150,12 @@ describe('M3 Query Builder', () => {
       const localRelations = defineRelations(localTables);
       const localEdges = extractRelationsConfig(localRelations);
 
-      await withTableCtx(
-        localSchema,
-        localRelations,
-        localEdges,
-        async (ctx) => {
-          await ctx.db.insert('localUsers', { name: 'Alice' });
-          await ctx.db.insert('localUsers', { name: 'Bob' });
-          const rows = await ctx.table.query.localUsers.findMany();
-          expect(rows).toHaveLength(1);
-        }
-      );
+      await withOrmCtx(localSchema, localRelations, async (ctx) => {
+        await ctx.db.insert('localUsers', { name: 'Alice' });
+        await ctx.db.insert('localUsers', { name: 'Bob' });
+        const rows = await ctx.orm.query.localUsers.findMany();
+        expect(rows).toHaveLength(1);
+      });
     });
 
     it('should require relation limit on nested many when no defaults and no allowFullScan', async () => {
@@ -204,11 +189,11 @@ describe('M3 Query Builder', () => {
       const localEdges = extractRelationsConfig(localRelations);
 
       await expect(
-        withTableCtx(localSchema, localRelations, localEdges, async (ctx) => {
+        withOrmCtx(localSchema, localRelations, async (ctx) => {
           const userId = await ctx.db.insert('localUsers', { name: 'Alice' });
           await ctx.db.insert('localPosts', { userId, title: 'P1' });
           await ctx.db.insert('localPosts', { userId, title: 'P2' });
-          await ctx.table.query.localUsers.findMany({
+          await ctx.orm.query.localUsers.findMany({
             limit: 1,
             with: { posts: true },
           });
@@ -228,7 +213,7 @@ describe('M3 Query Builder', () => {
         email: 'bob@example.com',
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const result = await db.query.users.findFirst();
 
       expect(result).toBeDefined();
@@ -236,7 +221,7 @@ describe('M3 Query Builder', () => {
     });
 
     it('should return undefined for empty results', async ({ ctx }) => {
-      const db = ctx.table;
+      const db = ctx.orm;
       const result = await db.query.users.findFirst();
 
       expect(result).toBeUndefined();
@@ -250,7 +235,7 @@ describe('M3 Query Builder', () => {
         email: 'alice@example.com',
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const result = await db.query.users.findMany({
         columns: { name: true },
       });
@@ -268,7 +253,7 @@ describe('M3 Query Builder', () => {
         email: 'alice@example.com',
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const result = await db.query.users.findMany({
         columns: { email: false },
       });
@@ -286,7 +271,7 @@ describe('M3 Query Builder', () => {
         email: 'alice@example.com',
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const result = await db.query.users.findMany({
         columns: {},
       });
@@ -303,7 +288,7 @@ describe('M3 Query Builder', () => {
         email: 'alice@example.com',
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const result = await db.query.users.findMany({
         extras: {
           nameUpper: (row) => row.name.toUpperCase(),
@@ -320,7 +305,7 @@ describe('M3 Query Builder', () => {
         email: 'alice@example.com',
       });
 
-      const db = ctx.table;
+      const db = ctx.orm;
       const result = await db.query.users.findMany({
         columns: {},
         extras: {

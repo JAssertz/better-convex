@@ -38,6 +38,7 @@
       "description": "Query multiple records with filtering and pagination (M1-M4)",
       "parameters": {
         "where": "Filter condition using operators (eq, ne, gt, etc.)",
+        "vectorSearch": "Vector similarity config: { index, vector, limit, filter? }",
         "limit": "Maximum number of records to return",
         "offset": "Number of records to skip"
       },
@@ -63,6 +64,26 @@
       "returns": "Promise resolving to first record or null",
       "example": "const user = await db(ctx).query.users.findFirst({ where: eq(users.email, 'alice@example.com') });",
       "docUrl": "/docs/db/orm/queries#findfirst",
+      "category": "queries"
+    },
+    "vectorSearch": {
+      "signature": "db(ctx).query.tableName.findMany({ vectorSearch: { index, vector, limit, filter? }, with?, columns?, extras? }): Promise<Array<TableRecord<T>>>",
+      "description": "Vector similarity search in findMany mode (ordered by similarity)",
+      "parameters": {
+        "index": "Vector index name on the target table",
+        "vector": "Embedding vector to query against",
+        "limit": "Required result cap (1..256)",
+        "filter": "Optional vector filter callback using vector index filterFields"
+      },
+      "constraints": [
+        "Cannot be combined with orderBy",
+        "Cannot be combined with paginate",
+        "Cannot be combined with where",
+        "Cannot be combined with index or offset"
+      ],
+      "returns": "Promise resolving to rows in similarity order",
+      "example": "const rows = await db(ctx).query.posts.findMany({ vectorSearch: { index: 'embedding_vec', vector: args.embedding, limit: 10, filter: (q) => q.eq('type', 'news') } });",
+      "docUrl": "/docs/db/orm/queries#vector-search",
       "category": "queries"
     },
     "where": {

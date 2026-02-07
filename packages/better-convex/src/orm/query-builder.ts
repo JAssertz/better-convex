@@ -17,6 +17,7 @@ import type {
   EnforceAllowFullScan,
   EnforcePredicateIndex,
   EnforceSearchConstraints,
+  EnforceVectorSearchConstraints,
   PaginateConfig,
   PaginatedResult,
   PredicateWhereIndexConfig,
@@ -24,15 +25,20 @@ import type {
   SearchWhereFilter,
   TableRelationalConfig,
   TablesRelationalConfig,
+  VectorQueryConfig,
+  VectorSearchProvider,
   WherePredicate,
 } from './types';
 
 type EnforcedConfig<
   TConfig,
   TTableConfig extends TableRelationalConfig,
-> = EnforceSearchConstraints<
-  EnforcePredicateIndex<
-    EnforceAllowFullScan<TConfig, TTableConfig>,
+> = EnforceVectorSearchConstraints<
+  EnforceSearchConstraints<
+    EnforcePredicateIndex<
+      EnforceAllowFullScan<TConfig, TTableConfig>,
+      TTableConfig
+    >,
     TTableConfig
   >,
   TTableConfig
@@ -81,9 +87,10 @@ type SearchPaginatedConfig<
   TTableConfig extends TableRelationalConfig,
 > = Omit<
   PaginatedConfig<TSchema, TTableConfig>,
-  'search' | 'where' | 'orderBy' | 'index'
+  'search' | 'vectorSearch' | 'where' | 'orderBy' | 'index'
 > & {
   search: SearchQueryConfig<TTableConfig>;
+  vectorSearch?: never;
   where?: SearchWhereFilter<TTableConfig> | undefined;
   orderBy?: never;
   index?: never;
@@ -94,9 +101,10 @@ type SearchNonPaginatedConfig<
   TTableConfig extends TableRelationalConfig,
 > = Omit<
   NonPaginatedConfig<TSchema, TTableConfig>,
-  'search' | 'where' | 'orderBy' | 'index'
+  'search' | 'vectorSearch' | 'where' | 'orderBy' | 'index'
 > & {
   search: SearchQueryConfig<TTableConfig>;
+  vectorSearch?: never;
   where?: SearchWhereFilter<TTableConfig> | undefined;
   orderBy?: never;
   index?: never;
@@ -107,12 +115,45 @@ type SearchFindFirstConfig<
   TTableConfig extends TableRelationalConfig,
 > = Omit<
   DBQueryConfig<'many', true, TSchema, TTableConfig>,
-  'limit' | 'paginate' | 'search' | 'where' | 'orderBy' | 'index'
+  | 'limit'
+  | 'paginate'
+  | 'search'
+  | 'vectorSearch'
+  | 'where'
+  | 'orderBy'
+  | 'index'
 > & {
   search: SearchQueryConfig<TTableConfig>;
+  vectorSearch?: never;
   where?: SearchWhereFilter<TTableConfig> | undefined;
   orderBy?: never;
   index?: never;
+};
+
+type VectorNonPaginatedConfig<
+  TSchema extends TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig,
+> = Omit<
+  NonPaginatedConfig<TSchema, TTableConfig>,
+  | 'vectorSearch'
+  | 'search'
+  | 'where'
+  | 'orderBy'
+  | 'paginate'
+  | 'index'
+  | 'offset'
+  | 'limit'
+  | 'allowFullScan'
+> & {
+  vectorSearch: VectorQueryConfig<TTableConfig>;
+  search?: never;
+  where?: never;
+  orderBy?: never;
+  paginate?: never;
+  index?: never;
+  offset?: never;
+  limit?: never;
+  allowFullScan?: never;
 };
 
 type FindManyResult<
@@ -144,6 +185,7 @@ type PaginatedConfigNoSearch<
   TTableConfig extends TableRelationalConfig,
 > = Omit<PaginatedConfig<TSchema, TTableConfig>, 'search'> & {
   search?: undefined;
+  vectorSearch?: undefined;
 };
 
 type NonPaginatedConfigNoSearch<
@@ -151,6 +193,7 @@ type NonPaginatedConfigNoSearch<
   TTableConfig extends TableRelationalConfig,
 > = Omit<NonPaginatedConfig<TSchema, TTableConfig>, 'search'> & {
   search?: undefined;
+  vectorSearch?: undefined;
 };
 
 type FindFirstConfigNoSearch<
@@ -158,9 +201,10 @@ type FindFirstConfigNoSearch<
   TTableConfig extends TableRelationalConfig,
 > = Omit<
   DBQueryConfig<'many', true, TSchema, TTableConfig>,
-  'limit' | 'paginate' | 'search'
+  'limit' | 'paginate' | 'search' | 'vectorSearch'
 > & {
   search?: undefined;
+  vectorSearch?: undefined;
 };
 
 /**
@@ -199,7 +243,8 @@ export class RelationalQueryBuilder<
     private db: GenericDatabaseReader<any>,
     private allEdges?: EdgeMetadata[], // M6.5 Phase 2: All edges for nested loading
     private rls?: RlsContext,
-    private relationLoading?: { concurrency?: number }
+    private relationLoading?: { concurrency?: number },
+    private vectorSearch?: VectorSearchProvider
   ) {}
 
   /**
@@ -228,6 +273,16 @@ export class RelationalQueryBuilder<
     config: KnownKeysOnly<
       TConfig,
       SearchNonPaginatedConfig<TSchema, TTableConfig>
+    >
+  ): GelRelationalQuery<
+    TSchema,
+    TTableConfig,
+    BuildQueryResult<TSchema, TTableConfig, TConfig>[]
+  >;
+  findMany<TConfig extends VectorNonPaginatedConfig<TSchema, TTableConfig>>(
+    config: KnownKeysOnly<
+      TConfig,
+      VectorNonPaginatedConfig<TSchema, TTableConfig>
     >
   ): GelRelationalQuery<
     TSchema,
@@ -294,7 +349,8 @@ export class RelationalQueryBuilder<
       'many',
       this.allEdges, // M6.5 Phase 2: Pass all edges for nested loading
       this.rls,
-      this.relationLoading
+      this.relationLoading,
+      this.vectorSearch
     );
   }
 
@@ -345,7 +401,8 @@ export class RelationalQueryBuilder<
       'first',
       this.allEdges, // M6.5 Phase 2: Pass all edges for nested loading
       this.rls,
-      this.relationLoading
+      this.relationLoading,
+      this.vectorSearch
     );
   }
 }

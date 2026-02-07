@@ -28,7 +28,7 @@
  * - convex/orm/pagination.test.ts (cursor pagination tests - all passing)
  */
 
-import { createDatabase, extractRelationsConfig } from 'better-convex/orm';
+import { createOrm, extractRelationsConfig } from 'better-convex/orm';
 import type { GenericDatabaseReader } from 'convex/server';
 import type { GenericId } from 'convex/values';
 import * as schema from './tables-rel';
@@ -47,7 +47,8 @@ const edgeMetadata = extractRelationsConfig(schema.relations);
 
 // Mock database reader for type testing
 const mockDb = {} as GenericDatabaseReader<any>;
-const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
+const orm = createOrm({ schema: schemaConfig });
+const db = orm.db(mockDb);
 
 // ============================================================================
 // DRIZZLE PARITY TESTS (pg db-rel.ts)

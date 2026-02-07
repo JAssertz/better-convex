@@ -123,8 +123,7 @@ export class WhereClauseCompiler {
     );
 
     return {
-      strategy:
-        selectedIndex && indexFilters.length > 0 ? 'singleIndex' : 'none',
+      strategy: this.resolveStrategy(selectedIndex, indexFilters),
       selectedIndex,
       indexFilters,
       probeFilters: [],
@@ -154,10 +153,28 @@ export class WhereClauseCompiler {
     }
 
     if (expression.type === 'logical') {
-      return this.tryCompileOrEquality(expression as LogicalExpression);
+      return this.tryCompileOrSpecialCase(expression as LogicalExpression);
     }
 
     return null;
+  }
+
+  private resolveStrategy(
+    selectedIndex: IndexLike | null,
+    indexFilters: FilterExpression<boolean>[]
+  ): IndexStrategy {
+    if (!selectedIndex || indexFilters.length === 0) {
+      return 'none';
+    }
+    const hasRangeFilter = indexFilters.some(
+      (filter) =>
+        filter.type === 'binary' &&
+        (filter.operator === 'gt' ||
+          filter.operator === 'gte' ||
+          filter.operator === 'lt' ||
+          filter.operator === 'lte')
+    );
+    return hasRangeFilter ? 'rangeIndex' : 'singleIndex';
   }
 
   private tryCompileInArray(
@@ -387,6 +404,15 @@ export class WhereClauseCompiler {
     };
   }
 
+  private tryCompileOrSpecialCase(
+    expression: LogicalExpression
+  ): WhereClauseResult | null {
+    return (
+      this.tryCompileOrEquality(expression) ??
+      this.tryCompileOrRangeComplement(expression)
+    );
+  }
+
   private tryCompileOrEquality(
     expression: LogicalExpression
   ): WhereClauseResult | null {
@@ -439,6 +465,61 @@ export class WhereClauseCompiler {
       probeFilters: uniqueValues.map((value) => [
         eq(fieldRef(fieldName) as any, value as any),
       ]),
+      postFilters: [expression],
+    };
+  }
+
+  private tryCompileOrRangeComplement(
+    expression: LogicalExpression
+  ): WhereClauseResult | null {
+    if (expression.operator !== 'or' || expression.operands.length !== 2) {
+      return null;
+    }
+
+    const [left, right] = expression.operands;
+    if (left.type !== 'binary' || right.type !== 'binary') {
+      return null;
+    }
+
+    const leftBinary = left as BinaryExpression;
+    const rightBinary = right as BinaryExpression;
+    const [leftField] = leftBinary.operands;
+    const [rightField] = rightBinary.operands;
+
+    if (!isFieldReference(leftField) || !isFieldReference(rightField)) {
+      return null;
+    }
+    if (leftField.fieldName !== rightField.fieldName) {
+      return null;
+    }
+
+    const isLowerRangeOperator = (operator: string) =>
+      operator === 'lt' || operator === 'lte';
+    const isUpperRangeOperator = (operator: string) =>
+      operator === 'gt' || operator === 'gte';
+
+    const leftIsLower = isLowerRangeOperator(leftBinary.operator);
+    const leftIsUpper = isUpperRangeOperator(leftBinary.operator);
+    const rightIsLower = isLowerRangeOperator(rightBinary.operator);
+    const rightIsUpper = isUpperRangeOperator(rightBinary.operator);
+
+    if (!(leftIsLower && rightIsUpper) && !(leftIsUpper && rightIsLower)) {
+      return null;
+    }
+
+    const selectedIndex = this.findLeadingIndex(leftField.fieldName);
+    if (!selectedIndex) {
+      return null;
+    }
+
+    const lowerProbe = leftIsLower ? leftBinary : rightBinary;
+    const upperProbe = leftIsUpper ? leftBinary : rightBinary;
+
+    return {
+      strategy: 'multiProbe',
+      selectedIndex,
+      indexFilters: [],
+      probeFilters: [[lowerProbe], [upperProbe]],
       postFilters: [expression],
     };
   }
