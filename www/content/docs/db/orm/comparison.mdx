@@ -135,7 +135,7 @@ See [Migrate from Convex Ents](/docs/db/orm/migrate-from-ents) for a stepâ€‘byâ€
     ```ts
     import { defineRelations } from 'better-convex/orm';
 
-    export const ormSchema = defineRelations({ users, posts }, (r) => ({
+    export const relations = defineRelations({ users, posts }, (r) => ({
       users: {
         posts: r.many.posts(),
       },

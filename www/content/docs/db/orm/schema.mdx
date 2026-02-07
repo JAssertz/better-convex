@@ -76,7 +76,7 @@ export const posts = convexTable('posts', {
   authorId: id('users'),
 });
 
-export const ormSchema = defineRelations({ users, posts }, (r) => ({
+export const relations = defineRelations({ users, posts }, (r) => ({
   users: { posts: r.many.posts() },
   posts: {
     author: r.one.users({ from: r.posts.authorId, to: r.users._id }),

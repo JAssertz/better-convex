@@ -115,7 +115,7 @@ Proceed with Option 1. Read and update each of the following files: `index.mdx`,
 
 **Actions:**
 - Updated all ORM docs in `www/content/docs/db/orm` to reflect current API
-- Replaced `db(ctx)` usage with `createDatabase` + `buildSchema`/`extractRelationsConfig`
+- Replaced `db(ctx)` usage with `createDatabase` + `defineRelations`/`extractRelationsConfig`
 - Fixed `where` examples to use callback form and updated orderBy examples
 - Updated relations examples (explicit FK fields, join table for many-to-many)
 - Refreshed Feature Compatibility lists and removed SQL snippets

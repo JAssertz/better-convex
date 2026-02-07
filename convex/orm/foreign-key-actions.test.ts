@@ -9,7 +9,7 @@ import {
   foreignKey,
   id,
   index,
-  number,
+  integer,
   scheduledMutationBatchFactory,
   text,
 } from 'better-convex/orm';
@@ -24,7 +24,7 @@ const users = convexTable(
   'fk_action_users',
   {
     slug: text().notNull(),
-    deletionTime: number(),
+    deletionTime: integer(),
   },
   (t) => [index('by_slug').on(t.slug)]
 );

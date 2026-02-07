@@ -1,6 +1,6 @@
 import {
-  buildSchema,
   createOrm,
+  defineRelations,
   extractRelationsConfig,
   type InsertValue,
 } from 'better-convex/orm';
@@ -10,7 +10,7 @@ import { UserRow } from './fixtures/types';
 import { users } from './tables-rel';
 import { type Equal, Expect, IsAny, Not } from './utils';
 
-const schemaConfig = buildSchema({ users });
+const schemaConfig = defineRelations({ users });
 const edgeMetadata = extractRelationsConfig(schemaConfig);
 const mockDb = {} as GenericDatabaseWriter<any>;
 const orm = createOrm({ schema: schemaConfig });

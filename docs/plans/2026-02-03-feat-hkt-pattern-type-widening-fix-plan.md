@@ -533,7 +533,7 @@ Uncomment these test blocks (lines 92-291):
 // convex/test-types/pagination.ts
 
 import {
-  buildSchema,
+  defineRelations,
   createDatabase,
   extractRelationsConfig,
 } from 'better-convex/orm';
@@ -541,7 +541,7 @@ import type { GenericDatabaseReader } from 'convex/server';
 import * as schema from './tables';
 import { type Equal, Expect } from './utils';
 
-const schemaConfig = buildSchema(schema);
+const schemaConfig = defineRelations(schema);
 const edgeMetadata = extractRelationsConfig(schema);
 const mockDb = {} as GenericDatabaseReader<any>;
 const db = createDatabase(mockDb, schemaConfig, edgeMetadata);
@@ -698,7 +698,7 @@ export type DatabaseWithQuery<TSchema> = {
 
 1. Schema Definition
    ┌─────────────────┐
-   │ buildSchema()   │ → Creates TablesRelationalConfig
+   │ defineRelations() │ → Creates TablesRelationalConfig
    │ { users, posts }│    with tsName: K & string
    └─────────────────┘
 

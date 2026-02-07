@@ -17,7 +17,6 @@ import {
   id,
   index,
   integer,
-  number,
   searchIndex,
   text,
   unique,
@@ -165,7 +164,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
     boolField: boolean().notNull(),
     bigintField: bigint(),
     idField: id('other').notNull(),
-    numberField: number(),
+    numberField: integer(),
     vectorField: vector(1536),
   });
 
@@ -570,16 +569,16 @@ index('missing_columns').on();
   Expect<Equal<BalanceType, bigint | null>>;
 }
 
-// Test 17: number() vs integer() distinction
+// Test 17: integer() numeric inference
 {
   const entities = convexTable('entities', {
     intValue: integer(),
-    numValue: number(),
+    numValue: integer(),
   });
 
   type Entity = InferSelectModel<typeof entities>;
 
-  // Both are number type at runtime, but builder is distinct
+  // Both fields infer to nullable number
   Expect<Equal<Entity['intValue'], number | null>>;
   Expect<Equal<Entity['numValue'], number | null>>;
 }

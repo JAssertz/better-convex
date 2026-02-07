@@ -1,7 +1,7 @@
 import {
   convexTable,
   defineSchema,
-  number,
+  integer,
   searchIndex,
   text,
   vector,
@@ -156,7 +156,7 @@ test('vectorIndex requires dimensions', () => {
 
 test('searchIndex validates search field type', () => {
   expect(() =>
-    convexTable('posts', { count: number().notNull() }, (t) => [
+    convexTable('posts', { count: integer().notNull() }, (t) => [
       searchIndex('search_count').on(t.count),
     ])
   ).toThrow(/only supports text\(\) columns/);

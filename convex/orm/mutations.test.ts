@@ -16,10 +16,10 @@ import {
   extractRelationsConfig,
   inArray,
   index,
+  integer,
   isNotNull,
   ne,
   notInArray,
-  number,
   scheduledMutationBatchFactory,
   text,
 } from 'better-convex/orm';
@@ -443,7 +443,7 @@ describe('M7 Mutations', () => {
         name: text().notNull(),
         status: text().notNull(),
         role: text().notNull(),
-        deletionTime: number(),
+        deletionTime: integer(),
       },
       (t) => [index('by_status').on(t.status)]
     );

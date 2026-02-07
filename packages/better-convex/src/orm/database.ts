@@ -17,7 +17,7 @@ import type { EdgeMetadata } from './extractRelationsConfig';
 import { ConvexInsertBuilder } from './insert';
 import { buildForeignKeyGraph, type OrmContextValue } from './mutation-utils';
 import { RelationalQueryBuilder } from './query-builder';
-import { defineRelations, type TablesRelationalConfig } from './relations';
+import type { TablesRelationalConfig } from './relations';
 import type { RlsContext } from './rls/types';
 import { type StreamDatabaseReader, stream } from './stream';
 import {
@@ -247,15 +247,4 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
     ...table,
     skipRules: skipRulesTable,
   } as DatabaseWithSkipRules<DatabaseWithQuery<TSchema>>;
-}
-
-/**
- * Build schema configuration from raw tables (no relations)
- *
- * Convenience wrapper around defineRelations(schema).
- */
-export function buildSchema<TSchema extends Record<string, any>>(
-  rawSchema: TSchema
-): TablesRelationalConfig {
-  return defineRelations(rawSchema) as TablesRelationalConfig;
 }

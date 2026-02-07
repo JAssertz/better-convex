@@ -69,7 +69,7 @@ import {
   defineRelations,
 } from 'better-convex/orm';
 
-export const ormSchema = defineRelations({ users, posts }, (r) => ({
+export const relations = defineRelations({ users, posts }, (r) => ({
   users: { posts: r.many.posts() },
   posts: {
     author: r.one.users({ from: r.posts.userId, to: r.users._id }),
@@ -84,13 +84,12 @@ Create a small helper that attaches Better‑Convex ORM to `ctx.orm`. Do this on
 ```ts title="convex/lib/orm.ts"
 import type { GenericDatabaseWriter } from 'convex/server';
 import { createOrm } from 'better-convex/orm';
-import { ormSchema } from '../schema';
+import { relations } from '../schema';
 
-const orm = createOrm({ schema: ormSchema });
+const orm = createOrm({ schema: relations });
 
 export const withOrm = <Ctx extends { db: GenericDatabaseWriter<any> }>(ctx: Ctx) => {
-  const ormDb = orm.db(ctx);
-  return { ...ctx, orm: ormDb };
+  return { ...ctx, orm: orm.db(ctx) };
 };
 ```
 

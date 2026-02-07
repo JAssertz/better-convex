@@ -6,12 +6,21 @@ status: proposed
 
 # ORM Pre-release: Remaining After Limit-Safety Plan
 
-Assumes the **Limit-Safety Breaking Plan** is implemented, which resolves:
+Assumes the following plans are implemented:
+
+**Limit-Safety Breaking Plan** resolves:
 - Silent `limit ?? 1000` truncation → explicit sizing policy
-- Update/delete unbounded `.collect()` → batched with `mutationMaxRows` ceiling
+- Update/delete unbounded `.collect()` → one-shot bounded with `mutationMaxRows` ceiling
 - multiProbe unbounded `.collect()` → effective limit applied
 - Nested many relation limit enforcement → schema defaults / explicit
 - `allowFullScan` as unified escape hatch
+
+**Paginated Update/Delete Batching** resolves:
+- `.paginate({ cursor, numItems })` on update/delete builders for large workloads
+- One-shot mode keeps `mutationMaxRows` fail-fast
+- Paged mode processes one page per call via Convex cursor semantics
+- Types distinguish one-shot vs paged `execute()` return types
+- Docs guide users to loop from action or recursive scheduler for scale
 
 This document re-ranks all remaining pre-release work.
 
@@ -26,12 +35,13 @@ This document re-ranks all remaining pre-release work.
 **Severity**: High
 **File**: `mutation-utils.ts:482-495` (`collectReferencingRows`)
 
-NOT covered by limit-safety plan. Cascade deletes call `.collect()` on referencing tables via `collectReferencingRows()`. This path uses `withIndex` (good) but has no row ceiling. A cascade on a user with 50k posts still collects all 50k rows into memory before processing.
+Last remaining unbounded `.collect()` path. Update/delete selection now has one-shot ceiling + `.paginate()`, but cascade deletes still call `.collect()` on referencing tables via `collectReferencingRows()`. This path uses `withIndex` (good) but has no row ceiling. A cascade on a user with 50k posts still collects all 50k rows into memory.
 
 **Proposed**:
 - Apply `mutationMaxRows` ceiling to cascade collection.
 - Fail fast if referencing row count exceeds ceiling.
 - Users can increase ceiling via schema `defaults.mutationMaxRows`.
+- Consider: should cascade support paged mode too? (Likely no — cascade is transactional by nature.)
 
 **Effort**: S
 
@@ -268,8 +278,8 @@ Update `limitations.mdx` with operation-by-operation behavior table. Must reflec
 |-----------|:-:|---|---|
 | `findMany` | Recommended | Explicit limit, paginate, defaultLimit, or allowFullScan required | New in limit-safety plan |
 | `findFirst` | Recommended | limit: 1 (automatic) | Unchanged |
-| `update().where()` | Recommended | Batched, mutationMaxRows ceiling | New |
-| `delete().where()` | Recommended | Batched, mutationMaxRows ceiling | New |
+| `update().where()` | Recommended | One-shot: mutationMaxRows ceiling. Paged: `.paginate()` for scale | New |
+| `delete().where()` | Recommended | One-shot: mutationMaxRows ceiling. Paged: `.paginate()` for scale | New |
 | `with: { many }` | Required (strict) | Per-parent limit required (or defaultLimit/allowFullScan) | New |
 | `with: { one }` | Required (strict) | N/A (single row) | Unchanged |
 | `search: {...}` | Required | Uses search index | Unchanged |

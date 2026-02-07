@@ -5,7 +5,7 @@
  * Maps to Convex v.int64() or v.optional(v.int64()).
  *
  * Note: Convex int64 maps to JavaScript bigint type.
- * For regular numbers (Float64), use number() or integer() instead.
+ * For regular numbers (Float64), use integer() instead.
  *
  * @example
  * bigint().notNull() → v.int64()

@@ -65,7 +65,7 @@ export const posts = convexTable(
   (t) => [index('by_user').on(t.userId)]
 );
 
-export const ormSchema = defineRelations({ users, posts }, (r) => ({
+export const relations = defineRelations({ users, posts }, (r) => ({
   users: { posts: r.many.posts() },
   posts: { user: r.one.users({ from: r.posts.userId, to: r.users._id }) },
 }));
@@ -85,9 +85,8 @@ const table = entsTableFactory(ctx, entDefinitions);
 
 **ORM (attach once)**
 ```ts
-const orm = createOrm({ schema: ormSchema });
-const ormDb = orm.db(ctx);
-return { ...ctx, orm: ormDb };
+const orm = createOrm({ schema: relations });
+return { ...ctx, orm: orm.db(ctx) };
 ```
 
 If you need RLS, pass `rls: { ctx }` when building `table`.
@@ -130,7 +129,7 @@ const memberships = convexTable('memberships', {
   role: text().notNull(),
 });
 
-const ormSchema = defineRelations({ users, groups, memberships }, (r) => ({
+const relations = defineRelations({ users, groups, memberships }, (r) => ({
   users: { memberships: r.many.memberships() },
   groups: { memberships: r.many.memberships() },
   memberships: {

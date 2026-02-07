@@ -1,4 +1,4 @@
-import { buildSchema, createOrm } from 'better-convex/orm';
+import { createOrm, defineRelations } from 'better-convex/orm';
 import type {
   GenericDatabaseWriter,
   SchedulableFunctionReference,
@@ -6,7 +6,7 @@ import type {
 import { users } from './tables-rel';
 import { type Equal, Expect, IsAny } from './utils';
 
-const schemaConfig = buildSchema({ users });
+const schemaConfig = defineRelations({ users });
 const mockDb = {} as GenericDatabaseWriter<any>;
 
 const orm = createOrm({ schema: schemaConfig });

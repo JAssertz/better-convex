@@ -670,7 +670,7 @@ export {
 - [ ] Verify 40 type errors are resolved
 - [ ] Add new type tests for builder type inference
 - [ ] Test edge cases: nullable, defaults, primaryKey combinations
-- [ ] Verify buildSchema() still works with compiled validators
+- [ ] Verify defineRelations() still works with compiled validators
 
 **Total Estimate**: 14-20 hours
 

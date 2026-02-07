@@ -79,7 +79,7 @@ const profiles = convexTable('profiles', {
   userId: id('users'),
 });
 
-const ormSchema = defineRelations({ users, profiles }, (r) => ({
+const relations = defineRelations({ users, profiles }, (r) => ({
   profiles: {
     user: r.one.users({
       from: r.profiles.userId,
@@ -118,7 +118,7 @@ const posts = convexTable('posts', {
   userId: id('users'),
 });
 
-const ormSchema = defineRelations({ users, posts }, (r) => ({
+const relations = defineRelations({ users, posts }, (r) => ({
   users: {
     posts: r.many.posts(),
   },
@@ -156,7 +156,7 @@ const postsTags = convexTable('postsTags', {
   tagId: id('tags'),
 });
 
-const ormSchema = defineRelations({ posts, tags, postsTags }, (r) => ({
+const relations = defineRelations({ posts, tags, postsTags }, (r) => ({
   posts: {
     tags: r.many.postsTags(),
   },
@@ -192,7 +192,7 @@ const memberships = convexTable('memberships', {
   joinedAt: number().notNull(),
 });
 
-const ormSchema = defineRelations({ users, groups, memberships }, (r) => ({
+const relations = defineRelations({ users, groups, memberships }, (r) => ({
   users: {
     memberships: r.many.memberships(),
   },
@@ -237,7 +237,7 @@ const usersToGroups = convexTable('usersToGroups', {
   groupId: id('groups').notNull(),
 });
 
-const ormSchema = defineRelations({ users, groups, usersToGroups }, (r) => ({
+const relations = defineRelations({ users, groups, usersToGroups }, (r) => ({
   users: {
     groups: r.many.groups({
       from: r.users._id.through(r.usersToGroups.userId),
@@ -268,7 +268,7 @@ const users = convexTable('users', {
   managerId: id('users'),
 });
 
-const ormSchema = defineRelations({ users }, (r) => ({
+const relations = defineRelations({ users }, (r) => ({
   users: {
     manager: r.one.users({
       from: r.users.managerId,
@@ -305,7 +305,7 @@ const posts = convexTable('posts', {
   authorId: id('users').notNull(),
 });
 
-const ormSchema = defineRelations({ users, posts }, (r) => ({
+const relations = defineRelations({ users, posts }, (r) => ({
   posts: {
     author: r.one.users({
       from: r.posts.authorId,
@@ -323,7 +323,7 @@ const ormSchema = defineRelations({ users, posts }, (r) => ({
 Define the `one()` side with `from` and `to`. The `many()` side can be inferred from the inverse relation.
 
 ```ts
-const ormSchema = defineRelations({ users, posts }, (r) => ({
+const relations = defineRelations({ users, posts }, (r) => ({
   posts: {
     author: r.one.users({
       from: r.posts.userId,
@@ -339,7 +339,7 @@ const ormSchema = defineRelations({ users, posts }, (r) => ({
 ### Export Tables and Schema
 
 ```ts
-export const ormSchema = defineRelations({ users, posts }, (r) => ({
+export const relations = defineRelations({ users, posts }, (r) => ({
   users: { posts: r.many.posts() },
   posts: { author: r.one.users({ from: r.posts.userId, to: r.users._id }) },
 }));
@@ -371,7 +371,7 @@ const postRelations = defineRelationsPart({ posts, comments }, (r) => ({
   },
 }));
 
-export const ormSchema = defineRelations({ users, posts, comments }, (r) => ({
+export const relations = defineRelations({ users, posts, comments }, (r) => ({
   users: userRelations.users.relations,
   posts: {
     ...userRelations.posts.relations,
@@ -410,7 +410,7 @@ const posts = convexTable('posts', {
   published: boolean().notNull(),
 });
 
-const ormSchema = defineRelations({ users, posts }, (r) => ({
+const relations = defineRelations({ users, posts }, (r) => ({
   users: {
     publishedPosts: r.many.posts({
       from: r.users._id,

@@ -52,12 +52,11 @@ export {
   type ConvexIdBuilderInitial,
   id,
 } from './id';
-// Number builders (number + integer alias)
+// Number builder
 export {
   ConvexNumberBuilder,
   type ConvexNumberBuilderInitial,
   integer,
-  number,
 } from './number';
 // System fields
 export {

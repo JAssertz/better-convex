@@ -67,9 +67,9 @@ Attach ORM to `ctx.orm` with RLS enabled. Do this once in your context layer:
 ```ts title="convex/lib/orm.ts"
 import type { GenericDatabaseWriter } from 'convex/server';
 import { createOrm } from 'better-convex/orm';
-import { ormSchema } from '../schema';
+import { relations } from '../schema';
 
-const orm = createOrm({ schema: ormSchema });
+const orm = createOrm({ schema: relations });
 
 export const withOrm = <Ctx extends { db: GenericDatabaseWriter<any> }>(ctx: Ctx) => {
   const ormDb = orm.db(ctx, { rls: { ctx } });

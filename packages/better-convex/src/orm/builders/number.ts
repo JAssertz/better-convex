@@ -4,17 +4,12 @@
  * Creates number columns in Convex tables.
  * Maps to Convex v.number() or v.optional(v.number()).
  *
- * Provides two factory functions for Drizzle compatibility:
- * - number() - generic number column (matches Convex v.number())
- * - integer() - alias for number() (Drizzle compatibility)
- *
- * Note: Convex v.number() is Float64, supports both integers and floats.
- * For JavaScript bigint, use bigint() builder instead.
+ * Provides integer() for Drizzle parity.
+ * Note: Convex v.number() is Float64 under the hood.
  *
  * @example
- * number().notNull() → v.number()
  * integer() → v.optional(v.number())
- * number().default(0) → v.optional(v.number()) with default
+ * integer().default(0) → v.optional(v.number()) with default
  */
 
 import type { Validator } from 'convex/values';
@@ -72,28 +67,10 @@ export class ConvexNumberBuilder<
 }
 
 /**
- * number() factory function
- *
- * Creates a number column builder (Float64 in Convex).
- * Supports both integers and floating point numbers.
- *
- * @example
- * number() → unnamed column
- * number('col_name') → named column
- */
-export function number(): ConvexNumberBuilderInitial<''>;
-export function number<TName extends string>(
-  name: TName
-): ConvexNumberBuilderInitial<TName>;
-export function number(name?: string) {
-  return new ConvexNumberBuilder(name ?? '');
-}
-
-/**
  * integer() factory function
  *
- * Alias for number() to match Drizzle ORM naming.
- * In Convex, both map to v.number() (Float64).
+ * Drizzle-parity numeric builder.
+ * In Convex this maps to v.number() (Float64).
  *
  * @example
  * integer() → unnamed column

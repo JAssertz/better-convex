@@ -90,7 +90,6 @@ export {
   id,
   integer,
   json,
-  number,
   text,
   textEnum,
   vector,
@@ -122,8 +121,6 @@ export type {
   DatabaseWithQuery,
   DatabaseWithSkipRules,
 } from './database';
-// M3: Database Context
-export { buildSchema } from './database';
 export type { EdgeMetadata } from './extractRelationsConfig';
 // M2: Schema Extraction
 export { extractRelationsConfig } from './extractRelationsConfig';
@@ -183,7 +180,6 @@ export {
 } from './introspection';
 // M5: OrderBy
 export { asc, desc } from './order-by';
-export type { IndexKey as PaginationIndexKey } from './pagination';
 export type {
   ExtractTablesWithRelations,
   ManyConfig,
@@ -218,7 +214,6 @@ export { defineSchema } from './schema';
 export {
   Brand,
   Columns,
-  Relations as RelationsSymbol,
   TableName,
 } from './symbols';
 export type { ConvexTable, TableConfig } from './table';

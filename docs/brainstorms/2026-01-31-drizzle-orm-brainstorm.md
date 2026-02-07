@@ -1477,7 +1477,7 @@ type UserRelations = InferRelations<typeof usersRelations>;
 - [packages/better-convex/src/orm/query-promise.ts](packages/better-convex/src/orm/query-promise.ts) - QueryPromise base class for lazy execution
 - [packages/better-convex/src/orm/query.ts](packages/better-convex/src/orm/query.ts) - GelRelationalQuery with execute() implementation
 - [packages/better-convex/src/orm/query-builder.ts](packages/better-convex/src/orm/query-builder.ts) - RelationalQueryBuilder entry point
-- [packages/better-convex/src/orm/database.ts](packages/better-convex/src/orm/database.ts) - createDatabase() and buildSchema()
+- [packages/better-convex/src/orm/database.ts](packages/better-convex/src/orm/database.ts) - createDatabase()
 - [packages/better-convex/src/orm/query-compiler.ts](packages/better-convex/src/orm/query-compiler.ts) - Query compilation helpers
 - [convex/query-builder.test.ts](convex/query-builder.test.ts) - 7 test cases
 
@@ -1513,7 +1513,7 @@ import {
   convexTable,
   relations,
   createDatabase,
-  buildSchema,
+  defineRelations,
   extractRelationsConfig,
   text,
   id,
@@ -1544,9 +1544,9 @@ const postsRelations = relations(posts, ({ one }) => ({
 
 // M3: Setup query builder
 const rawSchema = { users, posts, usersRelations, postsRelations };
-const schema = buildSchema(rawSchema);
-const edges = extractRelationsConfig(rawSchema);
-const db = createDatabase(ctx.db, schema, edges);
+const relationsConfig = defineRelations(rawSchema);
+const edges = extractRelationsConfig(relationsConfig);
+const db = createDatabase(ctx.db, relationsConfig, edges);
 
 // M3: Query with relations (lazy execution)
 const usersWithPosts = await db.query.users.findMany({
