@@ -104,6 +104,7 @@ const posts = convexTable(
 - Unique, foreign keys, and `check()` constraints are enforced only through Better‑Convex ORM mutations
 - Foreign key actions require an index on the referencing columns
 - Relation loading requires indexes on relation fields (missing indexes throw unless `allowFullScan: true`)
+- Relation loading fail-fasts when unique relation lookup keys exceed `defaults.relationFanOutMaxKeys` (default `1000`) unless `allowFullScan: true`
 - Non-paginated `findMany()` must be explicitly sized (`limit`, `paginate`, schema `defaultLimit`, or `allowFullScan: true`)
 - `many()` relation loading must be explicitly sized per parent (`with.<relation>.limit`, schema `defaultLimit`, or `allowFullScan: true`)
 - System tables (`_storage`, `_scheduled_functions`) are accessed via raw `db.system.get/query`, not `db.query.<table>.findMany()`
@@ -129,6 +130,7 @@ const posts = convexTable(
 
 **Default policy**
 - Query sizing has no implicit fallback (no hidden row default unless you set `defaults.defaultLimit`).
+- Relation fan-out guardrails default to `relationFanOutMaxKeys=1000`.
 - Mutation safety has built-in guardrail defaults (`mutationBatchSize=100`, `mutationMaxRows=1000`).
 - Async fan-out defaults: `mutationLeafBatchSize=900`, `mutationMaxBytesPerBatch=2_097_152`, `mutationScheduleCallCap=100`.
 - Non-paginated mutation mode defaults to sync (`defaults.mutationExecutionMode='sync'`) unless configured otherwise.

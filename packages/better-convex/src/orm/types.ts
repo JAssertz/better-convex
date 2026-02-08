@@ -427,6 +427,7 @@ export type VectorQueryConfig<
         index: TIndexName;
         vector: number[];
         limit: number;
+        includeScore?: boolean | undefined;
         filter?:
           | (VectorFilterFieldNames<TTableConfig, TIndexName> extends never
               ? never
@@ -837,6 +838,11 @@ export type BuildQueryResult<
                 TTableConfig['relations']
               >
             : {})
+          & (TFullSelection extends { vectorSearch: infer TVectorSearch }
+              ? [TVectorSearch] extends [undefined]
+                ? {}
+                : { _score?: number }
+              : {})
       >
     : never;
 

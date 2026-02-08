@@ -440,7 +440,7 @@ const usersWithPosts = await db.query.users.findMany({
 ```
 
 <Callout icon={<InfoIcon />}>
-**Note**: `limit`, `orderBy`, and `where` apply to `many()` relations. If `limit` is omitted, configure `defineSchema(..., { defaults: { defaultLimit } })` or use `allowFullScan: true` on the parent query. Nested `with` works with a depth limit to prevent infinite recursion.
+**Note**: `limit`, `orderBy`, and `where` apply to `many()` relations. If `limit` is omitted, configure `defineSchema(..., { defaults: { defaultLimit } })` or use `allowFullScan: true` on the parent query. Relation loading also fail-fasts when unique lookup keys exceed `defineSchema(..., { defaults: { relationFanOutMaxKeys } })` (default `1000`) unless `allowFullScan: true` is set. Nested `with` works with a depth limit to prevent infinite recursion.
 </Callout>
 
 ### Column Selection Semantics
@@ -476,6 +476,7 @@ const usersOnlyPosts = await db.query.users.findMany({
 | **Self-referencing conflicts** | Use unique `alias` for each self-referencing relation |
 | **`with:` not working** | Ensure relations are defined on both tables (or explicit `from`/`to`) |
 | **`many()` relation throws sizing error** | Add `with.<relation>.limit`, configure `defaults.defaultLimit`, or set `allowFullScan: true` |
+| **Relation fan-out guardrail throws** | Reduce source cardinality, raise `defaults.relationFanOutMaxKeys`, or set `allowFullScan: true` |
 
 ## Next Steps
 

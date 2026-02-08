@@ -322,7 +322,7 @@ await db.query.users.findMany({
 **Options**
 - `where`: object filter (Drizzle v1 shape) or predicate function
 - `search`: `{ index, query, filters? }` (full‑text search mode; only on tables with search indexes)
-- `vectorSearch`: `{ index, vector, limit, filter? }` (vector similarity mode; only on tables with vector indexes)
+- `vectorSearch`: `{ index, vector, limit, includeScore?, filter? }` (vector similarity mode; only on tables with vector indexes)
 - `index`: required when `where` is a function (`{ name, range? }`)
 - `orderBy`: `{ field: 'asc' | 'desc' }`
 - `limit`, `offset`
@@ -339,6 +339,7 @@ await db.query.users.findMany({
 - Use `allowFullScan: true` to opt into unbounded collection.
 
 For `with` + `many()` relations, set relation `limit` or `defaults.defaultLimit`; otherwise use `allowFullScan: true`.
+Relation loading also enforces fan-out key caps: if unique relation lookup keys exceed `defaults.relationFanOutMaxKeys` (default `1000`), the query throws unless `allowFullScan: true`.
 
 **Search mode constraints**
 - `orderBy` is not allowed (results stay in Convex relevance order)
@@ -354,6 +355,7 @@ For `with` + `many()` relations, set relation `limit` or `defaults.defaultLimit`
 - `where` is not allowed
 - `index` is not allowed
 - `offset` is not allowed
+- `includeScore: true` adds `_score` to each returned row
 - `with` is allowed
 
 ### `findMany({ search })`
@@ -377,6 +379,7 @@ await db.query.posts.findMany({
     index: 'embedding_vec',
     vector: args.embedding,
     limit: 10,
+    includeScore: true,
     filter: (q) => q.eq('type', 'news'),
   },
   with: { author: true },

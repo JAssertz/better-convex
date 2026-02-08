@@ -1233,5 +1233,619 @@ describe('M6.5 Phase 3: Relation Filters and Limits', () => {
         })
       ).resolves.toBeUndefined();
     });
+
+    test('should throw when one() relation is missing a non-_id target index', async () => {
+      const noIndexOneUsers = convexTable('noIndexOneUsers', {
+        email: text().notNull(),
+      });
+      const noIndexOnePosts = convexTable('noIndexOnePosts', {
+        authorEmail: text().notNull(),
+      });
+
+      const noIndexOneTables = {
+        noIndexOneUsers,
+        noIndexOnePosts,
+      };
+      const noIndexOneSchema = defineSchema(noIndexOneTables, {
+        defaults: {
+          defaultLimit: 1000,
+        },
+      });
+      const noIndexOneRelations = defineRelations(noIndexOneTables, (r) => ({
+        noIndexOneUsers: {},
+        noIndexOnePosts: {
+          author: r.one.noIndexOneUsers({
+            from: r.noIndexOnePosts.authorEmail,
+            to: r.noIndexOneUsers.email,
+          }),
+        },
+      }));
+
+      await expect(
+        withOrmCtx(noIndexOneSchema, noIndexOneRelations, async (ctx) => {
+          await ctx.db.insert('noIndexOneUsers', {
+            email: 'alice@example.com',
+          });
+          await ctx.db.insert('noIndexOnePosts', {
+            authorEmail: 'alice@example.com',
+          });
+          await ctx.orm.query.noIndexOnePosts.findMany({
+            with: {
+              author: true,
+            },
+          });
+        })
+      ).rejects.toThrow(/requires index/i);
+    });
+
+    test('should require allowFullScan when one() relation index is missing', async () => {
+      const noIndexOneUsers = convexTable('noIndexOneRelaxedUsers', {
+        email: text().notNull(),
+      });
+      const noIndexOnePosts = convexTable('noIndexOneRelaxedPosts', {
+        authorEmail: text().notNull(),
+      });
+
+      const noIndexOneTables = {
+        noIndexOneRelaxedUsers: noIndexOneUsers,
+        noIndexOneRelaxedPosts: noIndexOnePosts,
+      };
+      const noIndexOneSchema = defineSchema(noIndexOneTables, {
+        strict: false,
+        defaults: {
+          defaultLimit: 1000,
+        },
+      });
+      const noIndexOneRelations = defineRelations(noIndexOneTables, (r) => ({
+        noIndexOneRelaxedUsers: {},
+        noIndexOneRelaxedPosts: {
+          author: r.one.noIndexOneRelaxedUsers({
+            from: r.noIndexOneRelaxedPosts.authorEmail,
+            to: r.noIndexOneRelaxedUsers.email,
+          }),
+        },
+      }));
+
+      await expect(
+        withOrmCtx(noIndexOneSchema, noIndexOneRelations, async (ctx) => {
+          await ctx.db.insert('noIndexOneRelaxedUsers', {
+            email: 'alice@example.com',
+          });
+          await ctx.db.insert('noIndexOneRelaxedPosts', {
+            authorEmail: 'alice@example.com',
+          });
+          await ctx.orm.query.noIndexOneRelaxedPosts.findMany({
+            with: {
+              author: true,
+            },
+          });
+        })
+      ).rejects.toThrow(/allowFullScan/i);
+
+      await expect(
+        withOrmCtx(noIndexOneSchema, noIndexOneRelations, async (ctx) => {
+          await ctx.db.insert('noIndexOneRelaxedUsers', {
+            email: 'alice@example.com',
+          });
+          await ctx.db.insert('noIndexOneRelaxedPosts', {
+            authorEmail: 'alice@example.com',
+          });
+          const rows = await ctx.orm.query.noIndexOneRelaxedPosts.findMany({
+            allowFullScan: true,
+            with: {
+              author: true,
+            },
+          });
+          expect(rows).toHaveLength(1);
+          expect((rows[0] as any).author.email).toBe('alice@example.com');
+        })
+      ).resolves.toBeUndefined();
+    });
+
+    test('should require allowFullScan when through() target index is missing', async () => {
+      const throughUsers = convexTable('noIndexThroughTargetUsers', {
+        slug: text().notNull(),
+      });
+      const throughGroups = convexTable('noIndexThroughTargetGroups', {
+        slug: text().notNull(),
+      });
+      const throughUsersToGroups = convexTable(
+        'noIndexThroughTargetUsersToGroups',
+        {
+          userSlug: text().notNull(),
+          groupSlug: text().notNull(),
+        },
+        (t) => [index('by_user_slug').on(t.userSlug)]
+      );
+
+      const throughTargetTables = {
+        noIndexThroughTargetUsers: throughUsers,
+        noIndexThroughTargetGroups: throughGroups,
+        noIndexThroughTargetUsersToGroups: throughUsersToGroups,
+      };
+      const throughTargetSchema = defineSchema(throughTargetTables, {
+        strict: false,
+        defaults: {
+          defaultLimit: 1000,
+        },
+      });
+      const throughTargetRelations = defineRelations(
+        throughTargetTables,
+        (r) => ({
+          noIndexThroughTargetUsers: {
+            groups: r.many.noIndexThroughTargetGroups({
+              from: r.noIndexThroughTargetUsers.slug.through(
+                r.noIndexThroughTargetUsersToGroups.userSlug
+              ),
+              to: r.noIndexThroughTargetGroups.slug.through(
+                r.noIndexThroughTargetUsersToGroups.groupSlug
+              ),
+            }),
+          },
+          noIndexThroughTargetGroups: {},
+          noIndexThroughTargetUsersToGroups: {},
+        })
+      );
+
+      await expect(
+        withOrmCtx(throughTargetSchema, throughTargetRelations, async (ctx) => {
+          await ctx.db.insert('noIndexThroughTargetUsers', { slug: 'alice' });
+          await ctx.db.insert('noIndexThroughTargetGroups', { slug: 'g-1' });
+          await ctx.db.insert('noIndexThroughTargetUsersToGroups', {
+            userSlug: 'alice',
+            groupSlug: 'g-1',
+          });
+          await ctx.orm.query.noIndexThroughTargetUsers.findMany({
+            with: {
+              groups: true,
+            },
+          });
+        })
+      ).rejects.toThrow(/allowFullScan/i);
+
+      await expect(
+        withOrmCtx(throughTargetSchema, throughTargetRelations, async (ctx) => {
+          await ctx.db.insert('noIndexThroughTargetUsers', { slug: 'alice' });
+          await ctx.db.insert('noIndexThroughTargetGroups', { slug: 'g-1' });
+          await ctx.db.insert('noIndexThroughTargetUsersToGroups', {
+            userSlug: 'alice',
+            groupSlug: 'g-1',
+          });
+          const rows = await ctx.orm.query.noIndexThroughTargetUsers.findMany({
+            allowFullScan: true,
+            with: {
+              groups: true,
+            },
+          });
+          expect(rows).toHaveLength(1);
+          expect((rows[0] as any).groups).toHaveLength(1);
+          expect((rows[0] as any).groups[0].slug).toBe('g-1');
+        })
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('Relation Fan-out Guardrails', () => {
+    test('should fail fast for many() fan-out key cardinality unless allowFullScan', async () => {
+      const fanoutManyUsers = convexTable('fanoutManyUsers', {
+        name: text().notNull(),
+      });
+      const fanoutManyPosts = convexTable(
+        'fanoutManyPosts',
+        {
+          authorId: id('fanoutManyUsers').notNull(),
+        },
+        (t) => [index('by_author').on(t.authorId)]
+      );
+
+      const tables = {
+        fanoutManyUsers,
+        fanoutManyPosts,
+      };
+      const schema = defineSchema(tables, {
+        defaults: {
+          defaultLimit: 1000,
+          relationFanOutMaxKeys: 2,
+        },
+      });
+      const relations = defineRelations(tables, (r) => ({
+        fanoutManyUsers: {
+          posts: r.many.fanoutManyPosts({
+            from: r.fanoutManyUsers._id,
+            to: r.fanoutManyPosts.authorId,
+          }),
+        },
+        fanoutManyPosts: {},
+      }));
+
+      await expect(
+        withOrmCtx(schema, relations, async (ctx) => {
+          const userIds = [] as any[];
+          for (let i = 0; i < 3; i += 1) {
+            userIds.push(
+              await ctx.db.insert('fanoutManyUsers', { name: `u-${i}` })
+            );
+          }
+          for (const userId of userIds) {
+            await ctx.db.insert('fanoutManyPosts', { authorId: userId });
+          }
+
+          await ctx.orm.query.fanoutManyUsers.findMany({
+            with: {
+              posts: true,
+            },
+          });
+        })
+      ).rejects.toThrow(/allowFullScan/i);
+
+      await expect(
+        withOrmCtx(schema, relations, async (ctx) => {
+          const userIds = [] as any[];
+          for (let i = 0; i < 3; i += 1) {
+            userIds.push(
+              await ctx.db.insert('fanoutManyUsers', { name: `u-${i}` })
+            );
+          }
+          for (const userId of userIds) {
+            await ctx.db.insert('fanoutManyPosts', { authorId: userId });
+          }
+
+          const rows = await ctx.orm.query.fanoutManyUsers.findMany({
+            allowFullScan: true,
+            with: {
+              posts: true,
+            },
+          });
+          expect(rows).toHaveLength(3);
+        })
+      ).resolves.toBeUndefined();
+    });
+
+    test('should fail fast for one() fan-out key cardinality unless allowFullScan', async () => {
+      const fanoutOneUsers = convexTable('fanoutOneUsers', {
+        name: text().notNull(),
+      });
+      const fanoutOnePosts = convexTable('fanoutOnePosts', {
+        authorId: id('fanoutOneUsers').notNull(),
+      });
+
+      const tables = {
+        fanoutOneUsers,
+        fanoutOnePosts,
+      };
+      const schema = defineSchema(tables, {
+        defaults: {
+          defaultLimit: 1000,
+          relationFanOutMaxKeys: 2,
+        },
+      });
+      const relations = defineRelations(tables, (r) => ({
+        fanoutOneUsers: {},
+        fanoutOnePosts: {
+          author: r.one.fanoutOneUsers({
+            from: r.fanoutOnePosts.authorId,
+            to: r.fanoutOneUsers._id,
+          }),
+        },
+      }));
+
+      await expect(
+        withOrmCtx(schema, relations, async (ctx) => {
+          const userIds = [] as any[];
+          for (let i = 0; i < 3; i += 1) {
+            userIds.push(
+              await ctx.db.insert('fanoutOneUsers', { name: `u-${i}` })
+            );
+          }
+          for (const userId of userIds) {
+            await ctx.db.insert('fanoutOnePosts', { authorId: userId });
+          }
+
+          await ctx.orm.query.fanoutOnePosts.findMany({
+            with: {
+              author: true,
+            },
+          });
+        })
+      ).rejects.toThrow(/allowFullScan/i);
+
+      await expect(
+        withOrmCtx(schema, relations, async (ctx) => {
+          const userIds = [] as any[];
+          for (let i = 0; i < 3; i += 1) {
+            userIds.push(
+              await ctx.db.insert('fanoutOneUsers', { name: `u-${i}` })
+            );
+          }
+          for (const userId of userIds) {
+            await ctx.db.insert('fanoutOnePosts', { authorId: userId });
+          }
+
+          const rows = await ctx.orm.query.fanoutOnePosts.findMany({
+            allowFullScan: true,
+            with: {
+              author: true,
+            },
+          });
+          expect(rows).toHaveLength(3);
+        })
+      ).resolves.toBeUndefined();
+    });
+
+    test('should fail fast for through() target fan-out key cardinality unless allowFullScan', async () => {
+      const fanoutThroughUsers = convexTable('fanoutThroughUsers', {
+        name: text().notNull(),
+      });
+      const fanoutThroughGroups = convexTable('fanoutThroughGroups', {
+        name: text().notNull(),
+      });
+      const fanoutThroughUsersToGroups = convexTable(
+        'fanoutThroughUsersToGroups',
+        {
+          userId: id('fanoutThroughUsers').notNull(),
+          groupId: id('fanoutThroughGroups').notNull(),
+        },
+        (t) => [index('by_user').on(t.userId)]
+      );
+
+      const tables = {
+        fanoutThroughUsers,
+        fanoutThroughGroups,
+        fanoutThroughUsersToGroups,
+      };
+      const schema = defineSchema(tables, {
+        defaults: {
+          defaultLimit: 1000,
+          relationFanOutMaxKeys: 2,
+        },
+      });
+      const relations = defineRelations(tables, (r) => ({
+        fanoutThroughUsers: {
+          groups: r.many.fanoutThroughGroups({
+            from: r.fanoutThroughUsers._id.through(
+              r.fanoutThroughUsersToGroups.userId
+            ),
+            to: r.fanoutThroughGroups._id.through(
+              r.fanoutThroughUsersToGroups.groupId
+            ),
+          }),
+        },
+        fanoutThroughGroups: {},
+        fanoutThroughUsersToGroups: {},
+      }));
+
+      await expect(
+        withOrmCtx(schema, relations, async (ctx) => {
+          const userId = await ctx.db.insert('fanoutThroughUsers', {
+            name: 'u-1',
+          });
+          for (let i = 0; i < 3; i += 1) {
+            const groupId = await ctx.db.insert('fanoutThroughGroups', {
+              name: `g-${i}`,
+            });
+            await ctx.db.insert('fanoutThroughUsersToGroups', {
+              userId,
+              groupId,
+            });
+          }
+
+          await ctx.orm.query.fanoutThroughUsers.findMany({
+            with: {
+              groups: true,
+            },
+          });
+        })
+      ).rejects.toThrow(/allowFullScan/i);
+
+      await expect(
+        withOrmCtx(schema, relations, async (ctx) => {
+          const userId = await ctx.db.insert('fanoutThroughUsers', {
+            name: 'u-1',
+          });
+          for (let i = 0; i < 3; i += 1) {
+            const groupId = await ctx.db.insert('fanoutThroughGroups', {
+              name: `g-${i}`,
+            });
+            await ctx.db.insert('fanoutThroughUsersToGroups', {
+              userId,
+              groupId,
+            });
+          }
+
+          const rows = await ctx.orm.query.fanoutThroughUsers.findMany({
+            allowFullScan: true,
+            with: {
+              groups: true,
+            },
+          });
+          expect((rows[0] as any).groups).toHaveLength(3);
+        })
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('No-Truncation Regression (>10k)', () => {
+    const RELATION_SIZE_OVER_10K = 10_001;
+
+    test('many() should load all related rows beyond 10k without truncation', async () => {
+      const largeUsers = convexTable('largeManyUsers', {
+        name: text().notNull(),
+      });
+      const largePosts = convexTable(
+        'largeManyPosts',
+        {
+          authorId: id('largeManyUsers').notNull(),
+          label: text().notNull(),
+        },
+        (t) => [index('by_author').on(t.authorId)]
+      );
+      const largeManyTables = {
+        largeManyUsers: largeUsers,
+        largeManyPosts: largePosts,
+      };
+      const largeManySchema = defineSchema(largeManyTables);
+      const largeManyRelations = defineRelations(largeManyTables, (r) => ({
+        largeManyUsers: {
+          posts: r.many.largeManyPosts({
+            from: r.largeManyUsers._id,
+            to: r.largeManyPosts.authorId,
+          }),
+        },
+        largeManyPosts: {},
+      }));
+
+      await withOrmCtx(largeManySchema, largeManyRelations, async (ctx) => {
+        const userId = await ctx.db.insert('largeManyUsers', { name: 'u-1' });
+        for (let i = 0; i < RELATION_SIZE_OVER_10K; i += 1) {
+          await ctx.db.insert('largeManyPosts', {
+            authorId: userId,
+            label: `post-${i}`,
+          });
+        }
+
+        const users = await ctx.orm.query.largeManyUsers.findMany({
+          allowFullScan: true,
+          with: {
+            posts: true,
+          },
+        });
+
+        expect(users).toHaveLength(1);
+        expect((users[0] as any).posts).toHaveLength(RELATION_SIZE_OVER_10K);
+        expect(
+          (users[0] as any).posts.some(
+            (post: any) => post.label === `post-${RELATION_SIZE_OVER_10K - 1}`
+          )
+        ).toBe(true);
+      });
+    }, 60_000);
+
+    test('one() should resolve related row beyond 10k target rows without truncation', async () => {
+      const largeUsers = convexTable('largeOneUsers', {
+        name: text().notNull(),
+      });
+      const largePosts = convexTable(
+        'largeOnePosts',
+        {
+          authorId: id('largeOneUsers').notNull(),
+        },
+        (t) => [index('by_author').on(t.authorId)]
+      );
+      const largeOneTables = {
+        largeOneUsers: largeUsers,
+        largeOnePosts: largePosts,
+      };
+      const largeOneSchema = defineSchema(largeOneTables);
+      const largeOneRelations = defineRelations(largeOneTables, (r) => ({
+        largeOneUsers: {},
+        largeOnePosts: {
+          author: r.one.largeOneUsers({
+            from: r.largeOnePosts.authorId,
+            to: r.largeOneUsers._id,
+          }),
+        },
+      }));
+
+      await withOrmCtx(largeOneSchema, largeOneRelations, async (ctx) => {
+        let lastUserId: any = null;
+        for (let i = 0; i < RELATION_SIZE_OVER_10K; i += 1) {
+          lastUserId = await ctx.db.insert('largeOneUsers', {
+            name: `u-${i}`,
+          });
+        }
+        await ctx.db.insert('largeOnePosts', {
+          authorId: lastUserId,
+        });
+
+        const posts = await ctx.orm.query.largeOnePosts.findMany({
+          allowFullScan: true,
+          with: {
+            author: true,
+          },
+        });
+
+        expect(posts).toHaveLength(1);
+        expect((posts[0] as any).author).toBeTruthy();
+        expect((posts[0] as any).author._id).toBe(lastUserId);
+        expect((posts[0] as any).author.name).toBe(
+          `u-${RELATION_SIZE_OVER_10K - 1}`
+        );
+      });
+    }, 60_000);
+
+    test('through() should load all related rows beyond 10k without truncation', async () => {
+      const largeUsers = convexTable('largeThroughUsers', {
+        name: text().notNull(),
+      });
+      const largeGroups = convexTable('largeThroughGroups', {
+        name: text().notNull(),
+      });
+      const largeUsersToGroups = convexTable(
+        'largeThroughUsersToGroups',
+        {
+          userId: id('largeThroughUsers').notNull(),
+          groupId: id('largeThroughGroups').notNull(),
+        },
+        (t) => [index('by_user').on(t.userId)]
+      );
+      const largeThroughTables = {
+        largeThroughUsers: largeUsers,
+        largeThroughGroups: largeGroups,
+        largeThroughUsersToGroups: largeUsersToGroups,
+      };
+      const largeThroughSchema = defineSchema(largeThroughTables);
+      const largeThroughRelations = defineRelations(
+        largeThroughTables,
+        (r) => ({
+          largeThroughUsers: {
+            groups: r.many.largeThroughGroups({
+              from: r.largeThroughUsers._id.through(
+                r.largeThroughUsersToGroups.userId
+              ),
+              to: r.largeThroughGroups._id.through(
+                r.largeThroughUsersToGroups.groupId
+              ),
+            }),
+          },
+          largeThroughGroups: {},
+          largeThroughUsersToGroups: {},
+        })
+      );
+
+      await withOrmCtx(
+        largeThroughSchema,
+        largeThroughRelations,
+        async (ctx) => {
+          const userId = await ctx.db.insert('largeThroughUsers', {
+            name: 'u-1',
+          });
+          for (let i = 0; i < RELATION_SIZE_OVER_10K; i += 1) {
+            const groupId = await ctx.db.insert('largeThroughGroups', {
+              name: `group-${i}`,
+            });
+            await ctx.db.insert('largeThroughUsersToGroups', {
+              userId,
+              groupId,
+            });
+          }
+
+          const users = await ctx.orm.query.largeThroughUsers.findMany({
+            allowFullScan: true,
+            with: {
+              groups: true,
+            },
+          });
+
+          expect(users).toHaveLength(1);
+          expect((users[0] as any).groups).toHaveLength(RELATION_SIZE_OVER_10K);
+          expect(
+            (users[0] as any).groups.some(
+              (group: any) =>
+                group.name === `group-${RELATION_SIZE_OVER_10K - 1}`
+            )
+          ).toBe(true);
+        }
+      );
+    }, 60_000);
   });
 });

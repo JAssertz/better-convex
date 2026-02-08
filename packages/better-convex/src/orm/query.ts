@@ -75,6 +75,8 @@ import {
   WhereClauseCompiler,
 } from './where-clause-compiler';
 
+const DEFAULT_RELATION_FAN_OUT_MAX_KEYS = 1000;
+
 /**
  * Relational query builder with promise-based execution
  *
@@ -1362,6 +1364,7 @@ export class GelRelationalQuery<
           index: string;
           vector: number[];
           limit: number;
+          includeScore?: boolean;
           filter?: ((q: any) => unknown) | undefined;
         }
       | undefined;
@@ -1446,7 +1449,18 @@ export class GelRelationalQuery<
       const fetched = await this._mapWithConcurrency(hits, async (hit) =>
         this.db.get((hit as any)._id)
       );
+      const includeScore = vectorSearchConfig.includeScore === true;
+      const scoreById = includeScore
+        ? new Map(hits.map((hit) => [String((hit as any)._id), hit._score]))
+        : undefined;
+
       let rows = fetched.filter((row): row is any => !!row);
+      if (scoreById) {
+        rows = rows.map((row) => {
+          const score = scoreById.get(String(row._id));
+          return score === undefined ? row : { ...row, _score: score };
+        });
+      }
       rows = this._applyRlsSelectFilter(rows, this.tableConfig);
 
       const selectedRows = await this._finalizeRows(rows);
@@ -2542,6 +2556,43 @@ export class GelRelationalQuery<
     return Math.floor(value);
   }
 
+  private _getRelationFanOutKeyCap(tableConfig: TableRelationalConfig): number {
+    const value = tableConfig.defaults?.relationFanOutMaxKeys;
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return DEFAULT_RELATION_FAN_OUT_MAX_KEYS;
+    }
+    if (value <= 0) {
+      return 1;
+    }
+    return Math.floor(value);
+  }
+
+  private _enforceRelationFanOutKeyCap(options: {
+    tableConfig: TableRelationalConfig;
+    relationName: string;
+    keyCount: number;
+    scope: 'source' | 'through-target';
+  }) {
+    const cap = this._getRelationFanOutKeyCap(options.tableConfig);
+    if (options.keyCount <= cap) {
+      return;
+    }
+
+    const baseMessage =
+      `Relation "${options.tableConfig.name}.${options.relationName}" ` +
+      `${options.scope} lookup keys (${options.keyCount}) exceed relationFanOutMaxKeys (${cap}).`;
+
+    if (!this.allowFullScan) {
+      throw new Error(
+        `${baseMessage} Set allowFullScan: true, reduce fan-out, or increase defineSchema(..., { defaults: { relationFanOutMaxKeys } }).`
+      );
+    }
+
+    if (options.tableConfig.strict !== false) {
+      console.warn(`${baseMessage} Continuing because allowFullScan: true.`);
+    }
+  }
+
   private async _mapWithConcurrency<T, R>(
     items: T[],
     worker: (item: T, index: number) => Promise<R>
@@ -2699,6 +2750,12 @@ export class GelRelationalQuery<
       }
       return;
     }
+    this._enforceRelationFanOutKeyCap({
+      tableConfig,
+      relationName,
+      keyCount: sourceKeyMap.size,
+      scope: 'source',
+    });
 
     const targetTableConfig = this._getTableConfigByDbName(edge.targetTable);
     if (!targetTableConfig) {
@@ -2883,6 +2940,12 @@ export class GelRelationalQuery<
     if (sourceKeyMap.size === 0) {
       return;
     }
+    this._enforceRelationFanOutKeyCap({
+      tableConfig,
+      relationName,
+      keyCount: sourceKeyMap.size,
+      scope: 'source',
+    });
 
     const targetTableConfig = this._getTableConfigByDbName(edge.targetTable);
     if (!targetTableConfig) {
@@ -3005,6 +3068,12 @@ export class GelRelationalQuery<
           }
         }
       }
+      this._enforceRelationFanOutKeyCap({
+        tableConfig,
+        relationName,
+        keyCount: targetKeyMap.size,
+        scope: 'through-target',
+      });
 
       if (targetKeyMap.size > 0) {
         const useGetById =

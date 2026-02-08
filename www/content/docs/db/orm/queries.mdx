@@ -281,6 +281,7 @@ const posts = await db.query.posts.findMany({
     index: 'embedding_vec',
     vector: args.embedding,
     limit: 10,
+    includeScore: true,
     filter: (q) => q.eq('type', 'news'),
   },
   with: { author: true },
@@ -288,6 +289,7 @@ const posts = await db.query.posts.findMany({
 ```
 
 `vectorSearch.index` and `vectorSearch.filter` are strongly typed from your vector index definition.
+`vectorSearch.includeScore: true` opt-in adds `_score` to each returned row.
 
 **Vector mode constraints**
 - `vectorSearch.limit` is required (`1..256`)
@@ -296,6 +298,7 @@ const posts = await db.query.posts.findMany({
 - `where` is not allowed
 - `index` is not allowed
 - `offset` is not allowed
+- `_score` is returned only when `vectorSearch.includeScore: true`
 - `with`, `columns`, and `extras` are allowed
 
 ## Choosing Filter vs Paginate
@@ -309,7 +312,7 @@ Use this decision matrix to avoid accidental full scans.
 | Complex JS predicate + pagination | `db.query.*.findMany({ where: (row) => ..., index: { name: 'by_field' }, paginate: { cursor, numItems, maximumRowsRead } })` | Explicit index + bounded scan |
 | Large lists | `db.query.*.findMany({ paginate })` | First `orderBy` field should be indexed |
 | Search + equality filters | `db.query.*.findMany({ search: { index, query, filters? } })` | `filters` must be in search index `filterFields` |
-| Embedding similarity | `db.query.*.findMany({ vectorSearch: { index, vector, limit, filter? } })` | Similarity order from vector search; no `paginate`/`where`/`orderBy` |
+| Embedding similarity | `db.query.*.findMany({ vectorSearch: { index, vector, limit, includeScore?, filter? } })` | Similarity order from vector search; no `paginate`/`where`/`orderBy` |
 
 ## Relation Loading With `with`
 

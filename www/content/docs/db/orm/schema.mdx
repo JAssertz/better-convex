@@ -128,6 +128,7 @@ export default defineSchema({ users, posts }, {
   strict: true,
   defaults: {
     defaultLimit: 100,             // non-paginated findMany() fallback
+    relationFanOutMaxKeys: 1000,   // max unique relation lookup keys per relation load
     mutationBatchSize: 100,        // update/delete batch size
     mutationLeafBatchSize: 900,    // async non-recursive FK fan-out batch size
     mutationMaxRows: 1000,         // sync-mode hard cap
@@ -140,6 +141,7 @@ export default defineSchema({ users, posts }, {
 ```
 
 - `defaults.defaultLimit`: used when `findMany()` is non-paginated and `limit` is omitted. No implicit built-in fallback is applied when this is unset.
+- `defaults.relationFanOutMaxKeys`: maximum unique relation lookup keys allowed per relation-load step before fail-fast. Built-in fallback: `1000`.
 - `defaults.mutationBatchSize`: page size used to collect rows for `update()`/`delete()`. Built-in fallback: `100`.
 - `defaults.mutationLeafBatchSize`: async batch size for non-recursive FK fan-out actions (`set null`, `set default`, non-recursive update fan-out). Built-in fallback: `900`.
 - `defaults.mutationMaxRows`: sync-mode hard cap for matched rows in `update()`/`delete()`. Built-in fallback: `1000`.
@@ -151,15 +153,16 @@ export default defineSchema({ users, posts }, {
 
 ### Strict Policy (Guardrails)
 
-Strict guardrails now cover relation indexes, predicate where(), and unbounded update/delete.
+Strict guardrails now cover relation indexes, relation fan-out cardinality, predicate where(), and unbounded update/delete.
 
 | Area | Current (2026‑02‑06) | Strict `true` | Strict `false` |
 |---|---|---|---|
 | Relation loading missing index | throws unless `allowFullScan` | throws unless `allowFullScan`; warns when scanning | throws unless `allowFullScan`; no strict warning |
-| Predicate `where` | throws unless `allowFullScan` | throws unless `allowFullScan`; warns when scanning | throws unless `allowFullScan`; warns when scanning |
-| Pagination orderBy missing index | warn + fallback to `_creationTime` | warn + fallback | warn + fallback |
+| Predicate `where` | requires explicit `index: { name, range? }` (no `allowFullScan` fallback) | same | same |
+| Pagination orderBy missing index | strict `true` throws; strict `false` warns + falls back to `_creationTime` | throws (add index or disable strict) | warns + falls back to `_creationTime` |
 | Unsized non-paginated `findMany()` | throws unless `limit`/`paginate`/`defaultLimit`/`allowFullScan` | same | same |
 | `many()` relation without per-parent limit | throws unless relation `limit`/`defaultLimit`/`allowFullScan` | same | same |
+| Relation lookup fan-out keys exceed cap | throws unless `allowFullScan` (`defaults.relationFanOutMaxKeys`, default `1000`) | throws unless `allowFullScan`; warns when scanning | throws unless `allowFullScan`; no strict warning |
 | Update/delete without `where()` | throws unless `allowFullScan` | throws unless `allowFullScan`; warns when scanning | throws unless `allowFullScan`; no strict warning |
 | Update/delete row count exceeds `mutationMaxRows` | sync mode throws; async mode schedules continuation | sync mode throws; async mode schedules continuation | sync mode throws; async mode schedules continuation |
 
@@ -195,7 +198,7 @@ const posts = convexTable(
 );
 ```
 
-### Vector Indexes (wip)
+### Vector Indexes
 
 ```ts
 import { convexTable, id, vector, vectorIndex } from 'better-convex/orm';

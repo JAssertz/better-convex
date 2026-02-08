@@ -52,6 +52,58 @@ test('vector search returns rows in provider order', async () => {
   });
 });
 
+test('vector search exposes _score only when includeScore is enabled', async () => {
+  const t = convexTest(schema);
+
+  let postId: any;
+
+  await t.run(async (baseCtx) => {
+    const authorId = await baseCtx.db.insert('users', {
+      name: 'Vector Score Author',
+      email: 'vector-score-author@example.com',
+    });
+
+    postId = await baseCtx.db.insert('posts', {
+      text: 'score test',
+      type: 'article',
+      authorId,
+      numLikes: 1,
+      embedding: [0.1, 0.2, 0.3],
+    });
+  });
+
+  await t.run(async (baseCtx) => {
+    const vectorSearch: VectorSearchProvider = async () => [
+      { _id: postId, _score: 0.91 },
+    ];
+    const db = orm.db(baseCtx.db, { vectorSearch });
+
+    const withoutScore = await db.query.posts.findMany({
+      vectorSearch: {
+        index: 'embedding_vec',
+        vector: [0.1, 0.2, 0.3],
+        limit: 1,
+      },
+    });
+    expect(withoutScore).toHaveLength(1);
+    expect('_score' in withoutScore[0]!).toBe(false);
+
+    const withScore = await db.query.posts.findMany({
+      vectorSearch: {
+        index: 'embedding_vec',
+        vector: [0.1, 0.2, 0.3],
+        limit: 1,
+        includeScore: true,
+      },
+      columns: {
+        text: true,
+      },
+    } as const);
+    expect(withScore).toHaveLength(1);
+    expect(withScore[0]?._score).toBeCloseTo(0.91);
+  });
+});
+
 test('vector search skips missing docs from provider results', async () => {
   const t = convexTest(schema);
 

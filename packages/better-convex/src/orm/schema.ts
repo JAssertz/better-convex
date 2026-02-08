@@ -15,6 +15,7 @@ type BetterConvexSchemaOptions<StrictTableNameTypes extends boolean> =
 
 const DEFAULTS_NUMERIC_FIELDS = [
   'defaultLimit',
+  'relationFanOutMaxKeys',
   'mutationBatchSize',
   'mutationLeafBatchSize',
   'mutationMaxRows',

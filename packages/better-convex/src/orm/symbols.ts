@@ -5,6 +5,7 @@
 
 export type OrmRuntimeDefaults = {
   defaultLimit?: number;
+  relationFanOutMaxKeys?: number;
   mutationBatchSize?: number;
   mutationLeafBatchSize?: number;
   mutationMaxRows?: number;
