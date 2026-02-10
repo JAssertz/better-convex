@@ -123,8 +123,8 @@ export class ConvexDeleteBuilder<
     ConvexDeleteBuilder<TTable, TReturning, 'paged'>,
     'paginate'
   > {
-    if (!Number.isInteger(config.numItems) || config.numItems < 1) {
-      throw new Error('paginate() numItems must be a positive integer.');
+    if (!Number.isInteger(config.limit) || config.limit < 1) {
+      throw new Error('paginate() limit must be a positive integer.');
     }
     this.paginateConfig = config;
     return this as any;
@@ -263,7 +263,7 @@ export class ConvexDeleteBuilder<
 
       const previousPaginate = this.paginateConfig;
       const previousMode = this.executionModeOverride;
-      this.paginateConfig = { cursor: null, numItems: asyncBatchSize };
+      this.paginateConfig = { cursor: null, limit: asyncBatchSize };
       this.executionModeOverride = 'async';
 
       try {
@@ -382,7 +382,7 @@ export class ConvexDeleteBuilder<
             .filter((q: any) => filterFn(q))
             .paginate({
               cursor: pagination.cursor,
-              numItems: pagination.numItems,
+              numItems: pagination.limit,
             });
         })();
         rows = page.page as Record<string, unknown>[];
@@ -455,7 +455,7 @@ export class ConvexDeleteBuilder<
         isDone: boolean;
       } = await this.db.query(tableName).paginate({
         cursor: pagination.cursor,
-        numItems: pagination.numItems,
+        numItems: pagination.limit,
       });
       rows = page.page as Record<string, unknown>[];
       continueCursor = page.continueCursor;
@@ -495,7 +495,7 @@ export class ConvexDeleteBuilder<
       remainingCalls: scheduleCallCap,
       callCap: scheduleCallCap,
     };
-    const fkBatchSize = isPaginated ? pagination.numItems : batchSize;
+    const fkBatchSize = isPaginated ? pagination.limit : batchSize;
 
     for (const row of rows) {
       if (

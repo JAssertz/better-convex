@@ -197,7 +197,7 @@ test('search pagination works with cursor flow', async () => {
       },
       paginate: {
         cursor: null,
-        numItems: 1,
+        limit: 1,
       },
     });
 
@@ -212,7 +212,7 @@ test('search pagination works with cursor flow', async () => {
       },
       paginate: {
         cursor: page1.continueCursor,
-        numItems: 1,
+        limit: 1,
       },
     });
 

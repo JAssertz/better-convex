@@ -49,7 +49,6 @@ export function OrganizationSwitcher() {
   const [open, setOpen] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [orgName, setOrgName] = useState('');
-  const [selectedOrgSlug, setSelectedOrgSlug] = useState<string | null>(null);
   const router = useRouter();
   const user = useCurrentUser();
 
@@ -99,7 +98,7 @@ export function OrganizationSwitcher() {
         // Find the invitation to get the org slug
         const inv = invitations?.find((i) => i.id === variables.invitationId);
         if (inv) {
-          router.push(`/org/${inv.organizationSlug}`);
+          router.push(`/org/${encodeURIComponent(inv.organizationSlug)}`);
         }
         setOpen(false);
       },
@@ -140,7 +139,7 @@ export function OrganizationSwitcher() {
         setShowCreateDialog(false);
         setOrgName('');
         // Navigate to the new organization
-        router.push(`/org/${result.slug}`);
+        router.push(`/org/${encodeURIComponent(result.slug)}`);
       },
     })
   );
@@ -156,15 +155,11 @@ export function OrganizationSwitcher() {
 
   const pendingInvitationsCount = invitations?.length ?? 0;
 
-  const handleSelectOrganization = (
-    organizationId: Id<'organization'>,
-    slug: string
-  ) => {
+  const handleSelectOrganization = (organizationId: Id<'organization'>) => {
     if (organizationId === currentOrg.id) {
       setOpen(false);
       return;
     }
-    setSelectedOrgSlug(slug);
     setActiveOrganization.mutate({ organizationId });
   };
 
@@ -238,9 +233,7 @@ export function OrganizationSwitcher() {
                   {uniqueOrganizations.map((org) => (
                     <CommandItem
                       key={org.id}
-                      onSelect={() =>
-                        handleSelectOrganization(org.id, org.slug)
-                      }
+                      onSelect={() => handleSelectOrganization(org.id)}
                       value={org.slug}
                     >
                       <div className="flex w-full flex-1 items-center gap-2">

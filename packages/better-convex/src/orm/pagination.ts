@@ -219,7 +219,7 @@ export async function* streamQuery<
  * `continueCursor` in the previous page.
  * @argument opts.endCursor Where to end the page. This should from from
  * `continueCursor` in the *current* page.
- * If not provided, the page will end when it reaches `options.opts.numItems`.
+ * If not provided, the page will end when it reaches `options.opts.limit`.
  * @argument options.schema If you use an index that is not by_creation_time
  * or by_id, you need to provide the schema.
  */

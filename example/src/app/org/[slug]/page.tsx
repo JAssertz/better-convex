@@ -26,7 +26,16 @@ import { useCRPC } from '@/lib/convex/crpc';
 export default function OrganizationPage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const slug = params.slug as string;
+  const rawSlug = Array.isArray(params.slug)
+    ? params.slug[0]
+    : (params.slug as string);
+  const slug = (() => {
+    try {
+      return decodeURIComponent(rawSlug);
+    } catch {
+      return rawSlug;
+    }
+  })();
   const inviteId = searchParams.get('invite') as Id<'invitation'> | null;
   const [activeTab, setActiveTab] = useState('overview');
   const router = useRouter();
@@ -44,7 +53,7 @@ export default function OrganizationPage() {
     })
   );
 
-  const { data: organization, isPlaceholderData: isLoading } = useQuery(
+  const organizationQuery = useQuery(
     crpc.organization.getOrganizationOverview.queryOptions(
       { slug, inviteId: inviteId ?? undefined },
       {
@@ -65,6 +74,8 @@ export default function OrganizationPage() {
       }
     )
   );
+  const organization = organizationQuery.data;
+  const isLoading = organizationQuery.isPlaceholderData;
 
   const { data: members, isPlaceholderData: membersLoading } = useQuery(
     crpc.organization.listMembers.queryOptions(
@@ -107,7 +118,7 @@ export default function OrganizationPage() {
     )
   );
 
-  if (!(organization || isLoading)) {
+  if (organization === null) {
     return (
       <div className="mx-auto max-w-5xl @3xl:px-8 px-6 @3xl:py-12 py-8">
         <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -194,7 +205,12 @@ export default function OrganizationPage() {
               {!(organization?.isPersonal || isOwner) && (
                 <Button
                   disabled={leaveOrganization.isPending}
-                  onClick={() => leaveOrganization.mutate()}
+                  onClick={() =>
+                    organization &&
+                    leaveOrganization.mutate({
+                      organizationId: organization.id,
+                    })
+                  }
                   size="sm"
                   title="Leave Organization"
                   variant="ghost"

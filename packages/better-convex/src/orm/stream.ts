@@ -10,10 +10,7 @@ import type {
   NamedIndex,
   NamedTableInfo,
   OrderedQuery,
-  PaginationOptions,
   PaginationResult,
-  Query,
-  QueryInitializer,
   SchemaDefinition,
   SystemDataModel,
   TableNamesInDataModel,
@@ -22,6 +19,13 @@ import type { Value } from 'convex/values';
 import { compareValues, convexToJson, jsonToConvex } from 'convex/values';
 
 export type IndexKey = (Value | undefined)[];
+
+export type StreamPaginateOptions = {
+  cursor: string | null;
+  limit: number;
+  endCursor?: string | null;
+  maxScan?: number;
+};
 
 //
 // Helper functions
@@ -252,7 +256,7 @@ export abstract class QueryStream<T extends GenericStreamItem>
    * is applied *before* any pagination. That means if the filter excludes a lot
    * of documents, the `.paginate()` method will read a lot of documents until
    * it gets as many documents as it wants. If you run into issues with reading
-   * too much data, you can pass `maximumRowsRead` to `paginate()`.
+   * too much data, you can pass `maxScan` to `paginate()`.
    */
   filterWith(predicate: (doc: T) => Promise<boolean>): QueryStream<T> {
     const order = this.getOrder();
@@ -330,16 +334,12 @@ export abstract class QueryStream<T extends GenericStreamItem>
       'Cannot call .filter() directly on a query stream. Use .filterWith() for filtering or .collect() if you want to convert the stream to an array first.'
     );
   }
-  async paginate(
-    opts: PaginationOptions & {
-      endCursor?: string | null;
-      maximumRowsRead?: number;
-    }
-  ): Promise<PaginationResult<T>> {
-    if (opts.numItems === 0) {
+  async paginate(opts: StreamPaginateOptions): Promise<PaginationResult<T>> {
+    const numItems = opts.limit;
+    if (numItems === 0) {
       if (opts.cursor === null) {
         throw new Error(
-          '.paginate called with cursor of null and 0 for numItems. ' +
+          '.paginate called with cursor of null and 0 for limit. ' +
             'This is not supported, as null is not a valid continueCursor. ' +
             'Advice: avoid calling paginate entirely in these cases.'
         );
@@ -365,16 +365,16 @@ export abstract class QueryStream<T extends GenericStreamItem>
       key: [] as IndexKey,
       inclusive: true,
     };
-    const maxRowsToRead = opts.maximumRowsRead;
-    const softMaxRowsToRead = opts.numItems + 1;
-    let maxRows: number | undefined = opts.numItems;
+    const maxRowsToRead = opts.maxScan;
+    const softMaxRowsToRead = numItems + 1;
+    let maxRows: number | undefined = numItems;
     if (opts.endCursor) {
       newEndKey = {
         key: deserializeCursor(opts.endCursor),
         inclusive: true,
       };
       // If there's an endCursor, continue until we get there even if it's more
-      // than numItems.
+      // than limit.
       maxRows = undefined;
     }
     const newLowerBound = order === 'asc' ? newStartKey : newEndKey;
@@ -483,18 +483,18 @@ export interface GenericOrderedQuery<T> extends AsyncIterable<T> {
    * Load a page of `n` results and obtain a {@link Cursor} for loading more.
    *
    * Note: If this is called from a reactive query function the number of
-   * results may not match `paginationOpts.numItems`!
+   * results may not match `paginationOpts.limit`!
    *
-   * `paginationOpts.numItems` is only an initial value. After the first invocation,
+   * `paginationOpts.limit` is only an initial value. After the first invocation,
    * `paginate` will return all items in the original query range. This ensures
    * that all pages will remain adjacent and non-overlapping.
    *
-   * @param paginationOpts - A {@link PaginationOptions} object containing the number
+   * @param paginationOpts - A {@link StreamPaginateOptions} object containing the number
    * of items to load and the cursor to start at.
    * @returns A {@link PaginationResult} containing the page of results and a
    * cursor to continue paginating.
    */
-  paginate(paginationOpts: PaginationOptions): Promise<PaginationResult<T>>;
+  paginate(paginationOpts: StreamPaginateOptions): Promise<PaginationResult<T>>;
 
   /**
    * Execute the query and return all of the results as an array.
@@ -536,9 +536,7 @@ export interface GenericOrderedQuery<T> extends AsyncIterable<T> {
   filter(predicate: any): this;
 }
 
-export class StreamDatabaseReader<Schema extends SchemaDefinition<any, boolean>>
-  implements GenericDatabaseReader<DM<Schema>>
-{
+export class StreamDatabaseReader<Schema extends SchemaDefinition<any, boolean>> {
   // TODO: support system tables
   system: GenericDatabaseReader<SystemDataModel>['system'];
   db: GenericDatabaseReader<DM<Schema>>;
@@ -599,8 +597,6 @@ export abstract class StreamableQuery<
     IndexName extends IndexNames<NamedTableInfo<DM<Schema>, T>>,
   >
   extends QueryStream<DocumentByInfo<NamedTableInfo<DM<Schema>, T>>>
-  // this "implements" is redundant, since QueryStream implies it, but it acts as a type-time assertion.
-  implements OrderedQuery<NamedTableInfo<DM<Schema>, T>>
 {
   abstract reflect(): QueryReflection<Schema, T, IndexName>;
 }
@@ -610,7 +606,6 @@ export class StreamQueryInitializer<
     T extends TableNamesInDataModel<DM<Schema>>,
   >
   extends StreamableQuery<Schema, T, 'by_creation_time'>
-  implements QueryInitializer<NamedTableInfo<DM<Schema>, T>>
 {
   parent: StreamDatabaseReader<Schema>;
   table: T;
@@ -681,7 +676,6 @@ export class StreamQuery<
     IndexName extends IndexNames<NamedTableInfo<DM<Schema>, T>>,
   >
   extends StreamableQuery<Schema, T, IndexName>
-  implements Query<NamedTableInfo<DM<Schema>, T>>
 {
   parent: StreamQueryInitializer<Schema, T>;
   index: IndexName;
@@ -746,7 +740,6 @@ export class OrderedStreamQuery<
     IndexName extends IndexNames<NamedTableInfo<DM<Schema>, T>>,
   >
   extends StreamableQuery<Schema, T, IndexName>
-  implements OrderedQuery<NamedTableInfo<DM<Schema>, T>>
 {
   parent: StreamQuery<Schema, T, IndexName>;
   order: 'asc' | 'desc';
@@ -1353,7 +1346,7 @@ class FlatMapStreamIterator<
         this.#currentOuterItem = null;
       } else {
         // The inner stream was completely empty, so we should inject a null
-        // (which will be skipped by everything except the maximumRowsRead count)
+        // (which will be skipped by everything except the maxScan count)
         // to account for the cost of the outer stream.
         this.#currentOuterItem.innerIterator = this.singletonSkipInnerStream()
           .iterWithKeys()
@@ -1534,9 +1527,9 @@ export class SingletonStream<
 
 /**
  * This is a completely empty stream that yields no values, and in particular
- * does not count towards maximumRowsRead.
+ * does not count towards maxScan.
  * Compare to SingletonStream(null, ...), which yields no values but does count
- * towards maximumRowsRead.
+ * towards maxScan.
  */
 export class EmptyStream<T extends GenericStreamItem> extends QueryStream<T> {
   #order: 'asc' | 'desc';

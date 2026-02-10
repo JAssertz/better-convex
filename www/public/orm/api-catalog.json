@@ -312,17 +312,17 @@
 
   "pagination": {
     "paginate": {
-      "signature": "db(ctx).query.tableName.findMany({ paginate: { cursor, numItems }, ... }): Promise<PaginationResult>",
+      "signature": "db(ctx).query.tableName.findMany({ paginate: { cursor, limit }, ... }): Promise<PaginationResult>",
       "description": "Cursor-based pagination via findMany (O(log n) performance)",
       "parameters": {
         "cursor": "Cursor from previous page or null",
-        "numItems": "Number of items per page",
+        "limit": "Number of items per page",
         "where": "Optional filter condition",
         "with": "Optional relations to load",
         "orderBy": "Optional sort order"
       },
       "returns": "{ page: T[], continueCursor: string | null, isDone: boolean }",
-      "example": "const result = await db(ctx).query.users.findMany({ paginate: { cursor: args.cursor ?? null, numItems: 20 } });",
+      "example": "const result = await db(ctx).query.users.findMany({ paginate: { cursor: args.cursor ?? null, limit: 20 } });",
       "docUrl": "/docs/db/orm/ordering-pagination#cursor-pagination",
       "category": "pagination"
     },

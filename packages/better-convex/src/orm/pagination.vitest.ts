@@ -91,7 +91,7 @@ test('paginator returns stream reader and paginates query', async () => {
     const page = await db
       .query('users')
       .withIndex('by_name')
-      .paginate({ cursor: null, numItems: 2 });
+      .paginate({ cursor: null, limit: 2 });
 
     expect(page.page.map((row: any) => row.name)).toEqual(['Alice', 'Bob']);
     expect(page.isDone).toBe(false);

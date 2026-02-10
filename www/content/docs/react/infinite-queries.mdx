@@ -202,7 +202,7 @@ export const list = publicQuery
     return ctx.orm.query.session.findMany({
       where: input.userId ? { userId: input.userId } : undefined,
       orderBy: { _creationTime: 'desc' },
-      paginate: { cursor: input.cursor, numItems: input.limit },
+      paginate: input,
     });
   });
 ```
@@ -217,7 +217,7 @@ The `.paginated({ limit, item })` method:
 | `limit` | `number` | Items to fetch (capped at server limit) |
 
 <Callout icon={<InfoIcon />}>
-**Important:** Always call `.paginated({ limit, item })` before `.query()`. The handler receives flat `input.cursor` and `input.limit` which you pass through to ORM `paginate: { cursor, numItems }`.
+**Important:** Always call `.paginated({ limit, item })` before `.query()`. The handler receives flat `input.cursor` and `input.limit` — pass `input` directly to ORM `paginate`.
 </Callout>
 
 ## Conditional Queries

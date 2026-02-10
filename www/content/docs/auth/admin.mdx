@@ -343,9 +343,8 @@ export const getAllUsers = authQuery
   }))
   .paginated({ limit: 20, item: UserListItemSchema.nullable() })
   .query(async ({ ctx, input }) => {
-    const paginationOpts = { cursor: input.cursor, numItems: input.limit };
     const result = await ctx.orm.query.user.findMany({
-      paginate: paginationOpts,
+      paginate: input,
       orderBy: { _creationTime: 'desc' },
     });
 

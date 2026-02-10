@@ -74,14 +74,14 @@ await db.query.table.findFirst({
 
 await db.query.table.findMany({
   where: { active: true },
-  paginate: { cursor: null, numItems: 20 },
+  paginate: { cursor: null, limit: 20 },
 })
 
 await db.query.table.findMany({
   // Predicate where requires an explicit index plan (no allowFullScan fallback)
   where: (row) => row.status === 'active',
   index: { name: 'by_status' },
-  paginate: { cursor: null, numItems: 20, maximumRowsRead: 2000 },
+  paginate: { cursor: null, limit: 20, maxScan: 2000 },
 })
 ```
 

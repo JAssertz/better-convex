@@ -324,7 +324,7 @@ await db.query.users.findMany({
 - `index`: required when `where` is a function (`{ name, range? }`)
 - `orderBy`: `{ field: 'asc' | 'desc' }`
 - `limit`, `offset`
-- `paginate`: `{ cursor, numItems, maximumRowsRead? }` (cursor pagination)
+- `paginate`: `{ cursor, limit, maxScan? }` (cursor pagination)
 - `allowFullScan`: opt‑in for object-filter full scans when no index is available (not used with predicate `where`, `search`, or `vectorSearch`)
 - `with`: relation loading
 - `columns`: post‑fetch projection
@@ -365,7 +365,7 @@ await db.query.posts.findMany({
     query: 'galaxy',
     filters: { type: 'news' },
   },
-  paginate: { cursor: null, numItems: 20 },
+  paginate: { cursor: null, limit: 20 },
 });
 ```
 
@@ -410,7 +410,7 @@ await db.query.posts.findFirstOrThrow({
 await db.query.posts.findMany({
   where: { published: true },
   orderBy: { _creationTime: 'desc' },
-  paginate: { cursor: null, numItems: 20 },
+  paginate: { cursor: null, limit: 20 },
 });
 ```
 
@@ -452,7 +452,7 @@ Most queries should use `findMany()` / `findFirst()` (or `findFirstOrThrow()`).
 - `ilike` / `notIlike`: normalize to lowercase in a dedicated indexed field.
 - `notLike`: index a positive pre-filter, then post-filter with `notLike`.
 - `RAW`: keep explicit full-scan opt-in and narrow with indexed filters first.
-- Predicate `where`: provide `index: { name, range? }` and use `paginate.maximumRowsRead` for bounded scans.
+- Predicate `where`: provide `index: { name, range? }` and use `paginate.maxScan` for bounded scans.
 
 ## Mutations
 
@@ -482,7 +482,7 @@ await db
 - Async fan-out uses `mutationLeafBatchSize` (default `900`) for non-recursive FK actions.
 - Async fan-out enforces `mutationMaxBytesPerBatch` (default `2_097_152` measured bytes) and `mutationScheduleCallCap` (default `100`).
 - Override defaults via `defineSchema(..., { defaults: { mutationMaxRows, mutationBatchSize, mutationLeafBatchSize, mutationMaxBytesPerBatch, mutationScheduleCallCap, mutationExecutionMode, mutationAsyncDelayMs } })`.
-- For large workloads, use `.paginate({ cursor, numItems })` to execute one batch per mutation call.
+- For large workloads, use `.paginate({ cursor, limit })` to execute one batch per mutation call.
 - Use `execute({ mode: 'async', batchSize?, delayMs? })` (or `.executeAsync(...)`) to run the first batch inline and schedule continuation.
 - Explicit async APIs cannot be combined with `.paginate()`.
 - Paged mode returns `{ continueCursor, isDone, numAffected }` (+ `page` when using `.returning()`).
@@ -511,7 +511,7 @@ await db.delete(users).where(eq(users._id, userId));
 - Async fan-out uses `mutationLeafBatchSize` (default `900`) for non-recursive FK actions.
 - Async fan-out enforces `mutationMaxBytesPerBatch` (default `2_097_152` measured bytes) and `mutationScheduleCallCap` (default `100`).
 - Override defaults via `defineSchema(..., { defaults: { mutationMaxRows, mutationBatchSize, mutationLeafBatchSize, mutationMaxBytesPerBatch, mutationScheduleCallCap, mutationExecutionMode, mutationAsyncDelayMs } })`.
-- For large workloads, use `.paginate({ cursor, numItems })` to execute one batch per mutation call.
+- For large workloads, use `.paginate({ cursor, limit })` to execute one batch per mutation call.
 - Use `execute({ mode: 'async', batchSize?, delayMs? })` (or `.executeAsync(...)`) to run the first batch inline and schedule continuation.
 - Explicit async APIs cannot be combined with `.paginate()` or resolved scheduled delete mode (`.scheduled(...)` or table-level `deletion('scheduled')`).
 - Paged mode returns `{ continueCursor, isDone, numAffected }` (+ `page` when using `.returning()`).

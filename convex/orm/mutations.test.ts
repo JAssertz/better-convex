@@ -411,7 +411,7 @@ describe('M7 Mutations', () => {
         .set({ role: 'editor' })
         .where(eq(pagedUsers.status, 'draft'))
         .returning({ name: pagedUsers.name, role: pagedUsers.role })
-        .paginate({ cursor: null, numItems: 2 });
+        .paginate({ cursor: null, limit: 2 });
 
       expect(page1.page).toHaveLength(2);
       expect(page1.numAffected).toBe(2);
@@ -422,7 +422,7 @@ describe('M7 Mutations', () => {
         .set({ role: 'editor' })
         .where(eq(pagedUsers.status, 'draft'))
         .returning({ name: pagedUsers.name, role: pagedUsers.role })
-        .paginate({ cursor: page1.continueCursor, numItems: 2 });
+        .paginate({ cursor: page1.continueCursor, limit: 2 });
 
       expect(page2.page).toHaveLength(1);
       expect(page2.numAffected).toBe(1);
@@ -477,7 +477,7 @@ describe('M7 Mutations', () => {
         .delete(pagedDeleteUsers)
         .soft()
         .where(eq(pagedDeleteUsers.status, 'draft'))
-        .paginate({ cursor: null, numItems: 2 });
+        .paginate({ cursor: null, limit: 2 });
 
       expect(page1.numAffected).toBe(2);
       expect(page1.isDone).toBe(false);
@@ -486,7 +486,7 @@ describe('M7 Mutations', () => {
         .delete(pagedDeleteUsers)
         .soft()
         .where(eq(pagedDeleteUsers.status, 'draft'))
-        .paginate({ cursor: page1.continueCursor, numItems: 2 });
+        .paginate({ cursor: page1.continueCursor, limit: 2 });
 
       expect(page2.numAffected).toBe(1);
       expect(page2.isDone).toBe(true);
@@ -514,14 +514,14 @@ describe('M7 Mutations', () => {
         .update(users)
         .set({ role: 'updated' })
         .where(inArray(users.status, ['active', 'pending']))
-        .paginate({ cursor: null, numItems: 10 })
+        .paginate({ cursor: null, limit: 10 })
     ).rejects.toThrow(/multi-probe/i);
 
     await expect(
       db
         .delete(users)
         .where(inArray(users.status, ['active', 'pending']))
-        .paginate({ cursor: null, numItems: 10 })
+        .paginate({ cursor: null, limit: 10 })
     ).rejects.toThrow(/multi-probe/i);
   });
 
@@ -849,7 +849,7 @@ describe('M7 Mutations', () => {
       ctx.orm
         .update(users)
         .set({ role: 'editor' })
-        .paginate({ cursor: null, numItems: 10 })
+        .paginate({ cursor: null, limit: 10 })
         .executeAsync(undefined as never)
     ).rejects.toThrow(/cannot be combined with paginate/i);
   });

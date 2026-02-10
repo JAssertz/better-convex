@@ -1393,7 +1393,7 @@ export const deletePage = privateMutation
 	    if (!query) return null;
 
 	    const results = await query.findMany({
-	      paginate: { cursor: input.cursor, numItems: DELETE_BATCH_SIZE },
+	      paginate: { cursor: input.cursor, limit: DELETE_BATCH_SIZE },
 	      orderBy: { _creationTime: 'desc' },
 	    });
 

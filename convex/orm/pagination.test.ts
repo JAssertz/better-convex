@@ -29,7 +29,7 @@ test('basic pagination - null cursor returns first page', async () => {
     const result = await db.query.users.findMany({
       paginate: {
         cursor: null,
-        numItems: 10,
+        limit: 10,
       },
     });
 
@@ -61,7 +61,7 @@ test('pagination - multiple pages with cursor', async () => {
     const page1 = await db.query.users.findMany({
       paginate: {
         cursor: null,
-        numItems: 10,
+        limit: 10,
       },
     });
     expect(page1.page).toHaveLength(10);
@@ -72,7 +72,7 @@ test('pagination - multiple pages with cursor', async () => {
     const page2 = await db.query.users.findMany({
       paginate: {
         cursor: page1.continueCursor,
-        numItems: 10,
+        limit: 10,
       },
     });
     expect(page2.page).toHaveLength(10);
@@ -83,7 +83,7 @@ test('pagination - multiple pages with cursor', async () => {
     const page3 = await db.query.users.findMany({
       paginate: {
         cursor: page2.continueCursor,
-        numItems: 10,
+        limit: 10,
       },
     });
     expect(page3.page).toHaveLength(5);
@@ -98,7 +98,7 @@ test('pagination - multiple pages with cursor', async () => {
   });
 });
 
-test('predicate pagination honors maximumRowsRead', async () => {
+test('predicate pagination honors maxScan', async () => {
   const t = convexTest(schema);
 
   await t.run(async (baseCtx) => {
@@ -119,8 +119,8 @@ test('predicate pagination honors maximumRowsRead', async () => {
       index: { name: 'by_name' },
       paginate: {
         cursor: null,
-        numItems: 5,
-        maximumRowsRead: 10,
+        limit: 5,
+        maxScan: 10,
       },
     });
 
@@ -133,8 +133,8 @@ test('predicate pagination honors maximumRowsRead', async () => {
       index: { name: 'by_name' },
       paginate: {
         cursor: page1.continueCursor,
-        numItems: 5,
-        maximumRowsRead: 10,
+        limit: 5,
+        maxScan: 10,
       },
     });
 
@@ -156,7 +156,7 @@ test('pagination - empty result set', async () => {
     const result = await db.query.users.findMany({
       paginate: {
         cursor: null,
-        numItems: 10,
+        limit: 10,
       },
     });
 
@@ -187,7 +187,7 @@ test('pagination - single page (isDone: true)', async () => {
     const result = await db.query.users.findMany({
       paginate: {
         cursor: null,
-        numItems: 10,
+        limit: 10,
       },
     });
 
@@ -220,7 +220,7 @@ test('pagination with WHERE filter', async () => {
       where: { age: { gte: 25 } },
       paginate: {
         cursor: null,
-        numItems: 10,
+        limit: 10,
       },
     });
 
@@ -255,7 +255,7 @@ test('pagination with index-union filter requires allowFullScan opt-in', async (
         where: { status: { in: ['active', 'pending'] } },
         paginate: {
           cursor: null,
-          numItems: 5,
+          limit: 5,
         },
       })
     ).rejects.toThrow(/allowFullScan: true/i);
@@ -284,7 +284,7 @@ test('pagination with index-union filter works with allowFullScan', async () => 
       where: { status: { in: ['active', 'pending'] } },
       paginate: {
         cursor: null,
-        numItems: 5,
+        limit: 5,
       },
       allowFullScan: true,
     });
@@ -324,7 +324,7 @@ test('pagination on non-leading compound field requires allowFullScan opt-in', a
         where: { numLikes: 10 },
         paginate: {
           cursor: null,
-          numItems: 2,
+          limit: 2,
         },
       })
     ).rejects.toThrow(/allowFullScan: true/i);
@@ -333,7 +333,7 @@ test('pagination on non-leading compound field requires allowFullScan opt-in', a
       where: { numLikes: 10 },
       paginate: {
         cursor: null,
-        numItems: 2,
+        limit: 2,
       },
       allowFullScan: true,
     });
@@ -367,7 +367,7 @@ test('pagination with ORDER BY ascending', async () => {
         orderBy: { role: 'asc' },
         paginate: {
           cursor: null,
-          numItems: 3,
+          limit: 3,
         },
       })
     ).rejects.toThrow(/Pagination: Field 'role' has no index/);
@@ -404,7 +404,7 @@ test('pagination with ORDER BY _creationTime', async () => {
       orderBy: { _creationTime: 'desc' },
       paginate: {
         cursor: null,
-        numItems: 5,
+        limit: 5,
       },
     });
 
@@ -434,7 +434,7 @@ test('pagination - cursor stability (replaying cursor returns same results)', as
     const page1 = await db.query.users.findMany({
       paginate: {
         cursor: null,
-        numItems: 5,
+        limit: 5,
       },
     });
 
@@ -442,14 +442,14 @@ test('pagination - cursor stability (replaying cursor returns same results)', as
     const page2a = await db.query.users.findMany({
       paginate: {
         cursor: page1.continueCursor,
-        numItems: 5,
+        limit: 5,
       },
     });
 
     const page2b = await db.query.users.findMany({
       paginate: {
         cursor: page1.continueCursor,
-        numItems: 5,
+        limit: 5,
       },
     });
 
@@ -483,7 +483,7 @@ test('pagination - default ordering (_creationTime desc)', async () => {
     const result = await db.query.users.findMany({
       paginate: {
         cursor: null,
-        numItems: 5,
+        limit: 5,
       },
     });
 
@@ -523,7 +523,7 @@ test('pagination - large result set (100+ items)', async () => {
       const result: any = await db.query.users.findMany({
         paginate: {
           cursor,
-          numItems: 20,
+          limit: 20,
         },
       });
 
@@ -575,7 +575,7 @@ test('pagination with combined WHERE and ORDER BY (non-indexed)', async () => {
         orderBy: { numLikes: 'desc' },
         paginate: {
           cursor: null,
-          numItems: 5,
+          limit: 5,
         },
       })
     ).rejects.toThrow(/Pagination: Field 'numLikes' has no index/);

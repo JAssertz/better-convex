@@ -84,13 +84,13 @@ For large workloads, you can process delete batches page-by-page with `.paginate
 const page1 = await ctx.orm
   .delete(users)
   .where(eq(users.role, 'inactive'))
-  .paginate({ cursor: null, numItems: 100 });
+  .paginate({ cursor: null, limit: 100 });
 
 if (!page1.isDone) {
   const page2 = await ctx.orm
     .delete(users)
     .where(eq(users.role, 'inactive'))
-    .paginate({ cursor: page1.continueCursor, numItems: 100 });
+    .paginate({ cursor: page1.continueCursor, limit: 100 });
 }
 ```
 

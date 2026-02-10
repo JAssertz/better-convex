@@ -170,7 +170,7 @@ const batch = await ctx.orm
   .update(users)
   .set({ role: 'member' })
   .where(eq(users.role, 'pending'))
-  .paginate({ cursor: null, numItems: 100 });
+  .paginate({ cursor: null, limit: 100 });
 ```
 
 The paginated result includes:

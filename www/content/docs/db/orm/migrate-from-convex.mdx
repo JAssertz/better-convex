@@ -99,7 +99,7 @@ If your API schema uses Zod `.optional()`, normalize with `field: row.field ?? u
   </CompareItem>
 </Compare>
 
-For complex JavaScript predicates, Better-Convex supports predicate `where`, but it requires an explicit `index: { name, range? }` plan and should be bounded with `paginate.maximumRowsRead`.
+For complex JavaScript predicates, Better-Convex supports predicate `where`, but it requires an explicit `index: { name, range? }` plan and should be bounded with `paginate.maxScan`.
 See [/docs/db/orm/queries#filtering-with-where](/docs/db/orm/queries#filtering-with-where).
 
 ### Indexes (`withIndex`) and Ordering
@@ -450,7 +450,7 @@ If you want to stay on native Convex but approximate ORM constraints, the usual 
       .query(async ({ ctx, input }) => {
         return ctx.orm.query.posts.findMany({
           orderBy: { _creationTime: 'desc' },
-          paginate: { cursor: input.cursor, numItems: 20 },
+          paginate: { cursor: input.cursor, limit: 20 },
         });
       });
     ```
@@ -483,7 +483,7 @@ See [/docs/server/procedures#paginated-queries](/docs/server/procedures#paginate
         query: input.query,
         filters: { channel: '#general' },
       },
-      paginate: { cursor: null, numItems: 10 },
+      paginate: { cursor: null, limit: 10 },
     });
     ```
   </CompareItem>

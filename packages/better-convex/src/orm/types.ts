@@ -794,8 +794,8 @@ type TableColumns<TTableConfig extends TableRelationalConfig> =
 
 export type PaginateConfig = {
   cursor: string | null;
-  numItems: number;
-  maximumRowsRead?: number;
+  limit: number;
+  maxScan?: number;
 };
 
 export type PaginatedResult<T> = {
@@ -995,7 +995,7 @@ export type MutationResult<
 
 export type MutationPaginateConfig = {
   cursor: string | null;
-  numItems: number;
+  limit: number;
 };
 
 export type MutationRunMode = 'sync' | 'async';

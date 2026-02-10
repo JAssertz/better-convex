@@ -53,7 +53,7 @@ test('stream reader unsupported APIs throw and withSearchIndex is blocked', asyn
   });
 });
 
-test('stream.paginate validates numItems=0 behavior', async () => {
+test('stream.paginate validates limit=0 behavior', async () => {
   const t = convexTest(schema);
 
   await t.run(async (ctx) => {
@@ -71,13 +71,13 @@ test('stream.paginate validates numItems=0 behavior', async () => {
     await expect(
       users.paginate({
         cursor: null,
-        numItems: 0,
+        limit: 0,
       })
     ).rejects.toThrow(/not supported/i);
 
     const page = await users.paginate({
       cursor: '[]',
-      numItems: 0,
+      limit: 0,
     });
 
     expect(page.page).toEqual([]);
@@ -86,7 +86,7 @@ test('stream.paginate validates numItems=0 behavior', async () => {
   });
 });
 
-test('stream.paginate exposes split metadata when maximumRowsRead is hit', async () => {
+test('stream.paginate exposes split metadata when maxScan is hit', async () => {
   const t = convexTest(schema);
 
   await t.run(async (ctx) => {
@@ -106,8 +106,8 @@ test('stream.paginate exposes split metadata when maximumRowsRead is hit', async
       .withIndex('by_name');
     const page = await users.paginate({
       cursor: null,
-      numItems: 2,
-      maximumRowsRead: 1,
+      limit: 2,
+      maxScan: 1,
     });
 
     expect(page.isDone).toBe(false);

@@ -63,7 +63,12 @@ export function TodoList({ projectId, showFilters = true }: TodoListProps) {
   const searchResult = useInfiniteQuery(
     crpc.todos.search.infiniteQueryOptions(
       searchQuery
-        ? { query: searchQuery, completed: completedFilter, projectId }
+        ? {
+            query: searchQuery,
+            completed: completedFilter,
+            projectId,
+            showDeleted,
+          }
         : skipToken,
       { placeholderData: placeholderTodos }
     )
@@ -72,7 +77,12 @@ export function TodoList({ projectId, showFilters = true }: TodoListProps) {
     crpc.todos.list.infiniteQueryOptions(
       searchQuery
         ? skipToken
-        : { completed: completedFilter, projectId, priority: priorityFilter },
+        : {
+            completed: completedFilter,
+            projectId,
+            priority: priorityFilter,
+            showDeleted,
+          },
       { placeholderData: placeholderTodos }
     )
   );

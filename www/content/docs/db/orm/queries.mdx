@@ -160,7 +160,7 @@ These operators are non-index-compiled and require `allowFullScan` unless paired
 | `ilike`, `notIlike` | Store a normalized lowercase column and query with `startsWith`/`like('prefix%')` where possible |
 | `notLike` | Use an indexed positive pre-filter, then apply `notLike` post-fetch |
 | `NOT` (general) | Rewrite to positive indexable predicates when possible; otherwise explicit full-scan opt-in |
-| predicate `where: (row) => ...` | Use `index: { name, range? }`; add `paginate.maximumRowsRead` to cap scan cost |
+| predicate `where: (row) => ...` | Use `index: { name, range? }`; add `paginate.maxScan` to cap scan cost |
 
 ### Logical Filters
 
@@ -239,7 +239,7 @@ For efficient pagination over large datasets, use cursor-based pagination:
 return db.query.posts.findMany({
   where: { published: true },
   orderBy: { _creationTime: 'desc' },
-  paginate: { cursor: args.cursor ?? null, numItems: 20 },
+  paginate: { cursor: args.cursor ?? null, limit: 20 },
 });
 ```
 
@@ -254,7 +254,7 @@ const posts = await db.query.posts.findMany({
     query: 'galaxy',
     filters: { type: 'news' },
   },
-  paginate: { cursor: null, numItems: 20 },
+  paginate: { cursor: null, limit: 20 },
 });
 ```
 
@@ -324,7 +324,7 @@ Use this decision matrix to pick the right approach and avoid accidental full sc
 |---|---|---|
 | Simple filters, no pagination | `db.query.*.findMany({ where, limit })` | Uses index compilation when possible; non-paginated reads must be sized |
 | Complex JS predicate, no pagination | `db.query.*.findMany({ where: (row) => ..., index: { name: 'by_field' }, limit: 100 })` | Explicit index required; non-paginated reads must be sized |
-| Complex JS predicate + pagination | `db.query.*.findMany({ where: (row) => ..., index: { name: 'by_field' }, paginate: { cursor, numItems, maximumRowsRead } })` | Explicit index + bounded scan |
+| Complex JS predicate + pagination | `db.query.*.findMany({ where: (row) => ..., index: { name: 'by_field' }, paginate: { cursor, limit, maxScan } })` | Explicit index + bounded scan |
 | Large lists | `db.query.*.findMany({ paginate })` | First `orderBy` field should be indexed |
 | Search + equality filters | `db.query.*.findMany({ search: { index, query, filters? } })` | `filters` must be in search index `filterFields` |
 | Embedding similarity | `db.query.*.findMany({ vectorSearch: { index, vector, limit, includeScore?, filter? } })` | Similarity order from vector search; no `paginate`/`where`/`orderBy` |

@@ -178,6 +178,7 @@ export function OrganizationMembers({
 
     inviteMember.mutate({
       email: inviteData.email.trim(),
+      organizationId: organization.id,
       role: inviteData.role as 'owner' | 'member',
     });
   };

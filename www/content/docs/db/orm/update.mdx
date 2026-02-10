@@ -86,14 +86,14 @@ const page1 = await ctx.orm
   .update(users)
   .set({ role: 'member' })
   .where(eq(users.role, 'pending'))
-  .paginate({ cursor: null, numItems: 100 });
+  .paginate({ cursor: null, limit: 100 });
 
 if (!page1.isDone) {
   const page2 = await ctx.orm
     .update(users)
     .set({ role: 'member' })
     .where(eq(users.role, 'pending'))
-    .paginate({ cursor: page1.continueCursor, numItems: 100 });
+    .paginate({ cursor: page1.continueCursor, limit: 100 });
 }
 ```
 

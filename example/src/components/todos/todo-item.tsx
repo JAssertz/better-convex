@@ -80,8 +80,7 @@ export function TodoItem({ todo, onEdit }: TodoItemProps) {
   };
 
   const isOverdue =
-    !!todo.dueDate ||
-    (!!todo.dueDate && todo.dueDate < Date.now() && !todo.completed);
+    !!todo.dueDate && todo.dueDate < Date.now() && !todo.completed;
   const isDeleted = !!todo.deletionTime;
 
   const priorityColors = {

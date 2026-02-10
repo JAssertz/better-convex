@@ -137,7 +137,7 @@ export function scheduledMutationBatchFactory<
       }
       const page = await builder.paginate({
         cursor: args.cursor,
-        numItems: args.batchSize,
+        limit: args.batchSize,
       });
       if (!page.isDone && page.continueCursor !== null) {
         await ctx.scheduler.runAfter(args.delayMs, scheduledMutationBatch, {
@@ -174,7 +174,7 @@ export function scheduledMutationBatchFactory<
       }
       const page = await builder.paginate({
         cursor: args.cursor,
-        numItems: args.batchSize,
+        limit: args.batchSize,
       });
       if (!page.isDone && page.continueCursor !== null) {
         await ctx.scheduler.runAfter(args.delayMs, scheduledMutationBatch, {

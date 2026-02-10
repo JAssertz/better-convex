@@ -1639,7 +1639,7 @@ export class GelRelationalQuery<
       if (paginate) {
         const paginationResult = await searchQuery.paginate({
           cursor: paginate.cursor ?? null,
-          numItems: paginate.numItems ?? 20,
+          numItems: paginate.limit ?? 20,
         } as any);
 
         let pageRows = paginationResult.page;
@@ -1838,8 +1838,8 @@ export class GelRelationalQuery<
       if (paginate) {
         const paginationResult = await streamQuery.paginate({
           cursor: paginate.cursor ?? null,
-          numItems: paginate.numItems ?? 20,
-          maximumRowsRead: paginate.maximumRowsRead,
+          limit: paginate.limit ?? 20,
+          maxScan: paginate.maxScan,
         });
 
         let pageRows = paginationResult.page;
@@ -2143,7 +2143,7 @@ export class GelRelationalQuery<
       // Use Convex native pagination (O(1) performance)
       const paginationResult = await query.paginate({
         cursor: paginate.cursor ?? null,
-        numItems: paginate.numItems ?? 20,
+        numItems: paginate.limit ?? 20,
       });
 
       let pageRows = paginationResult.page;

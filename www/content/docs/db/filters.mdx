@@ -153,7 +153,7 @@ export const searchPaginated = publicQuery
         query: input.query,
         filters: input.category ? { category: input.category } : undefined,
       },
-      paginate: { cursor: input.cursor, numItems: input.limit },
+      paginate: { cursor: input.cursor, limit: input.limit },
     });
   });
 ```
@@ -195,7 +195,7 @@ export const searchCharacters = publicQuery
         name: 'private',
         range: (q) => q.eq('private', false),
       },
-      paginate: { cursor: input.cursor, numItems: input.limit },
+      paginate: { cursor: input.cursor, limit: input.limit },
     });
   });
 ```
@@ -262,7 +262,7 @@ export const searchOrFilter = publicQuery
           query: input.query!,
           filters: input.category ? { category: input.category } : undefined,
         },
-        paginate: { cursor: input.cursor, numItems: input.limit },
+        paginate: { cursor: input.cursor, limit: input.limit },
       });
     }
 
@@ -274,7 +274,7 @@ export const searchOrFilter = publicQuery
         return true;
       },
       index: { name: 'by_creation_time' },
-      paginate: { cursor: input.cursor, numItems: input.limit },
+      paginate: { cursor: input.cursor, limit: input.limit },
     });
   });
 ```
@@ -306,13 +306,13 @@ Understanding performance is critical for production apps.
 
 ### Predicate `where` Performance
 
-Predicate `where` runs post‑fetch against an explicit index stream. Use `maximumRowsRead` to cap scan size:
+Predicate `where` runs post‑fetch against an explicit index stream. Use `maxScan` to cap scan size:
 
 ```ts showLineNumbers {2-6}
 const results = await db.query.posts.findMany({
   where: (post) => expensiveCheck(post),
   index: { name: 'by_created_at' },
-  paginate: { cursor: input.cursor, numItems: input.limit, maximumRowsRead: 500 },
+  paginate: { cursor: input.cursor, limit: input.limit, maxScan: 500 },
 });
 ```
 
@@ -329,7 +329,7 @@ const page1 = await db.query.messages.findMany({
   where: (m) => m.read,
   index: { name: 'by_creation_time' },
   orderBy: { _creationTime: 'desc' },
-  paginate: { cursor: null, numItems: 20 },
+  paginate: { cursor: null, limit: 20 },
 });
 ```
 
@@ -337,7 +337,7 @@ const page1 = await db.query.messages.findMany({
 
 - Prefer `findMany({ paginate })` for user‑facing lists
 - Keep limits small for non‑paginated queries
-- Use selective index ranges for predicate `where` and cap reads with `maximumRowsRead`
+- Use selective index ranges for predicate `where` and cap reads with `maxScan`
 
 ## Best Practices
 
@@ -346,7 +346,7 @@ Here are key practices to follow when using filters and search.
 1. **Create appropriate indexes** - Each search field needs its own search index
 2. **Limit results** - Always use `limit` or `paginate`
 3. **Use filterFields** - Pre-filter with equality before text search
-4. **Bound predicate scans** - Use explicit `index` and cap reads with `maximumRowsRead`
+4. **Bound predicate scans** - Use explicit `index` and cap reads with `maxScan`
 5. **Normalize search terms** - Consider lowercase for consistent matching
 6. **Handle empty queries** - Decide behavior when search query is empty
 7. **Prefer cursor pagination** - Use `findMany({ paginate })` for large lists

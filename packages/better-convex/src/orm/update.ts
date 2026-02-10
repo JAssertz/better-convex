@@ -153,8 +153,8 @@ export class ConvexUpdateBuilder<
     ConvexUpdateBuilder<TTable, TReturning, 'paged'>,
     'paginate'
   > {
-    if (!Number.isInteger(config.numItems) || config.numItems < 1) {
-      throw new Error('paginate() numItems must be a positive integer.');
+    if (!Number.isInteger(config.limit) || config.limit < 1) {
+      throw new Error('paginate() limit must be a positive integer.');
     }
     this.paginateConfig = config;
     return this as any;
@@ -273,7 +273,7 @@ export class ConvexUpdateBuilder<
 
       const previousPaginate = this.paginateConfig;
       const previousMode = this.executionModeOverride;
-      this.paginateConfig = { cursor: null, numItems: asyncBatchSize };
+      this.paginateConfig = { cursor: null, limit: asyncBatchSize };
       this.executionModeOverride = 'async';
 
       try {
@@ -410,7 +410,7 @@ export class ConvexUpdateBuilder<
             .filter((q: any) => filterFn(q))
             .paginate({
               cursor: pagination.cursor,
-              numItems: pagination.numItems,
+              numItems: pagination.limit,
             });
         })();
         rows = page.page as Record<string, unknown>[];
@@ -483,7 +483,7 @@ export class ConvexUpdateBuilder<
         isDone: boolean;
       } = await this.db.query(tableName).paginate({
         cursor: pagination.cursor,
-        numItems: pagination.numItems,
+        numItems: pagination.limit,
       });
       rows = page.page as Record<string, unknown>[];
       continueCursor = page.continueCursor;
@@ -537,7 +537,7 @@ export class ConvexUpdateBuilder<
       remainingCalls: scheduleCallCap,
       callCap: scheduleCallCap,
     };
-    const fkBatchSize = isPaginated ? pagination.numItems : batchSize;
+    const fkBatchSize = isPaginated ? pagination.limit : batchSize;
 
     for (const { row, updatedRow, decision } of updates) {
       if (!decision.allowed) {
