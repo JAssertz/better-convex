@@ -7,7 +7,7 @@
     "dev": "next dev",
     "postinstall": "fumadocs-mdx",
     "start": "next start",
-    "typecheck": "fumadocs-mdx && next typegen && tsgo --noEmit",
+    "typecheck": "fumadocs-mdx && next typegen && tsc --noEmit",
     "types:check": "bun typecheck"
   },
   "dependencies": {

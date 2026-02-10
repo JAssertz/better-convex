@@ -312,4 +312,140 @@ describe('M2 Relations Layer (v1)', () => {
       expect(authoredPostsEdge?.inverseEdge).toBe(authorEdge);
     });
   });
+
+  describe('Many-to-Many Inverses', () => {
+    it('should pair many-to-many inverses via .through()', () => {
+      const users = convexTable('users', {
+        name: text().notNull(),
+      });
+
+      const groups = convexTable('groups', {
+        name: text().notNull(),
+      });
+
+      const usersToGroups = convexTable('usersToGroups', {
+        userId: id('users').notNull(),
+        groupId: id('groups').notNull(),
+      });
+
+      const relations = defineRelations(
+        { users, groups, usersToGroups },
+        (r) => ({
+          users: {
+            groups: r.many.groups({
+              from: r.users._id.through(r.usersToGroups.userId),
+              to: r.groups._id.through(r.usersToGroups.groupId),
+              alias: 'users-groups-direct',
+            }),
+          },
+          groups: {
+            users: r.many.users({
+              from: r.groups._id.through(r.usersToGroups.groupId),
+              to: r.users._id.through(r.usersToGroups.userId),
+              alias: 'users-groups-direct',
+            }),
+          },
+        })
+      );
+
+      expect(() => extractRelationsConfig(relations)).not.toThrow();
+
+      const edges = extractRelationsConfig(relations);
+      const usersGroups = edges.find((e) => e.edgeName === 'groups');
+      const groupsUsers = edges.find((e) => e.edgeName === 'users');
+
+      expect(usersGroups?.inverseEdge).toBe(groupsUsers);
+      expect(groupsUsers?.inverseEdge).toBe(usersGroups);
+    });
+
+    it('should pair many-to-many inverses even when another relation between the same tables exists', () => {
+      const users = convexTable('users', {
+        name: text().notNull(),
+      });
+
+      const projects = convexTable('projects', {
+        name: text().notNull(),
+        ownerId: id('users').notNull(),
+      });
+
+      const projectMembers = convexTable('projectMembers', {
+        projectId: id('projects').notNull(),
+        userId: id('users').notNull(),
+      });
+
+      const relations = defineRelations(
+        { users, projects, projectMembers },
+        (r) => ({
+          projects: {
+            owner: r.one.users({
+              from: r.projects.ownerId,
+              to: r.users._id,
+              alias: 'ProjectOwner',
+            }),
+            members: r.many.users({
+              from: r.projects._id.through(r.projectMembers.projectId),
+              to: r.users._id.through(r.projectMembers.userId),
+              alias: 'ProjectMembers',
+            }),
+          },
+          users: {
+            ownedProjects: r.many.projects({
+              from: r.users._id,
+              to: r.projects.ownerId,
+              alias: 'ProjectOwner',
+            }),
+            memberProjects: r.many.projects({
+              from: r.users._id.through(r.projectMembers.userId),
+              to: r.projects._id.through(r.projectMembers.projectId),
+              alias: 'ProjectMembers',
+            }),
+          },
+        })
+      );
+
+      expect(() => extractRelationsConfig(relations)).not.toThrow();
+
+      const edges = extractRelationsConfig(relations);
+
+      const projectsOwner = edges.find((e) => e.edgeName === 'owner');
+      const usersOwnedProjects = edges.find(
+        (e) => e.edgeName === 'ownedProjects'
+      );
+      expect(projectsOwner?.inverseEdge).toBe(usersOwnedProjects);
+      expect(usersOwnedProjects?.inverseEdge).toBe(projectsOwner);
+
+      const projectsMembers = edges.find((e) => e.edgeName === 'members');
+      const usersMemberProjects = edges.find(
+        (e) => e.edgeName === 'memberProjects'
+      );
+      expect(projectsMembers?.inverseEdge).toBe(usersMemberProjects);
+      expect(usersMemberProjects?.inverseEdge).toBe(projectsMembers);
+    });
+  });
+
+  describe('Self-Referencing Relations', () => {
+    it('should allow self-referencing one() relations when the FK is nullable', () => {
+      const users = convexTable('users', {
+        name: text().notNull(),
+        managerId: id('users'),
+      });
+
+      const relations = defineRelations({ users }, (r) => ({
+        users: {
+          manager: r.one.users({
+            from: r.users.managerId,
+            to: r.users._id,
+            alias: 'manager',
+          }),
+          reports: r.many.users({
+            from: r.users._id,
+            to: r.users.managerId,
+            alias: 'manager',
+          }),
+        },
+      }));
+
+      expect(() => extractRelationsConfig(relations)).not.toThrow();
+    });
+  });
 });

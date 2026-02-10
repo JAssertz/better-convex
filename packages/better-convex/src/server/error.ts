@@ -127,6 +127,119 @@ export class CRPCError extends ConvexError<CRPCErrorData> {
 // Helper Functions
 // =============================================================================
 
+function isOrmNotFoundErrorLike(cause: unknown): cause is Error {
+  return cause instanceof Error && cause.name === 'OrmNotFoundError';
+}
+
+type APIErrorLike = Error & {
+  status?: unknown;
+  statusCode?: unknown;
+  body?: unknown;
+};
+
+function isApiErrorLike(cause: unknown): cause is APIErrorLike {
+  return (
+    cause instanceof Error &&
+    cause.name === 'APIError' &&
+    typeof (cause as APIErrorLike).statusCode === 'number'
+  );
+}
+
+function mapHttpStatusCodeToCRPCCode(statusCode: number): CRPCErrorCode {
+  switch (statusCode) {
+    case 400:
+      return 'BAD_REQUEST';
+    case 401:
+      return 'UNAUTHORIZED';
+    case 402:
+      return 'PAYMENT_REQUIRED';
+    case 403:
+      return 'FORBIDDEN';
+    case 404:
+      return 'NOT_FOUND';
+    case 405:
+      return 'METHOD_NOT_SUPPORTED';
+    case 408:
+      return 'TIMEOUT';
+    case 409:
+      return 'CONFLICT';
+    case 412:
+      return 'PRECONDITION_FAILED';
+    case 413:
+      return 'PAYLOAD_TOO_LARGE';
+    case 415:
+      return 'UNSUPPORTED_MEDIA_TYPE';
+    case 422:
+      return 'UNPROCESSABLE_CONTENT';
+    case 428:
+      return 'PRECONDITION_REQUIRED';
+    case 429:
+      return 'TOO_MANY_REQUESTS';
+    case 499:
+      return 'CLIENT_CLOSED_REQUEST';
+    default:
+      return 'INTERNAL_SERVER_ERROR';
+  }
+}
+
+function getApiErrorMessage(cause: APIErrorLike): string {
+  const body = cause.body;
+  if (body && typeof body === 'object') {
+    const message = (body as { message?: unknown }).message;
+    if (typeof message === 'string' && message.length > 0) {
+      return message;
+    }
+  }
+  if (typeof cause.message === 'string' && cause.message.length > 0) {
+    return cause.message;
+  }
+  return 'Request failed';
+}
+
+/**
+ * Convert known framework/library errors into CRPCError.
+ *
+ * Intended for cRPC internals so callers don't need per-endpoint try/catch.
+ */
+export function toCRPCError(cause: unknown): CRPCError | null {
+  if (cause instanceof CRPCError) return cause;
+  if (cause instanceof Error && cause.name === 'CRPCError') {
+    return cause as CRPCError;
+  }
+
+  if (isOrmNotFoundErrorLike(cause)) {
+    const err = new CRPCError({
+      code: 'NOT_FOUND',
+      message: cause.message,
+      cause,
+    });
+    if (cause.stack) err.stack = cause.stack;
+    return err;
+  }
+
+  if (isApiErrorLike(cause)) {
+    const status = cause.status;
+    const statusCode = cause.statusCode;
+
+    const code =
+      typeof status === 'string' && status in CRPC_ERROR_CODES_BY_KEY
+        ? (status as CRPCErrorCode)
+        : typeof statusCode === 'number'
+          ? mapHttpStatusCodeToCRPCCode(statusCode)
+          : 'INTERNAL_SERVER_ERROR';
+
+    const err = new CRPCError({
+      code,
+      message: getApiErrorMessage(cause),
+      cause,
+    });
+    if (cause.stack) err.stack = cause.stack;
+    return err;
+  }
+
+  return null;
+}
+
 /**
  * Wrap unknown error in CRPCError (from tRPC)
  *
@@ -140,10 +253,8 @@ export class CRPCError extends ConvexError<CRPCErrorData> {
  * ```
  */
 export function getCRPCErrorFromUnknown(cause: unknown): CRPCError {
-  if (cause instanceof CRPCError) return cause;
-  if (cause instanceof Error && cause.name === 'CRPCError') {
-    return cause as CRPCError;
-  }
+  const handled = toCRPCError(cause);
+  if (handled) return handled;
 
   const error = new CRPCError({
     code: 'INTERNAL_SERVER_ERROR',

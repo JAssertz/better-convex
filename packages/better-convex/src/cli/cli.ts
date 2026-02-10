@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -193,12 +194,24 @@ export async function run(
   return result.exitCode ?? 0;
 }
 
-// Only run when executed directly (not when imported for tests).
-const isMain = (() => {
-  const entry = process.argv[1];
+export function isEntryPoint(
+  entry: string | undefined,
+  filename: string
+): boolean {
   if (!entry) return false;
-  return resolve(entry) === resolve(__filename);
-})();
+  // bin shims are often symlinks (e.g. node_modules/.bin/better-convex).
+  // Comparing resolved paths without dereferencing symlinks makes the CLI no-op.
+  try {
+    return (
+      resolve(fs.realpathSync(entry)) === resolve(fs.realpathSync(filename))
+    );
+  } catch {
+    return resolve(entry) === resolve(filename);
+  }
+}
+
+// Only run when executed directly (not when imported for tests).
+const isMain = isEntryPoint(process.argv[1], __filename);
 
 if (isMain) {
   run(process.argv.slice(2)).then(

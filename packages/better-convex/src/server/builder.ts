@@ -17,7 +17,7 @@ import {
   zCustomQuery,
 } from 'convex-helpers/server/zod4';
 import { z } from 'zod';
-
+import { toCRPCError } from './error';
 import {
   createHttpProcedureBuilder,
   type HttpProcedureBuilder,
@@ -384,17 +384,23 @@ export class ProcedureBuilder<
         // Create getRawInput function for middleware
         const getRawInput: GetRawInputFn = async () => rawInput;
 
-        // Execute middleware chain with input access
-        const result = await executeMiddlewares(
-          middlewares,
-          ctx,
-          meta,
-          rawInput,
-          getRawInput
-        );
+        try {
+          // Execute middleware chain with input access
+          const result = await executeMiddlewares(
+            middlewares,
+            ctx,
+            meta,
+            rawInput,
+            getRawInput
+          );
 
-        // Call handler with middleware-modified context and input
-        return handler({ ctx: result.ctx, input: result.input ?? rawInput });
+          // Call handler with middleware-modified context and input
+          return handler({ ctx: result.ctx, input: result.input ?? rawInput });
+        } catch (cause) {
+          const err = toCRPCError(cause);
+          if (err) throw err;
+          throw cause;
+        }
       },
     });
 

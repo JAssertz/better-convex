@@ -3,6 +3,7 @@ import {
   getCRPCErrorFromUnknown,
   getHTTPStatusCodeFromError,
   isCRPCError,
+  toCRPCError,
 } from './error';
 
 describe('server/error', () => {
@@ -46,6 +47,38 @@ describe('server/error', () => {
     expect(err.code).toBe('INTERNAL_SERVER_ERROR');
     expect(err.cause?.message).toBe('nope');
     expect(err.stack).toBe('STACK');
+  });
+
+  test('toCRPCError maps OrmNotFoundError-like errors to NOT_FOUND', () => {
+    const cause = new Error('User not found');
+    cause.name = 'OrmNotFoundError';
+    const err = toCRPCError(cause);
+
+    expect(err).toBeInstanceOf(CRPCError);
+    expect(err?.code).toBe('NOT_FOUND');
+    expect(err?.message).toBe('User not found');
+  });
+
+  test('toCRPCError maps APIError-like errors to CRPCError', () => {
+    class FakeAPIError extends Error {
+      status = 'UNAUTHORIZED';
+      statusCode = 401;
+      body = { message: 'Nope' };
+      constructor() {
+        super('Nope');
+        this.name = 'APIError';
+      }
+    }
+
+    const err = toCRPCError(new FakeAPIError());
+
+    expect(err).toBeInstanceOf(CRPCError);
+    expect(err?.code).toBe('UNAUTHORIZED');
+    expect(err?.message).toBe('Nope');
+  });
+
+  test('toCRPCError returns null for unhandled errors', () => {
+    expect(toCRPCError(new Error('x'))).toBeNull();
   });
 
   test('getHTTPStatusCodeFromError maps codes to HTTP status', () => {

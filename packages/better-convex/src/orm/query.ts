@@ -9,6 +9,7 @@
 
 import type { GenericDatabaseReader } from 'convex/server';
 import { type ColumnBuilder, entityKind } from './builders/column-builder';
+import { OrmNotFoundError } from './errors';
 import type { EdgeMetadata } from './extractRelationsConfig';
 import type {
   BinaryExpression,
@@ -170,7 +171,10 @@ export class GelRelationalQuery<
 
     const first = selectedRows[0];
     if (this.mode === 'firstOrThrow' && first === undefined) {
-      throw new Error(`Could not find ${this.tableConfig.name}.`);
+      throw new OrmNotFoundError(
+        `Could not find ${this.tableConfig.name}.`,
+        this.tableConfig.name
+      );
     }
     return first as TResult;
   }
@@ -2600,7 +2604,13 @@ export class GelRelationalQuery<
             throw new Error('isNull must operate on a field reference');
           }
           const fieldName = operand.fieldName;
-          return (q: any) => q.eq(q.field(fieldName), null);
+          // Convex represents missing fields as `undefined` in filter contexts.
+          // For SQL-like semantics, treat both `null` and `undefined` as "IS NULL".
+          return (q: any) =>
+            q.or(
+              q.eq(q.field(fieldName), null),
+              q.eq(q.field(fieldName), undefined)
+            );
         }
 
         if (expr.operator === 'isNotNull') {
@@ -2609,7 +2619,11 @@ export class GelRelationalQuery<
             throw new Error('isNotNull must operate on a field reference');
           }
           const fieldName = operand.fieldName;
-          return (q: any) => q.neq(q.field(fieldName), null);
+          return (q: any) =>
+            q.and(
+              q.neq(q.field(fieldName), null),
+              q.neq(q.field(fieldName), undefined)
+            );
         }
 
         throw new Error(`Unsupported unary operator: ${expr.operator}`);

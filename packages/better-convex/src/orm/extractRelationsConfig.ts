@@ -25,6 +25,12 @@ export interface EdgeMetadata {
   sourceFields: string[];
   /** Target field names (to) */
   targetFields: string[];
+  /**
+   * True when the FK columns on the source side are nullable (i.e. the relation
+   * can be absent). Used to avoid rejecting optional/self-referencing relations
+   * as "circular dependencies".
+   */
+  sourceNullable: boolean;
   /** Inverse edge if bidirectional relation */
   inverseEdge?: EdgeMetadata;
   /** Index name for efficient lookups */
@@ -70,6 +76,10 @@ export function extractRelationsConfig(
 
       const fieldName = sourceFields[0] ?? `${relationName}Id`;
 
+      const sourceNullable = isOne(relation)
+        ? (relation.sourceColumns ?? []).some(isNullableColumn)
+        : true;
+
       const edge: EdgeMetadata = {
         sourceTable: tableKey,
         edgeName: relationName,
@@ -78,6 +88,7 @@ export function extractRelationsConfig(
         fieldName,
         sourceFields,
         targetFields,
+        sourceNullable,
         indexName: `${fieldName}_idx`,
         indexFields: [fieldName, '_creationTime'],
         optional: isOne(relation) ? relation.optional : true,
@@ -138,12 +149,21 @@ function detectInverseRelations(edges: EdgeMetadata[]): void {
 
     if (reverseRelations.length === 1) {
       const inverse = reverseRelations[0];
+      const isManyToMany =
+        edge.cardinality === 'many' && inverse.cardinality === 'many';
       const validPairing =
         (edge.cardinality === 'one' && inverse.cardinality === 'many') ||
         (edge.cardinality === 'many' && inverse.cardinality === 'one') ||
-        (edge.cardinality === 'one' && inverse.cardinality === 'one');
+        (edge.cardinality === 'one' && inverse.cardinality === 'one') ||
+        (isManyToMany && isManyToManyInversePair(edge, inverse));
 
       if (!validPairing) {
+        if (isManyToMany) {
+          throw new Error(
+            `Invalid many-to-many inverse: ${edge.sourceTable}.${edge.edgeName} <-> ${inverse.sourceTable}.${inverse.edgeName}. ` +
+              'Many-to-many inverses must both use .through() with the same junction table and swapped junction columns.'
+          );
+        }
         throw new Error(
           `Invalid cardinality: ${edge.sourceTable}.${edge.edgeName} (${edge.cardinality}) ` +
             `cannot pair with ${inverse.sourceTable}.${inverse.edgeName} (${inverse.cardinality}).`
@@ -164,7 +184,9 @@ function detectCircularDependencies(edges: EdgeMetadata[]): void {
   const graph = new Map<string, Set<string>>();
 
   for (const edge of edges) {
-    if (edge.cardinality === 'one') {
+    // Only required (non-nullable) one() relations participate in cycle checks.
+    // Nullable FKs break dependency cycles and are common for self-references.
+    if (edge.cardinality === 'one' && !edge.sourceNullable) {
       if (!graph.has(edge.sourceTable)) {
         graph.set(edge.sourceTable, new Set());
       }
@@ -195,7 +217,8 @@ function detectCircularDependencies(edges: EdgeMetadata[]): void {
   for (const table of graph.keys()) {
     if (!visited.has(table) && hasCycle(table)) {
       throw new Error(
-        'Circular dependency detected in relations. Use optional fields to break cycles.'
+        'Circular dependency detected in required one() relations. ' +
+          'Make at least one foreign key nullable (omit .notNull()) to break the cycle.'
       );
     }
   }
@@ -205,6 +228,31 @@ function getColumnName(column: any): string {
   const name = column?.config?.name ?? column?.name;
   if (typeof name === 'string') return name;
   return 'unknown';
+}
+
+function isNullableColumn(column: unknown): boolean {
+  // ColumnBuilder has a protected runtime `config`, but we can still inspect it.
+  // Treat unknown/missing as nullable to avoid false "required cycle" errors.
+  const notNull = (column as any)?.config?.notNull;
+  return notNull !== true;
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function isManyToManyInversePair(a: EdgeMetadata, b: EdgeMetadata): boolean {
+  if (a.cardinality !== 'many' || b.cardinality !== 'many') return false;
+  if (!a.through || !b.through) return false;
+  if (a.through.table !== b.through.table) return false;
+  return (
+    arraysEqual(a.through.sourceFields, b.through.targetFields) &&
+    arraysEqual(a.through.targetFields, b.through.sourceFields)
+  );
 }
 
 function isOne(relation: Relation<any>): relation is One<any, any> {

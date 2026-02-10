@@ -15,6 +15,8 @@ Relation loading via `with:` works end-to-end. Nested `with` has a depth limit, 
 
 Relation loading requires indexes on relation fields (e.g. `posts.userId`). Missing indexes throw unless you opt in with `allowFullScan`. You can use `defineSchema(..., { strict: false })` to downgrade throws to warnings when `allowFullScan` is set.
 
+Relations are about **loading** related rows. They do **not** enforce referential integrity. If you want runtime checks / cascades, define foreign keys separately with `.references()` / `foreignKey()` (see [/docs/db/orm/indexes-constraints](/docs/db/orm/indexes-constraints)).
+
 <Callout icon={<AlertTriangle />}>
 Loading `many()` relations requires explicit sizing: provide `with.<relation>.limit`, a schema `defaults.defaultLimit`, or `allowFullScan` on the parent query.
 </Callout>
@@ -60,6 +62,48 @@ r.many.posts({
 - `from` / `to`: optional when the inverse relation is unambiguous
 - `alias`: disambiguate multiple relations between the same tables
 - `where`: filter which related rows are loaded
+
+## Disambiguating Relations With `alias`
+
+If you have **multiple relations between the same two tables**, you must use `alias` to tell Better-Convex which relation is which.
+
+Classic example: a post has both an `author` and a `reviewer`, pointing at the same `users` table.
+
+```ts title="convex/schema.ts" showLineNumbers
+import { convexTable, defineRelations, id, text } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  name: text().notNull(),
+});
+
+const posts = convexTable('posts', {
+  title: text().notNull(),
+  authorId: id('users').notNull(),
+  reviewerId: id('users'),
+});
+
+export const relations = defineRelations({ users, posts }, (r) => ({
+  users: {
+    // No need for from/to here: these infer from the reverse one() relations.
+    authoredPosts: r.many.posts({ alias: 'author' }),
+    reviewedPosts: r.many.posts({ alias: 'reviewer' }),
+  },
+  posts: {
+    author: r.one.users({
+      from: r.posts.authorId,
+      to: r.users._id,
+      alias: 'author',
+    }),
+    reviewer: r.one.users({
+      from: r.posts.reviewerId,
+      to: r.users._id,
+      alias: 'reviewer',
+    }),
+  },
+}));
+```
+
+`alias` does not change your output keys (`author`, `reviewer`, `authoredPosts`, `reviewedPosts`). It only disambiguates the underlying edge metadata.
 
 ## Relation Types
 
@@ -423,6 +467,45 @@ const relations = defineRelations({ users, posts }, (r) => ({
     }),
   },
 }));
+```
+
+<Callout icon={<InfoIcon />}>
+`where` in a relation definition can only reference **columns on the target (to) table**. In Better-Convex, it's applied after fetching candidate rows, so keep `many()` relations intentionally sized.
+</Callout>
+
+## Indexing For Relation Loading
+
+Better-Convex will use indexes when loading relations and will throw (unless `allowFullScan`) if the needed index is missing.
+
+- For compound relations, your index must start with the same columns in the same order as `to` / `.through(...)`.
+- `many()` (one-to-many): index the child foreign key (example: `posts.userId`)
+- `.through()` (many-to-many): index the junction table foreign keys you query by (usually both directions; add a compound index if you also query by both)
+- `one()`: `to: ..._id` uses `db.get()` (no extra index); non-`_id` targets require an index on the target fields
+
+```ts title="convex/schema.ts" showLineNumbers {8,18-19}
+import { convexTable, id, index, text } from 'better-convex/orm';
+
+export const posts = convexTable(
+  'posts',
+  {
+    title: text().notNull(),
+    userId: id('users').notNull(),
+  },
+  (t) => [index('by_user').on(t.userId)]
+);
+
+export const usersToGroups = convexTable(
+  'usersToGroups',
+  {
+    userId: id('users').notNull(),
+    groupId: id('groups').notNull(),
+  },
+  (t) => [
+    index('by_user').on(t.userId),
+    index('by_group').on(t.groupId),
+    index('by_user_group').on(t.userId, t.groupId),
+  ]
+);
 ```
 
 ## Relation Loading with `with:`

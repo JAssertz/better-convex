@@ -1,6 +1,27 @@
-import { parseArgs, run } from './cli';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { isEntryPoint, parseArgs, run } from './cli';
 
 describe('cli/cli', () => {
+  test('isEntryPoint treats symlinked bin shims as the entrypoint', () => {
+    const tmpDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'better-convex-cli-entrypoint-')
+    );
+    const target = path.join(tmpDir, 'target.mjs');
+    const link = path.join(tmpDir, 'link');
+
+    fs.writeFileSync(target, 'export {};');
+    fs.symlinkSync(target, link);
+
+    expect(isEntryPoint(link, target)).toBe(true);
+    expect(isEntryPoint(target, target)).toBe(true);
+
+    const other = path.join(tmpDir, 'other.mjs');
+    fs.writeFileSync(other, 'export {};');
+    expect(isEntryPoint(link, other)).toBe(false);
+  });
+
   test('parseArgs defaults to dev and strips better-convex flags anywhere', () => {
     expect(parseArgs([])).toEqual({
       command: 'dev',

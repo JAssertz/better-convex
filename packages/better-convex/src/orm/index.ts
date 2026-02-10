@@ -122,6 +122,7 @@ export type {
   OrmReader,
   OrmWriter,
 } from './database';
+export { OrmNotFoundError } from './errors';
 export type { EdgeMetadata } from './extractRelationsConfig';
 // M2: Schema Extraction
 export { extractRelationsConfig } from './extractRelationsConfig';
