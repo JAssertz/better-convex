@@ -1,8 +1,15 @@
 /**
  * Database Context Integration
  *
- * Extends Convex GenericDatabaseReader<any> with query builder API
- * Provides ctx.db.query[tableName].findMany/findFirst access
+ * Builds an ORM client from Convex `ctx.db`.
+ *
+ * Public surface area is intentionally narrow:
+ * - ORM query builders via `db.query.*.findMany/findFirst`
+ * - ORM mutations via `db.insert/update/delete(table)` builder APIs
+ * - Raw system-table access via `db.system` only
+ *
+ * We do NOT expose raw Convex writes (patch/replace/insert/delete) on `db`
+ * because they bypass ORM runtime checks (constraints, defaults, RLS).
  */
 
 import type {
@@ -52,7 +59,9 @@ type SchemaDefOf<TSchema extends TablesRelationalConfig> =
     : SchemaDefinition<any, boolean>;
 
 export type DatabaseWithQuery<TSchema extends TablesRelationalConfig> =
-  GenericDatabaseReader<any> & {
+  // Expose raw system access for _storage and _scheduled_functions only.
+  // This is the escape hatch for system tables, not app tables.
+  Pick<GenericDatabaseReader<any>, 'system'> & {
     query: TSchema extends Record<string, never>
       ? { error: 'Schema is empty - did you forget to add tables?' }
       : {
@@ -65,7 +74,7 @@ export type DatabaseWithSkipRules<T> = T & { skipRules: T };
 
 export type DatabaseWithMutations<TSchema extends TablesRelationalConfig> =
   DatabaseWithQuery<TSchema> &
-    GenericDatabaseWriter<any> & {
+    {
       insert<TTable extends ConvexTable<any>>(
         table: TTable
       ): ConvexInsertBuilder<TTable>;
@@ -164,9 +173,6 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
       );
     }
 
-    const rawInsert = (db as any).insert?.bind(db);
-    const rawDelete = (db as any).delete?.bind(db);
-
     const ormContext: OrmContextValue = {
       foreignKeyGraph: buildForeignKeyGraph(schema),
       scheduler: options?.scheduler,
@@ -177,41 +183,61 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
       defaults,
     };
 
-    const baseDb = {
-      ...db,
+    // Preserve the original `ctx.db` behavior without mutating it.
+    // We only need to attach internal ORM runtime context via a symbol.
+    const baseDb = Object.assign(Object.create(db), {
       [OrmContext]: ormContext,
-    } as unknown as GenericDatabaseWriter<any>;
+    }) as unknown as GenericDatabaseWriter<any>;
+
+    const isWriter =
+      typeof (db as any).insert === 'function' &&
+      typeof (db as any).patch === 'function';
 
     const isConvexTable = (value: unknown): value is ConvexTable<any> =>
       !!value &&
       typeof value === 'object' &&
       (value as any)[Brand] === 'ConvexTable';
 
-    const insert = (...args: any[]) => {
-      if (isConvexTable(args[0])) {
-        return new ConvexInsertBuilder(baseDb, args[0]);
-      }
-      if (!rawInsert) {
+    const insert = <TTable extends ConvexTable<any>>(table: TTable) => {
+      if (!isWriter) {
         throw new Error(
-          'Database insert is not available on a reader context.'
+          'db.insert() is not available on a reader context (use it in mutations).'
         );
       }
-      return rawInsert(...args);
+      if (!isConvexTable(table)) {
+        throw new Error(
+          'db.insert(table) requires a ConvexTable from convexTable(...).'
+        );
+      }
+      return new ConvexInsertBuilder(baseDb, table);
     };
 
-    const update = (table: ConvexTable<any>) =>
-      new ConvexUpdateBuilder(baseDb, table);
-
-    const deleteBuilder = (...args: any[]) => {
-      if (isConvexTable(args[0])) {
-        return new ConvexDeleteBuilder(baseDb, args[0]);
-      }
-      if (!rawDelete) {
+    const update = <TTable extends ConvexTable<any>>(table: TTable) => {
+      if (!isWriter) {
         throw new Error(
-          'Database delete is not available on a reader context.'
+          'db.update() is not available on a reader context (use it in mutations).'
         );
       }
-      return rawDelete(...args);
+      if (!isConvexTable(table)) {
+        throw new Error(
+          'db.update(table) requires a ConvexTable from convexTable(...).'
+        );
+      }
+      return new ConvexUpdateBuilder(baseDb, table);
+    };
+
+    const deleteBuilder = <TTable extends ConvexTable<any>>(table: TTable) => {
+      if (!isWriter) {
+        throw new Error(
+          'db.delete() is not available on a reader context (use it in mutations).'
+        );
+      }
+      if (!isConvexTable(table)) {
+        throw new Error(
+          'db.delete(table) requires a ConvexTable from convexTable(...).'
+        );
+      }
+      return new ConvexDeleteBuilder(baseDb, table);
     };
 
     const streamDb = () => {
@@ -226,15 +252,23 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
       );
     };
 
-    // Return extended database with query property
-    return {
-      ...baseDb,
+    const base = {
+      // Internal runtime config for mutation builders, scheduling, and FK actions.
+      [OrmContext]: ormContext,
+      // System tables escape hatch (raw Convex API).
+      system: (db as GenericDatabaseReader<any>).system,
       query,
       stream: streamDb,
-      insert,
-      update,
-      delete: deleteBuilder,
     } as DatabaseWithQuery<TSchema>;
+
+    return isWriter
+      ? ({
+          ...base,
+          insert,
+          update,
+          delete: deleteBuilder,
+        } as DatabaseWithMutations<TSchema>)
+      : base;
   };
 
   const table = buildDatabase(options?.rls);

@@ -15,6 +15,9 @@ This guide compares Drizzle v1 and Better-Convex ORM side-by-side. It focuses on
 - Type inference (`InferSelectModel`, `InferInsertModel`, `$inferSelect`, `$inferInsert`)
 - Mutation helpers (`insert`, `update`, `delete`, `returning`, `onConflictDoUpdate`)
 
+**Better-Convex extras:**
+- `findFirstOrThrow()` (Prisma-style sugar when a row must exist)
+
 **Different behavior:**
 - `_id` is auto-created (no manual `id` column)
 - Fields are nullable by default (`text()` yields `string | null`)
@@ -176,6 +179,10 @@ See [Migrate from native Convex](/docs/db/orm/migrate-from-convex) (for `ctx.db`
       where: { _id: userId },
     });
 
+    const requiredUser = await db.query.users.findFirstOrThrow({
+      where: { _id: userId },
+    });
+
     // Schema: index('by_role').on(t.role) on users table
     const admins = await db.query.users.findMany({
       where: { role: 'admin' },
@@ -194,6 +201,7 @@ See [Migrate from native Convex](/docs/db/orm/migrate-from-convex) (for `ctx.db`
 | `defineRelations()` | `defineRelations()` | Same surface |
 | `db.query.*.findMany()` | `db.query.*.findMany()` | Same surface via `ctx.orm` |
 | `db.query.*.findFirst()` | `db.query.*.findFirst()` | Same surface via `ctx.orm` |
+| n/a | `db.query.*.findFirstOrThrow()` | Better-Convex sugar; throws if no row exists |
 | `where` object filters | `where` object filters | Same shape |
 | `orderBy` | `orderBy` | Same shape, index-aware |
 | `columns` | `columns` | Post-fetch projection |

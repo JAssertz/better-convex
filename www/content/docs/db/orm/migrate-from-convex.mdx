@@ -73,6 +73,11 @@ If you're new to cRPC, start with [/docs/server/procedures](/docs/server/procedu
 ORM `findMany()` must be explicitly sized: use `limit`, `paginate`, set a schema `defaultLimit`, or opt in with `allowFullScan`.
 </Callout>
 
+<Callout icon={<InfoIcon />}>
+Nullable columns in ORM come back as `null` (SQL-style). In native Convex, optional fields are often missing (`undefined`).
+If your API schema uses Zod `.optional()`, normalize with `field: row.field ?? undefined` (or use `.nullish()`).
+</Callout>
+
 ### Filtering (`filter(...)` → `where`)
 
 <Compare>
@@ -568,6 +573,11 @@ See [/docs/db/orm/queries#vector-search](/docs/db/orm/queries#vector-search) for
 
 ## Writing Data
 
+<Callout icon={<InfoIcon />}>
+`ctx.orm` intentionally does **not** expose native Convex writer methods (`patch`, `replace`, `insert('table', ...)`, `delete(id)`), so you can't bypass ORM checks by accident.
+If you really need raw access, use `ctx.db` explicitly (it bypasses constraints/defaults/RLS).
+</Callout>
+
 ### Insert (`db.insert` → `insert().values()`)
 
 Native Convex `insert` returns an ID. ORM inserts return `void` unless you use `.returning()`.
@@ -606,6 +616,10 @@ Native Convex `insert` returns an ID. ORM inserts return `void` unless you use `
 </Compare>
 
 ### Patch / Replace (`db.patch` / `db.replace` → `update().set().where()`)
+
+<Callout icon={<AlertTriangle />}>
+Native Convex writes like `ctx.db.patch(...)` bypass ORM constraints and keep native `undefined` semantics. `ctx.orm` intentionally does not expose `patch`/`replace`; use `update().set().where(...)` instead.
+</Callout>
 
 <Compare>
   <CompareItem title="Before (native Convex)">

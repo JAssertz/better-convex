@@ -151,7 +151,7 @@ A few SQL-only features from Drizzle are not applicable in Convex:
 - to explicitly remove a field, use `unsetToken`: `.set({ nickname: unsetToken })` (shallow: unsets the top-level field only)
 
 <Callout icon={<InfoIcon />}>
-**Note:** Unique constraints, foreign keys, and RLS policies are enforced at runtime for ORM mutations. Direct `ctx.db.patch(...)` bypasses these checks.
+**Note:** Unique constraints, foreign keys, and RLS policies are enforced at runtime for ORM mutations. Direct native Convex writes like `ctx.db.patch(...)` bypass these checks (and are intentionally not exposed on `ctx.orm`).
 </Callout>
 
 ## Next Steps

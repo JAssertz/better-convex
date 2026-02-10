@@ -205,7 +205,9 @@ describe('column hooks', () => {
       expect(updated).toHaveLength(0);
       expect(hookUpdatedAtCalls).toBe(0);
 
-      const still = await orm.get(user._id as any);
+      const still = await orm.query.hook_users.findFirst({
+        where: { _id: user._id },
+      });
       expect((still as any)?.updatedAt).toBe('initial');
     }));
 
@@ -227,7 +229,9 @@ describe('column hooks', () => {
       expect(updated).toHaveLength(0);
       expect(hookUpdatedAtCalls).toBe(0);
 
-      const still = await orm.get(user._id as any);
+      const still = await orm.query.hook_users.findFirst({
+        where: { _id: user._id },
+      });
       expect((still as any)?.name).toBe('Ada');
       expect((still as any)?.updatedAt).toBe('initial');
     }));
@@ -252,7 +256,9 @@ describe('column hooks', () => {
       expect(updated.touchedAt).toBe('touched');
       expect('nickname' in (updated as any)).toBe(false);
 
-      const still = await orm.get(user._id as any);
+      const still = await orm.query.hook_users.findFirst({
+        where: { _id: user._id },
+      });
       expect('nickname' in (still as any)).toBe(false);
     }));
 

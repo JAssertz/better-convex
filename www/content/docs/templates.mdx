@@ -1330,12 +1330,13 @@ Optional scripts for development workflow.
 Development-only database reset.
 
 ```ts title="convex/functions/reset.ts" showLineNumbers
+import { eq } from 'better-convex/orm';
 import { CRPCError } from 'better-convex/server';
 import { z } from 'zod';
 import { privateAction, privateMutation } from '../lib/crpc';
 import { internal } from './_generated/api';
 import type { TableNames } from './_generated/dataModel';
-import schema from './schema';
+import schema, { tables } from './schema';
 
 const DELETE_BATCH_SIZE = 64;
 
@@ -1384,6 +1385,10 @@ export const deletePage = privateMutation
 	    assertDevOnly();
 
 	    // biome-ignore lint/suspicious/noExplicitAny: dynamic table access
+	    const table = (tables as any)[input.tableName];
+	    if (!table) return null;
+
+	    // biome-ignore lint/suspicious/noExplicitAny: dynamic table access
 	    const query = (ctx.orm.query as any)[input.tableName];
 	    if (!query) return null;
 
@@ -1392,13 +1397,13 @@ export const deletePage = privateMutation
 	      orderBy: { _creationTime: 'desc' },
 	    });
 
-	    for (const row of results.page) {
-	      try {
-	        await ctx.orm.delete(row._id);
-	      } catch {
-	        // Document might have been deleted by a trigger
-	      }
-	    }
+		    for (const row of results.page) {
+		      try {
+		        await ctx.orm.delete(table).where(eq(table._id, row._id));
+		      } catch {
+		        // Document might have been deleted by a trigger
+		      }
+		    }
 
     if (!results.isDone) {
       await ctx.scheduler.runAfter(0, internal.reset.deletePage, {

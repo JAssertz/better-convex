@@ -120,6 +120,52 @@ export class GelRelationalQuery<
     this.allowFullScan = (config as any).allowFullScan === true;
   }
 
+  private _extractIdOnlyWhere(
+    where: unknown
+  ):
+    | { kind: 'eq'; id: unknown }
+    | { kind: 'in'; ids: unknown[] }
+    | null {
+    if (!where || typeof where !== 'object' || Array.isArray(where)) {
+      return null;
+    }
+    const keys = Object.keys(where as Record<string, unknown>);
+    if (keys.length !== 1 || keys[0] !== '_id') {
+      return null;
+    }
+
+    const value = (where as any)._id as unknown;
+    if (value === null || value === undefined) {
+      return { kind: 'eq', id: value };
+    }
+
+    // Support operator-style filters: { _id: { eq: id } } and { _id: { in: ids } }.
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      const opKeys = Object.keys(value as Record<string, unknown>);
+      if (opKeys.length !== 1) {
+        return null;
+      }
+      const op = opKeys[0];
+      if (op === 'eq') {
+        return { kind: 'eq', id: (value as any).eq };
+      }
+      if (op === 'in') {
+        const ids = (value as any).in;
+        if (!Array.isArray(ids)) {
+          return null;
+        }
+        return { kind: 'in', ids };
+      }
+      return null;
+    }
+
+    // Direct equality: { _id: id }.
+    if (Array.isArray(value)) {
+      return null;
+    }
+    return { kind: 'eq', id: value };
+  }
+
   private _returnSelectedRows(selectedRows: any[]): TResult {
     if (this.mode === 'many') {
       return selectedRows as TResult;
@@ -1361,7 +1407,6 @@ export class GelRelationalQuery<
    * Phase 4 implementation with WhereClauseCompiler integration
    */
   async execute(): Promise<TResult> {
-    const queryConfig = this._toConvexQuery();
     const config = this.config as any;
     const paginate = config.paginate as PaginateConfig | undefined;
     const searchConfig = config.search as
@@ -1390,6 +1435,64 @@ export class GelRelationalQuery<
         : (config.where as RelationsFilter<any, any> | undefined);
     const strict = this.tableConfig.strict !== false;
     const allowFullScan = this.allowFullScan === true;
+
+    // Fast path: `_id` lookups use `db.get()` (primary key) instead of an index plan.
+    // This keeps `where: { _id: ... }` and `where: { _id: { in: [...] } }` ergonomic
+    // without requiring allowFullScan, and avoids full collection scans.
+    const idLookup = this._extractIdOnlyWhere(whereFilter);
+    if (
+      idLookup &&
+      !vectorSearchConfig &&
+      !searchConfig &&
+      !wherePredicate &&
+      paginate === undefined &&
+      config.index === undefined
+    ) {
+      const orderSpecs = this._orderBySpecs(config.orderBy);
+      const offset = config.offset ?? 0;
+      if (offset !== undefined && typeof offset !== 'number') {
+        throw new Error(
+          'Only numeric offset is supported in Better Convex ORM.'
+        );
+      }
+
+      // De-duplicate ids for `in` semantics (matches SQL/Convex query behavior).
+      const ids =
+        idLookup.kind === 'in'
+          ? Array.from(
+              new Map(
+                idLookup.ids.map((id) => [String(id), id] as const)
+              ).values()
+            )
+          : [idLookup.id];
+
+      const fetched = await this._mapWithConcurrency(ids, async (id) => {
+        if (id === null || id === undefined) {
+          return null;
+        }
+        return this.db.get(id as any);
+      });
+
+      let rows = fetched.filter((row): row is any => !!row);
+      rows = this._applyRlsSelectFilter(rows, this.tableConfig);
+
+      if (orderSpecs.length > 0 && rows.length > 1) {
+        rows.sort((a, b) => this._compareByOrderSpecs(a, b, orderSpecs));
+      }
+
+      if (offset > 0) {
+        rows = rows.slice(offset);
+      }
+
+      if (typeof config.limit === 'number') {
+        rows = rows.slice(0, config.limit);
+      }
+
+      const selectedRows = await this._finalizeRows(rows);
+      return this._returnSelectedRows(selectedRows);
+    }
+
+    const queryConfig = this._toConvexQuery();
 
     // Start Convex query
     let query: any = this.db.query(queryConfig.table);

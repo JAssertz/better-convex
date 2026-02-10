@@ -158,6 +158,27 @@ describe('M3 Query Builder', () => {
       });
     });
 
+    it('should fetch by _id in list without allowFullScan (db.get fast path)', async () => {
+      const localUsers = convexTable('localUsers', {
+        name: text().notNull(),
+      });
+      const localTables = { localUsers };
+      const localSchema = defineSchema(localTables);
+      const localRelations = defineRelations(localTables);
+
+      await withOrmCtx(localSchema, localRelations, async (ctx) => {
+        const id1 = await ctx.db.insert('localUsers', { name: 'Alice' });
+        const id2 = await ctx.db.insert('localUsers', { name: 'Bob' });
+
+        const rows = await ctx.orm.query.localUsers.findMany({
+          where: { _id: { in: [id2, id1, id2] } },
+        });
+
+        expect(rows).toHaveLength(2);
+        expect(rows.map((r) => r._id)).toEqual([id2, id1]);
+      });
+    });
+
     it('should require relation limit on nested many when no defaults and no allowFullScan', async () => {
       const localUsers = convexTable('localUsers', {
         name: text().notNull(),
@@ -218,6 +239,22 @@ describe('M3 Query Builder', () => {
 
       expect(result).toBeDefined();
       expect(result?.name).toBe('Alice');
+    });
+
+    it('should fetch by _id without allowFullScan (db.get fast path)', async ({
+      ctx,
+    }) => {
+      const userId = await ctx.db.insert('users', {
+        name: 'Alice',
+        email: 'alice@example.com',
+      });
+
+      const db = ctx.orm;
+      const result = await db.query.users.findFirst({
+        where: { _id: userId },
+      });
+
+      expect(result?._id).toBe(userId);
     });
 
     it('should return undefined for empty results', async ({ ctx }) => {
