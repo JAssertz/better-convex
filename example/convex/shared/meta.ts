@@ -10,6 +10,10 @@ export const meta = {
     grantAdminByEmail: { auth: 'required', role: 'admin', type: 'mutation' },
     updateUserRole: { auth: 'required', role: 'admin', type: 'mutation' },
   },
+  'items/queries': {
+    get: { type: 'query' },
+    list: { type: 'query' },
+  },
   organization: {
     acceptInvitation: { auth: 'required', type: 'mutation' },
     addMember: { auth: 'required', rateLimit: 'organization/addMember', type: 'mutation' },
@@ -90,10 +94,6 @@ export const meta = {
     getIsAuthenticated: { type: 'query' },
     getSessionUser: { auth: 'optional', type: 'query' },
     updateSettings: { auth: 'required', type: 'mutation' },
-  },
-  'items/queries': {
-    get: { type: 'query' },
-    list: { type: 'query' },
   },
   _http: {
     'examples.allCombinedExample': { path: '/api/examples/items/:id/tags', method: 'POST' },

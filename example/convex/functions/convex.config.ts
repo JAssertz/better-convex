@@ -15,5 +15,6 @@ app.use(aggregate, { name: 'aggregateTodosByStatus' });
 app.use(aggregate, { name: 'aggregateTagUsage' });
 app.use(aggregate, { name: 'aggregateProjectMembers' });
 app.use(aggregate, { name: 'aggregateCommentsByTodo' });
+app.use(aggregate, { name: 'aggregateRepliesByParent' });
 
 export default app;

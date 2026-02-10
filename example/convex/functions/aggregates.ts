@@ -94,3 +94,14 @@ export const aggregateCommentsByTodo = new TableAggregate<{
   namespace: (doc) => doc.todoId,
   sortKey: (doc) => doc._creationTime,
 });
+
+// Direct reply counts (comments grouped by parent comment)
+export const aggregateRepliesByParent = new TableAggregate<{
+  DataModel: DataModel;
+  Key: number; // creation time
+  Namespace: Id<'todoComments'> | 'top-level';
+  TableName: 'todoComments';
+}>(components.aggregateRepliesByParent, {
+  namespace: (doc) => doc.parentId ?? 'top-level',
+  sortKey: (doc) => doc._creationTime,
+});
