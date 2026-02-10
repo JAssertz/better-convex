@@ -79,18 +79,33 @@ Ents auto‑creates edge indexes. In ORM you must add indexes for relation field
 
 ## Context Setup
 
-**Ents**
-```ts
-const table = entsTableFactory(ctx, entDefinitions);
-```
+<Compare>
+  <CompareItem title="Before (Ents)">
+    ```ts title="convex/lib/ctx.ts" showLineNumbers
+    import { entsTableFactory } from 'convex-ents';
+    import { entDefinitions } from '../schema';
 
-**ORM (attach once)**
-```ts
-const orm = createOrm({ schema: relations });
-return { ...ctx, orm: orm.db(ctx) };
-```
+    export function makeCtx(ctx: any) {
+      const table = entsTableFactory(ctx, entDefinitions);
+      return { ...ctx, table };
+    }
+    ```
+  </CompareItem>
+  <CompareItem title="After (ORM)">
+    ```ts title="convex/lib/ctx.ts" showLineNumbers {1-2,4-7}
+    import { createOrm } from 'better-convex/orm';
+    import { relations } from '../schema';
 
-If you need RLS, pass `rls: { ctx }` when building `table`.
+    const orm = createOrm({ schema: relations });
+
+    export function makeCtx(ctx: any) {
+      return { ...ctx, orm: orm.db(ctx) };
+    }
+    ```
+  </CompareItem>
+</Compare>
+
+If you need RLS, build the DB with `orm.db(ctx, { rls: { ctx } })`.
 
 ## Query Mapping
 
@@ -99,25 +114,54 @@ If you need RLS, pass `rls: { ctx }` when building `table`.
 | `ctx.orm('users').get(id)` | `ctx.orm.query.users.findFirst({ where: { _id: id } })` |
 | `ctx.orm('users').getX(id)` | `ctx.orm.query.users.findFirstOrThrow({ where: { _id: id } })` |
 | `ctx.orm('users').get('email', v)` | `ctx.orm.query.users.findFirst({ where: { email: v } })` |
-| `ctx.orm('users').getMany(ids)` | `ctx.orm.query.users.findMany({ where: { _id: { in: ids } } })` |
+| `ctx.orm('users').getMany(ids)` | `ctx.orm.query.users.findMany({ where: { _id: { in: ids } }, limit: ids.length })` |
 | `ctx.orm('users').order('desc').take(5)` | `ctx.orm.query.users.findMany({ orderBy: { _creationTime: 'desc' }, limit: 5 })` |
 | `ctx.orm('users').paginate(opts)` | `ctx.orm.query.users.findMany({ paginate: opts })` |
-| `ctx.orm('users').map(...)` | `ctx.orm.query.users.findMany(...).then(rows => rows.map(...))` or `extras` |
+| `ctx.orm('users').map(...)` | Prefer `columns` / `extras` (example below). Fall back to `rows.map(...)` when you need custom reshaping. |
 | `ctx.orm('users').search(...)` | `ctx.orm.query.users.findMany({ search: { index, query, filters? } })` |
 
 ## Relations & Edge Traversal
 
-Ents traversal:
-```ts
-const posts = await user.edge('posts').take(5);
-```
+<Compare>
+  <CompareItem title="Before (Ents edge traversal)">
+    ```ts showLineNumbers
+    const user = await ctx.orm('users').getX(userId);
+    const posts = await user.edge('posts').take(5);
+    ```
+  </CompareItem>
+  <CompareItem title="After (ORM `with:`)">
+    ```ts showLineNumbers {1-4}
+    const user = await ctx.orm.query.users.findFirstOrThrow({
+      where: { _id: userId },
+      with: { posts: { limit: 5 } },
+    });
+    const posts = user.posts;
+    ```
+  </CompareItem>
+</Compare>
 
-ORM equivalent (relation loading):
-```ts
-const users = await ctx.orm.query.users.findMany({
-  with: { posts: { limit: 5 } },
-});
-```
+### Projections (`columns` / `extras`)
+
+<Compare>
+  <CompareItem title="Before (Ents `map`)">
+    ```ts showLineNumbers
+    const recent = await ctx
+      .orm('users')
+      .order('desc')
+      .take(5)
+      .map((u) => ({ _id: u._id, name: u.name }));
+    ```
+  </CompareItem>
+  <CompareItem title="After (ORM `columns`)">
+    ```ts showLineNumbers {2-6}
+    const recent = await ctx.orm.query.users.findMany({
+      orderBy: { _creationTime: 'desc' },
+      limit: 5,
+      columns: { _id: true, name: true },
+    });
+    ```
+  </CompareItem>
+</Compare>
 
 ### Many‑to‑Many With Data
 
