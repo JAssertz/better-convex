@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "version": "1.0.0-m6",
-  "description": "Better-Convex ORM code examples (M1-M6) - Schema with column builders, relations, queries, filtering, and mutations",
+  "description": "ORM code examples (M1-M6) - Schema with column builders, relations, queries, filtering, and mutations",
   "lastUpdated": "2026-02-02",
   "status": "Examples for implemented features using column builder syntax. Relation loading (with:) examples removed (coming Phase 4)",
 

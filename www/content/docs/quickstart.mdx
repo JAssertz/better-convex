@@ -10,8 +10,8 @@ import { InfoIcon } from "lucide-react"
 In this guide, we'll get Better Convex running from scratch. You'll set up a Next.js app with Convex, create your first cRPC procedures, and use them with TanStack Query.
 
 <Callout icon={<InfoIcon />}>
-Docs use Better-Convex ORM (`ctx.orm`) everywhere. If you're migrating from native Convex, see
-[/docs/db/orm/migrate-from-convex](/docs/db/orm/migrate-from-convex).
+Docs use the ORM (`ctx.orm`) everywhere. If you're migrating from native Convex, see
+[/docs/migrations/db](/docs/migrations/db).
 </Callout>
 
 ## Create Next.js App
@@ -88,7 +88,7 @@ See [Concepts](/docs/concepts) for detailed folder structure explanation.
 
 ## 1. Define Schema
 
-We'll define a Better-Convex ORM schema and relations config in `convex/functions/schema.ts`:
+We'll define an ORM schema and relations config in `convex/functions/schema.ts`:
 
 ```ts title="convex/functions/schema.ts" showLineNumbers {1-6,8-13,15-17}
 import {
@@ -156,7 +156,7 @@ Create `.env.local` with your Convex URLs:
 
 ## 3. Create ORM + cRPC Builder
 
-First, attach Better-Convex ORM to your context. Create `convex/lib/orm.ts`:
+First, attach the ORM to your context. Create `convex/lib/orm.ts`:
 
 ```ts title="convex/lib/orm.ts" showLineNumbers {1-3,5-6,8-11}
 import { createOrm } from 'better-convex/orm';

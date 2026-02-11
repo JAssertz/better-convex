@@ -50,6 +50,18 @@ type OrmResult<
   ? OrmWriter<TSchema>
   : OrmReader<TSchema>;
 
+type GenericOrm<
+  Ctx extends { db: GenericDatabaseReader<any> | GenericDatabaseWriter<any> },
+  TSchema extends TablesRelationalConfig,
+> = Ctx extends { db: GenericDatabaseWriter<any> }
+  ? OrmWriter<TSchema>
+  : OrmReader<TSchema>;
+
+type GenericOrmCtx<
+  Ctx extends { db: GenericDatabaseReader<any> | GenericDatabaseWriter<any> },
+  TSchema extends TablesRelationalConfig,
+> = Ctx & { orm: GenericOrm<Ctx, TSchema> };
+
 type CreateOrmConfigBase<TSchema extends TablesRelationalConfig> = {
   schema: TSchema;
   internalMutation?: typeof internalMutationGeneric;
@@ -166,6 +178,8 @@ export function createOrm<TSchema extends TablesRelationalConfig>(
 }
 
 export type {
+  GenericOrm,
+  GenericOrmCtx,
   OrmApiResult,
   OrmClientBase,
   OrmClientWithApi,

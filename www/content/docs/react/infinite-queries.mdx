@@ -218,7 +218,7 @@ The `.paginated({ limit, item })` method:
 | `limit` | `number` | Items to fetch (capped at server limit) |
 
 <Callout icon={<InfoIcon />}>
-**Important:** Always call `.paginated({ limit, item })` before `.query()`. The handler receives flat `input.cursor` and `input.limit` — pass them to ORM `findMany({ cursor, limit })`.
+**Important:** Always call `.paginated({ limit, item })` before `.query()`. The handler receives flat `input.cursor` and `input.limit` - pass them to ORM `findMany({ cursor, limit })`.
 </Callout>
 
 ## Conditional Queries

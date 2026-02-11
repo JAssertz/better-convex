@@ -1,0 +1,29 @@
+---
+title: Migrations
+description: Choose the right migration path for your project.
+---
+
+import { InfoIcon } from "lucide-react"
+
+This page is the migration hub. Pick the path that matches your current stack, then follow that guide end to end.
+
+<Callout icon={<InfoIcon />}>
+You can migrate incrementally. Keep legacy code running while moving one module at a time.
+</Callout>
+
+## Start Here
+
+<Cards>
+  <Card title="Core" href="/docs/migrations/convex">
+    Vanilla Convex to better-convex (procedures, middleware, hooks, and SSR setup).
+  </Card>
+  <Card title="From DB" href="/docs/migrations/db">
+    Native Convex (`ctx.db`) to the ORM.
+  </Card>
+  <Card title="From Ents" href="/docs/migrations/ents">
+    Convex Ents to the ORM.
+  </Card>
+  <Card title="From Better Auth" href="/docs/migrations/auth">
+    `@convex-dev/better-auth` to better-convex auth.
+  </Card>
+</Cards>

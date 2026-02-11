@@ -15,7 +15,7 @@ Context (`ctx`) is passed to every procedure handler. It provides access to Conv
 
 | Property | Available In | Purpose |
 |----------|--------------|---------|
-| `ctx.orm` | Queries, Mutations | Database access (Better-Convex ORM) |
+| `ctx.orm` | Queries, Mutations | Database access (the ORM) |
 | `ctx.auth` | All | Authentication info |
 | `ctx.storage` | All | File storage |
 | `ctx.scheduler` | Mutations | Schedule functions |
@@ -30,7 +30,7 @@ Every procedure receives the base Convex context. Here's what you get out of the
 ```ts showLineNumbers {2-5}
 export const list = publicQuery
   .query(async ({ ctx }) => {
-    // ctx.orm - Database access (Better-Convex ORM)
+    // ctx.orm - Database access (the ORM)
     // ctx.auth - Authentication info
     // ctx.storage - File storage
     return ctx.orm.query.user.findMany({ limit: 100 });

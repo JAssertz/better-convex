@@ -1176,13 +1176,8 @@ db.query.users.findMany({
 });
 
 // Cursor pagination forbids offset
-db.query.users.findMany({
-  // @ts-expect-error - cursor pagination cannot be combined with offset
-  cursor: null,
-  limit: 10,
-  // @ts-expect-error - cursor pagination cannot be combined with offset
-  offset: 1,
-});
+// @ts-expect-error - cursor pagination cannot be combined with offset
+db.query.users.findMany({ cursor: null, limit: 10, offset: 1 });
 
 // maxScan requires cursor pagination
 db.query.users.findMany({
@@ -1190,12 +1185,8 @@ db.query.users.findMany({
   maxScan: 100,
 });
 
-db.query.users.findMany({
-  // @ts-expect-error - allowFullScan is not supported with cursor pagination
-  cursor: null,
-  limit: 10,
-  allowFullScan: true,
-});
+// @ts-expect-error - allowFullScan is not supported with cursor pagination
+db.query.users.findMany({ cursor: null, limit: 10, allowFullScan: true });
 
 db.query.users.findMany({
   // @ts-expect-error - numItems alias is not supported
@@ -1295,12 +1286,6 @@ db.query.users.findMany({
   Expect<Not<IsAny<Row>>>;
 }
 
-// db.stream is intentionally not public
-{
-  // @ts-expect-error - db.stream is not exposed on ORM context
-  db.stream();
-}
-
 // pageByKey mode return shape
 {
   const page = await db.query.users.findMany({
@@ -1316,6 +1301,76 @@ db.query.users.findMany({
     hasMore: boolean;
   };
   Expect<Equal<typeof page, Expected>>;
+}
+
+// select() map/filter stage chaining infers transformed row shape
+{
+  const page = await db.query.users
+    .select()
+    .map(async (row) => ({ ...row, slug: row.name.toLowerCase() }))
+    .filter(async (row) => row.slug.endsWith('a'))
+    .paginate({ cursor: null, limit: 5 });
+
+  type Row = (typeof page)['page'][number];
+  Expect<Equal<Row['slug'], string>>;
+}
+
+// select() flatMap includeParent defaults to parent/child tuple rows
+{
+  const page = await db.query.users
+    .select()
+    .flatMap('posts')
+    .paginate({ cursor: null, limit: 5 });
+
+  type Row = (typeof page)['page'][number];
+  type Expected = {
+    parent: UserRow;
+    child: InferSelectModel<typeof posts>;
+  };
+  Expect<Equal<Row, Expected>>;
+}
+
+// select() flatMap includeParent=false returns child rows directly
+{
+  const page = await db.query.users
+    .select()
+    .flatMap('posts', { includeParent: false })
+    .paginate({ cursor: null, limit: 5 });
+
+  type Row = (typeof page)['page'][number];
+  type Expected = InferSelectModel<typeof posts>;
+  Expect<Equal<Row, Expected>>;
+}
+
+// findMany({ pipeline }) is removed
+{
+  await db.query.users.findMany({
+    // @ts-expect-error - findMany({ pipeline }) is removed; use select() chain
+    pipeline: { stages: [] },
+  });
+}
+
+// select() does not accept config object modes
+{
+  // @ts-expect-error - select() is chain-only and does not accept with
+  db.query.users.select({ with: { posts: true } });
+
+  // @ts-expect-error - select() is chain-only and does not accept extras
+  db.query.users.select({ extras: { upperName: (row: UserRow) => row.name } });
+
+  // @ts-expect-error - select() is chain-only and does not accept columns
+  db.query.users.select({ columns: { name: true } });
+
+  // @ts-expect-error - select() is chain-only and does not accept search
+  db.query.posts.select({ search: { index: 'text_search', query: 'hello' } });
+
+  // @ts-expect-error - select() is chain-only and does not accept vectorSearch
+  db.query.posts.select({
+    vectorSearch: { index: 'embedding_vec', vector: [0.1, 0.2], limit: 1 },
+  });
+
+  // @ts-expect-error - select() is chain-only and does not accept offset
+  db.query.users.select({ offset: 1 });
 }
 
 // predicate where requires explicit index and forbids allowFullScan
@@ -1741,7 +1796,7 @@ db.query.users.findMany({
       vector: [0.1, 0.2, 0.3],
       limit: 10,
     },
-    where: (row: any) => row.type === 'article',
+    where: (row) => row.type === 'article',
   });
 }
 
@@ -1761,7 +1816,7 @@ db.query.users.findMany({
 // vectorSearch + offset is disallowed
 {
   await db.query.posts.findMany({
-    // @ts-expect-error - vector search does not allow offset
+    // @ts-expect-error - vector search does not allow offset composition
     vectorSearch: {
       index: 'embedding_vec',
       vector: [0.1, 0.2, 0.3],

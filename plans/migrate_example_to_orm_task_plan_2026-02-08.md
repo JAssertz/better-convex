@@ -108,8 +108,10 @@ Phase 6 (Complete)
 |----------|-----------|
 | Plan artifacts live in `plans/` with unique filenames | Avoid clobbering existing `task_plan.md`/`findings.md`/`progress.md` in repo root |
 | Preserve Ent index names referenced by code | Minimizes churn and reduces risk with Better Auth adapter queries |
+| Avoid self-referential ORM relations for `todoComments` | ORM v1 rejects circular dependencies in `one()` relations; keep `parentId` as a plain field and query manually |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |-------|---------|------------|
-|       | 1       |            |
+| Missed remaining `ctx.db.get(...)` reads in `auth-helpers.ts` | 1 | Replaced with ORM reads (`ctx.orm.query.user/organization.findFirst`) and re-ran sweep + typecheck/lint/codegen. |
+| Convex deploy failed: `Multiple relations found from "projects" to "user"` | 1 | Added relation aliases for disambiguation, avoided many-to-many inverse pairing via distinct aliases, and removed self-referencing `todoComments` relations (kept `parentId` as a plain field). |

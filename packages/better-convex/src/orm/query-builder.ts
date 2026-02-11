@@ -1,17 +1,22 @@
 /**
  * RelationalQueryBuilder - Entry point for query builder API
  *
- * Provides findMany() and findFirst() methods following Drizzle's pattern:
+ * Provides standard query APIs:
  * - ctx.db.query.users.findMany({ with: { posts: true } })
  * - ctx.db.query.users.findFirst({ where: ... })
+ *
+ * And fluent pipeline composition via select():
+ * - ctx.db.query.users.select().map(...).filter(...).paginate(...)
  */
 
 import type { GenericDatabaseReader } from 'convex/server';
 import type { KnownKeysOnly } from '../internal/types';
 import type { EdgeMetadata } from './extractRelationsConfig';
 import { GelRelationalQuery } from './query';
+import { QueryPromise } from './query-promise';
 import type { RlsContext } from './rls/types';
 import type {
+  ApplyPipelineStage,
   BuildQueryResult,
   DBQueryConfig,
   EnforceAllowFullScan,
@@ -20,6 +25,9 @@ import type {
   EnforceSearchConstraints,
   EnforceVectorSearchConstraints,
   FindManyPageByKeyConfig,
+  FindManyPipelineConfig,
+  FindManyPipelineFlatMapConfig,
+  FindManyUnionSource,
   KeyPageResult,
   PaginatedResult,
   PredicateWhereIndexConfig,
@@ -131,12 +139,14 @@ type SearchFindFirstConfig<
   | 'index'
   | 'cursor'
   | 'maxScan'
+  | 'pipeline'
 > & {
   search: SearchQueryConfig<TTableConfig>;
   vectorSearch?: never;
   where?: SearchWhereFilter<TTableConfig> | undefined;
   orderBy?: never;
   index?: never;
+  pipeline?: never;
 };
 
 type VectorNonPaginatedConfig<
@@ -154,6 +164,7 @@ type VectorNonPaginatedConfig<
   | 'cursor'
   | 'maxScan'
   | 'allowFullScan'
+  | 'pipeline'
 > & {
   vectorSearch: VectorQueryConfig<TTableConfig>;
   search?: never;
@@ -185,13 +196,14 @@ type CursorPaginatedConfig<
   TTableConfig extends TableRelationalConfig,
 > = Omit<
   DBQueryConfig<'many', true, TSchema, TTableConfig>,
-  'cursor' | 'limit' | 'pageByKey' | 'allowFullScan'
+  'cursor' | 'limit' | 'pageByKey' | 'allowFullScan' | 'pipeline'
 > & {
   cursor: string | null;
   limit: number;
   offset?: never;
   pageByKey?: never;
   allowFullScan?: never;
+  pipeline?: never;
 };
 
 type NonCursorConfig<
@@ -199,11 +211,12 @@ type NonCursorConfig<
   TTableConfig extends TableRelationalConfig,
 > = Omit<
   DBQueryConfig<'many', true, TSchema, TTableConfig>,
-  'maxScan' | 'endCursor'
+  'maxScan' | 'endCursor' | 'pipeline'
 > & {
   cursor?: never;
   maxScan?: never;
   endCursor?: never;
+  pipeline?: never;
 };
 
 type KeyPageConfig<
@@ -258,6 +271,291 @@ type FindFirstConfigNoSearch<
   pageByKey?: never;
 };
 
+type SelectPipelineBaseConfig<
+  TSchema extends TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig,
+> = Omit<
+  DBQueryConfig<'many', true, TSchema, TTableConfig>,
+  | 'cursor'
+  | 'maxScan'
+  | 'endCursor'
+  | 'pageByKey'
+  | 'pipeline'
+  | 'with'
+  | 'extras'
+  | 'columns'
+  | 'search'
+  | 'vectorSearch'
+  | 'offset'
+> & {
+  cursor?: never;
+  maxScan?: never;
+  endCursor?: never;
+  pageByKey?: never;
+  pipeline?: never;
+  with?: never;
+  extras?: never;
+  columns?: never;
+  search?: never;
+  vectorSearch?: never;
+  offset?: never;
+};
+
+type ComposeFlatMapOutput<
+  TCurrentRow,
+  TSchema extends TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig,
+  TRelationName extends Extract<keyof TTableConfig['relations'], string>,
+  TIncludeParent extends boolean | undefined,
+> = ApplyPipelineStage<
+  TCurrentRow,
+  {
+    flatMap: {
+      relation: TRelationName;
+      includeParent: TIncludeParent;
+    };
+  },
+  TSchema,
+  TTableConfig
+>;
+
+type PaginateConfig = {
+  cursor: string | null;
+  limit: number;
+  endCursor?: string | null;
+  maxScan?: number;
+};
+
+type QueryFactory<
+  TSchema extends TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig,
+> = <TResult>(
+  config: DBQueryConfig<'many', true, TSchema, TTableConfig>,
+  mode: 'many' | 'first' | 'firstOrThrow'
+) => GelRelationalQuery<TSchema, TTableConfig, TResult>;
+
+export class RelationalSelectChain<
+  TSchema extends TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig,
+  TRow,
+> extends QueryPromise<TRow[]> {
+  private readonly config: SelectPipelineBaseConfig<TSchema, TTableConfig>;
+  private readonly pipeline: FindManyPipelineConfig<TSchema, TTableConfig>;
+
+  constructor(
+    private readonly createQuery: QueryFactory<TSchema, TTableConfig>,
+    config: SelectPipelineBaseConfig<TSchema, TTableConfig>,
+    pipeline?: FindManyPipelineConfig<TSchema, TTableConfig>
+  ) {
+    super();
+    this.config = { ...config };
+    this.pipeline = { ...(pipeline ?? {}) };
+  }
+
+  private withConfig(
+    patch: Partial<SelectPipelineBaseConfig<TSchema, TTableConfig>>
+  ): RelationalSelectChain<TSchema, TTableConfig, TRow> {
+    return new RelationalSelectChain<TSchema, TTableConfig, TRow>(
+      this.createQuery,
+      { ...this.config, ...patch },
+      this.pipeline
+    );
+  }
+
+  private withPipeline<TNextRow>(
+    patch: Partial<FindManyPipelineConfig<TSchema, TTableConfig>>
+  ): RelationalSelectChain<TSchema, TTableConfig, TNextRow> {
+    return new RelationalSelectChain<TSchema, TTableConfig, TNextRow>(
+      this.createQuery,
+      this.config,
+      {
+        ...this.pipeline,
+        ...patch,
+      }
+    );
+  }
+
+  private appendStage(
+    stage: NonNullable<
+      FindManyPipelineConfig<TSchema, TTableConfig>['stages']
+    >[number]
+  ): NonNullable<FindManyPipelineConfig<TSchema, TTableConfig>['stages']> {
+    return [...(this.pipeline.stages ?? []), stage];
+  }
+
+  private asManyConfig(): DBQueryConfig<'many', true, TSchema, TTableConfig> {
+    const hasPipeline = Boolean(
+      this.pipeline.stages || this.pipeline.union || this.pipeline.interleaveBy
+    );
+
+    return {
+      ...(this.config as DBQueryConfig<'many', true, TSchema, TTableConfig>),
+      ...(hasPipeline
+        ? {
+            pipeline: this.pipeline,
+            __allowPipelineFromSelect: true,
+          }
+        : {}),
+    } as DBQueryConfig<'many', true, TSchema, TTableConfig>;
+  }
+
+  execute(): Promise<TRow[]> {
+    return this.createQuery<TRow[]>(this.asManyConfig(), 'many').execute();
+  }
+
+  where(
+    where: SelectPipelineBaseConfig<TSchema, TTableConfig>['where']
+  ): RelationalSelectChain<TSchema, TTableConfig, TRow> {
+    return this.withConfig({ where });
+  }
+
+  index(
+    index: SelectPipelineBaseConfig<TSchema, TTableConfig>['index']
+  ): RelationalSelectChain<TSchema, TTableConfig, TRow> {
+    return this.withConfig({ index });
+  }
+
+  orderBy(
+    orderBy: SelectPipelineBaseConfig<TSchema, TTableConfig>['orderBy']
+  ): RelationalSelectChain<TSchema, TTableConfig, TRow> {
+    return this.withConfig({ orderBy });
+  }
+
+  limit(limit: number): RelationalSelectChain<TSchema, TTableConfig, TRow> {
+    return this.withConfig({ limit });
+  }
+
+  allowFullScan(
+    allowFullScan: boolean
+  ): RelationalSelectChain<TSchema, TTableConfig, TRow> {
+    return this.withConfig({ allowFullScan });
+  }
+
+  map<TOutput>(
+    map: (row: TRow) => TOutput | null | Promise<TOutput | null>
+  ): RelationalSelectChain<
+    TSchema,
+    TTableConfig,
+    NonNullable<Awaited<TOutput>>
+  > {
+    return this.withPipeline<NonNullable<Awaited<TOutput>>>({
+      stages: this.appendStage({ map }),
+    });
+  }
+
+  filter(
+    filter: (row: TRow) => boolean | Promise<boolean>
+  ): RelationalSelectChain<TSchema, TTableConfig, TRow> {
+    return this.withPipeline<TRow>({
+      stages: this.appendStage({ filterWith: filter }),
+    });
+  }
+
+  distinct(distinct: {
+    fields: string[];
+  }): RelationalSelectChain<TSchema, TTableConfig, TRow> {
+    return this.withPipeline<TRow>({
+      stages: this.appendStage({ distinct }),
+    });
+  }
+
+  flatMap<
+    TRelationName extends Extract<keyof TTableConfig['relations'], string>,
+    TIncludeParent extends boolean | undefined = undefined,
+  >(
+    relation: TRelationName,
+    options?: Omit<
+      FindManyPipelineFlatMapConfig<TTableConfig, TRelationName>,
+      'relation'
+    > & {
+      includeParent?: TIncludeParent;
+    }
+  ): RelationalSelectChain<
+    TSchema,
+    TTableConfig,
+    ComposeFlatMapOutput<
+      TRow,
+      TSchema,
+      TTableConfig,
+      TRelationName,
+      TIncludeParent
+    >
+  > {
+    return this.withPipeline<
+      ComposeFlatMapOutput<
+        TRow,
+        TSchema,
+        TTableConfig,
+        TRelationName,
+        TIncludeParent
+      >
+    >({
+      stages: this.appendStage({
+        flatMap: {
+          relation,
+          ...(options ?? {}),
+        },
+      }),
+    });
+  }
+
+  union(
+    union: FindManyUnionSource<TTableConfig>[]
+  ): RelationalSelectChain<TSchema, TTableConfig, TRow> {
+    return this.withPipeline<TRow>({ union });
+  }
+
+  interleaveBy(
+    interleaveBy: string[]
+  ): RelationalSelectChain<TSchema, TTableConfig, TRow> {
+    return this.withPipeline<TRow>({ interleaveBy });
+  }
+
+  paginate(
+    config: PaginateConfig
+  ): GelRelationalQuery<TSchema, TTableConfig, PaginatedResult<TRow>> {
+    return this.createQuery<PaginatedResult<TRow>>(
+      {
+        ...this.asManyConfig(),
+        ...config,
+      },
+      'many'
+    );
+  }
+
+  pageByKey(
+    pageByKey: FindManyPageByKeyConfig
+  ): GelRelationalQuery<TSchema, TTableConfig, KeyPageResult<TRow>> {
+    return this.createQuery<KeyPageResult<TRow>>(
+      {
+        ...this.asManyConfig(),
+        pageByKey,
+      },
+      'many'
+    );
+  }
+
+  first(): GelRelationalQuery<TSchema, TTableConfig, TRow | undefined> {
+    return this.createQuery<TRow | undefined>(
+      {
+        ...this.asManyConfig(),
+        limit: 1,
+      },
+      'first'
+    );
+  }
+
+  firstOrThrow(): GelRelationalQuery<TSchema, TTableConfig, TRow> {
+    return this.createQuery<TRow>(
+      {
+        ...this.asManyConfig(),
+        limit: 1,
+      },
+      'firstOrThrow'
+    );
+  }
+}
+
 /**
  * Query builder for a specific table
  *
@@ -297,6 +595,36 @@ export class RelationalQueryBuilder<
     private relationLoading?: { concurrency?: number },
     private vectorSearch?: VectorSearchProvider
   ) {}
+
+  private createQuery<TResult>(
+    config: DBQueryConfig<'many', true, TSchema, TTableConfig>,
+    mode: 'many' | 'first' | 'firstOrThrow'
+  ): GelRelationalQuery<TSchema, TTableConfig, TResult> {
+    return new GelRelationalQuery<TSchema, TTableConfig, TResult>(
+      this.schema,
+      this.tableConfig,
+      this.edgeMetadata,
+      this.db,
+      config,
+      mode,
+      this.allEdges,
+      this.rls,
+      this.relationLoading,
+      this.vectorSearch
+    );
+  }
+
+  select(): RelationalSelectChain<
+    TSchema,
+    TTableConfig,
+    BuildQueryResult<TSchema, TTableConfig, true>
+  > {
+    return new RelationalSelectChain<
+      TSchema,
+      TTableConfig,
+      BuildQueryResult<TSchema, TTableConfig, true>
+    >((config, mode) => this.createQuery(config, mode), {});
+  }
 
   /**
    * Find many rows matching the query configuration
@@ -399,19 +727,17 @@ export class RelationalQueryBuilder<
     KeyPageResult<BuildQueryResult<TSchema, TTableConfig, TConfig>>
   >;
   findMany(config?: any): GelRelationalQuery<TSchema, TTableConfig, any> {
-    return new GelRelationalQuery<TSchema, TTableConfig, any>(
-      this.schema,
-      this.tableConfig,
-      this.edgeMetadata,
-      this.db,
+    if (config && (config as { pipeline?: unknown }).pipeline !== undefined) {
+      throw new Error(
+        'findMany({ pipeline }) is removed; use db.query.<table>.select() chain instead'
+      );
+    }
+
+    return this.createQuery<any>(
       config
         ? (config as DBQueryConfig<'many', true, TSchema, TTableConfig>)
         : ({} as DBQueryConfig<'many', true, TSchema, TTableConfig>),
-      'many',
-      this.allEdges, // M6.5 Phase 2: Pass all edges for nested loading
-      this.rls,
-      this.relationLoading,
-      this.vectorSearch
+      'many'
     );
   }
 
@@ -448,22 +774,20 @@ export class RelationalQueryBuilder<
     BuildQueryResult<TSchema, TTableConfig, TConfig> | undefined
   >;
   findFirst(config?: any): GelRelationalQuery<TSchema, TTableConfig, any> {
-    return new GelRelationalQuery<TSchema, TTableConfig, any>(
-      this.schema,
-      this.tableConfig,
-      this.edgeMetadata,
-      this.db,
+    if (config && (config as { pipeline?: unknown }).pipeline !== undefined) {
+      throw new Error(
+        'findMany({ pipeline }) is removed; use db.query.<table>.select() chain instead'
+      );
+    }
+
+    return this.createQuery<any>(
       {
         ...(config
           ? (config as DBQueryConfig<'many', true, TSchema, TTableConfig>)
           : ({} as DBQueryConfig<'many', true, TSchema, TTableConfig>)),
         limit: 1,
       },
-      'first',
-      this.allEdges, // M6.5 Phase 2: Pass all edges for nested loading
-      this.rls,
-      this.relationLoading,
-      this.vectorSearch
+      'first'
     );
   }
 
@@ -498,22 +822,20 @@ export class RelationalQueryBuilder<
   findFirstOrThrow(
     config?: any
   ): GelRelationalQuery<TSchema, TTableConfig, any> {
-    return new GelRelationalQuery<TSchema, TTableConfig, any>(
-      this.schema,
-      this.tableConfig,
-      this.edgeMetadata,
-      this.db,
+    if (config && (config as { pipeline?: unknown }).pipeline !== undefined) {
+      throw new Error(
+        'findMany({ pipeline }) is removed; use db.query.<table>.select() chain instead'
+      );
+    }
+
+    return this.createQuery<any>(
       {
         ...(config
           ? (config as DBQueryConfig<'many', true, TSchema, TTableConfig>)
           : ({} as DBQueryConfig<'many', true, TSchema, TTableConfig>)),
         limit: 1,
       },
-      'firstOrThrow',
-      this.allEdges,
-      this.rls,
-      this.relationLoading,
-      this.vectorSearch
+      'firstOrThrow'
     );
   }
 }

@@ -1,6 +1,6 @@
 ---
-title: Quickstart - Better-Convex ORM
-description: Get started with Better-Convex ORM in 5 minutes
+title: Quickstart
+description: Get started with the ORM in 5 minutes
 ---
 
 import { InfoIcon } from "lucide-react"
@@ -54,7 +54,7 @@ export const relations = defineRelations({ users, posts }, (r) => ({
 
 ## Step 3: Attach ORM to Context (once)
 
-Create a small helper that attaches Better-Convex ORM to `ctx.orm`. You only need to do this once in your context setup:
+Create a small helper that attaches the ORM to `ctx.orm`. You only need to do this once in your context setup:
 
 ```ts title="convex/lib/orm.ts" showLineNumbers {5-8}
 import type { GenericDatabaseWriter } from 'convex/server';

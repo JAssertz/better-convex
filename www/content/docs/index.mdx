@@ -16,21 +16,21 @@ Better Convex is a complete framework for Convex. It brings tRPC-style APIs, Tan
 
 ## Philosophy
 
-We didn't reinvent the wheel. Better Convex integrates battle-tested tools—Convex Ents for relationships, TanStack Query for caching, Better Auth for authentication—into a unified developer experience.
+We didn't reinvent the wheel. Better Convex integrates battle-tested tools - Convex Ents for relationships, TanStack Query for caching, Better Auth for authentication - into a unified developer experience.
 
 Instead of assembling these yourself with custom glue code, you get:
 
-- **Type safety end-to-end** — From schema to procedures to client, with full inference
-- **Real-time by default** — WebSocket subscriptions flow into TanStack Query cache
-- **TanStack Query native** — No wrapper hooks, use `useQuery` and `useMutation` directly
-- **Incremental adoption** — Add features as you need them, migrate function by function
+- **Type safety end-to-end** - From schema to procedures to client, with full inference
+- **Real-time by default** - WebSocket subscriptions flow into TanStack Query cache
+- **TanStack Query native** - No wrapper hooks, use `useQuery` and `useMutation` directly
+- **Incremental adoption** - Add features as you need them, migrate function by function
 
 ## What's Included
 
 | Layer | Feature | Description |
 |-------|---------|-------------|
 | **Server** | cRPC | tRPC-style procedure builder with `.input()`, `.use()`, middleware |
-| **Database** | ORM | Drizzle-style queries, relations, runtime constraints, `ctx.orm` |
+| **Database** | Drizzle ORM | Drizzle-style queries, relations, runtime constraints, `ctx.orm` |
 | **Database** | Triggers | Automatic side effects on data changes |
 | **Database** | Aggregates | O(log n) counts, sums, leaderboards |
 | **Client** | React | TanStack Query integration with real-time sync |
@@ -88,7 +88,7 @@ If you're an AI agent integrating better-convex, **ask the user to select their 
 |---------|---------|---------|
 | **Approach** | Top-down (copy from Templates), Bottom-up (follow docs step-by-step) | Top-down |
 | **React Framework** | Next.js App Router, Vite, Remix, Other | Next.js |
-| **Database** | Better-Convex ORM (`ctx.orm`) | ORM |
+| **Database** | ORM (`ctx.orm`) | ORM |
 
 ### Optional Features
 
@@ -186,7 +186,7 @@ Complete reference for all documentation pages.
 | Page | When to Use |
 |------|-------------|
 | [CLI](/docs/cli) | `better-convex dev` for codegen. Procedure metadata generation. |
-| [Migration](/docs/migration) | Migrate from vanilla Convex. Function-by-function upgrade guide. |
+| [Migrations](/docs/migrations) | Migration hub with paths for Core, ORM, and Auth. |
 | [Comparison](/docs/comparison) | Compare with tRPC, Convex hooks, other patterns. |
 
 ### Common Workflows

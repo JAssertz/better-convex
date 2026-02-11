@@ -28,7 +28,7 @@ This document re-ranks all remaining pre-release work.
 
 ## Ranked Recommendations
 
-### TIER 1: Breaking — Remaining Budget
+### TIER 1: Breaking - Remaining Budget
 
 #### 1. [BREAKING] Cascade Delete Unbounded `.collect()`
 
@@ -41,7 +41,7 @@ Last remaining unbounded `.collect()` path. Update/delete selection now has one-
 - Apply `mutationMaxRows` ceiling to cascade collection.
 - Fail fast if referencing row count exceeds ceiling.
 - Users can increase ceiling via schema `defaults.mutationMaxRows`.
-- Consider: should cascade support paged mode too? (Likely no — cascade is transactional by nature.)
+- Consider: should cascade support paged mode too? (Likely no - cascade is transactional by nature.)
 
 **Effort**: S
 
@@ -75,7 +75,7 @@ When orderBy requires post-fetch sort (multi-field or non-indexable), current fl
 
 Result: sort applied to wrong subset → incorrect results.
 
-**Proposed**: Restructure to fetch → sort → offset → limit. This is a behavior change but it's a bug fix. Document that non-indexed sorts require fetching the full filtered set (which interacts with the new sizing policy — users must provide sufficient limit or allowFullScan).
+**Proposed**: Restructure to fetch → sort → offset → limit. This is a behavior change but it's a bug fix. Document that non-indexed sorts require fetching the full filtered set (which interacts with the new sizing policy - users must provide sufficient limit or allowFullScan).
 
 **Effort**: M
 
@@ -125,13 +125,13 @@ For 100 posts × author: 100 separate `db.get()` calls. For many-to-many through
 
 Negation can never use indexes. Currently silent post-fetch filters.
 
-**Proposed**: Same as string operators — require `allowFullScan` in strict mode unless other indexed fields sufficiently narrow the scan.
+**Proposed**: Same as string operators - require `allowFullScan` in strict mode unless other indexed fields sufficiently narrow the scan.
 
 **Effort**: S
 
 ---
 
-### TIER 3: Parity — Convex Native
+### TIER 3: Parity - Convex Native
 
 #### 7. [PARITY] Vector Search Query API
 
@@ -152,7 +152,7 @@ findMany({
 })
 ```
 
-Largest Convex parity gap on the read path. Requires `limit` (inherently bounded — no sizing issue).
+Largest Convex parity gap on the read path. Requires `limit` (inherently bounded - no sizing issue).
 
 **Effort**: L
 
@@ -239,11 +239,11 @@ Bidirectional relations with unlimited nesting depth (e.g., `user → posts → 
 
 ### TIER 5: Drizzle Parity (Platform Limitations)
 
-#### 14. [DRIZZLE] `exists` / `notExists` — Document as Limitation
+#### 14. [DRIZZLE] `exists` / `notExists` - Document as Limitation
 
 No subqueries in Convex. Approximate via relation `where` filters.
 
-#### 15. [DRIZZLE] Aggregations (`count`, `sum`, `avg`, `max`, `min`) — Defer to v1.x
+#### 15. [DRIZZLE] Aggregations (`count`, `sum`, `avg`, `max`, `min`) - Defer to v1.x
 
 Point to `@convex-dev/aggregate` component.
 

@@ -1,0 +1,1002 @@
+---
+title: From Better Auth
+description: Migrate from @convex-dev/better-auth to better-convex.
+links:
+  doc: https://github.com/get-convex/better-auth
+---
+
+import { InfoIcon } from "lucide-react"
+
+In this guide, we'll migrate from `@convex-dev/better-auth` (the component-based auth package) to `better-convex`. You'll remove the component pattern, update imports, and configure the new trigger system.
+
+## Overview
+
+The main differences between the packages:
+
+| Aspect | @convex-dev/better-auth | better-convex |
+|--------|------------------------|---------------|
+| Architecture | Convex component pattern | Direct integration |
+| Triggers | Not built-in | `triggers: { user, session }` |
+| Client Creation | `createClient(components.betterAuth, {...})` | `createClient({ authFunctions, schema })` |
+| DB Adapter | `authComponent.adapter(ctx)` | `authClient.adapter()` + `authClient.httpAdapter()` |
+| Provider | `ConvexBetterAuthProvider` | `ConvexAuthProvider` |
+| React Utils | `AuthBoundary` | `createAuthMutations()`, auth store |
+
+Let's migrate step by step.
+
+## Step 1: Update Dependencies
+
+Install better-convex alongside the existing package (`@convex-dev/better-auth` remains a peer dependency).
+
+```bash
+bun add better-convex
+```
+
+## Step 2: Remove Component Pattern
+
+Next, we'll remove the Convex component configuration. This is the biggest architectural change.
+
+<Callout icon={<InfoIcon />}>
+**Already in production?** Use the [migration component](https://www.convex.dev/components/migrations) to copy data from component tables to your app tables before deleting the `betterAuth` folder.
+</Callout>
+
+**Files to delete:**
+- `convex/betterAuth/` folder (entire directory)
+- Remove `app.use(betterAuth)` from `convex/convex.config.ts`
+
+<Compare>
+  <CompareItem title="Before (convex/convex.config.ts)">
+    ```ts showLineNumbers {2,5}
+    import { defineApp } from "convex/server";
+    import betterAuth from "./betterAuth/convex.config";
+    import resend from "@convex-dev/resend/convex.config";
+
+    const app = defineApp();
+    app.use(betterAuth);  // Remove this line
+    app.use(resend);
+
+    export default app;
+    ```
+  </CompareItem>
+  <CompareItem title="After (convex/convex.config.ts)">
+    ```ts showLineNumbers
+    import { defineApp } from "convex/server";
+    import resend from "@convex-dev/resend/convex.config";
+
+    const app = defineApp();
+    app.use(resend);  // Keep other components
+
+    export default app;
+    ```
+  </CompareItem>
+</Compare>
+
+## Step 3: Update auth.config.ts
+
+The auth config stays similar. We just need to ensure we're passing the static JWKS.
+
+<Compare>
+  <CompareItem title="Before">
+    ```ts showLineNumbers
+    import { getAuthConfigProvider } from "@convex-dev/better-auth/auth-config";
+    import type { AuthConfig } from "convex/server";
+
+    export default {
+      providers: [getAuthConfigProvider()],
+    } satisfies AuthConfig;
+    ```
+  </CompareItem>
+  <CompareItem title="After">
+    ```ts showLineNumbers {4}
+    import { getAuthConfigProvider } from "@convex-dev/better-auth/auth-config";
+    import type { AuthConfig } from "convex/server";
+
+    export default {
+      providers: [getAuthConfigProvider({ jwks: process.env.JWKS })],
+    } satisfies AuthConfig;
+    ```
+  </CompareItem>
+</Compare>
+
+<Callout icon={<InfoIcon />}>
+Passing a static JWKS avoids database queries during token verification. Run `npx better-convex env sync --auth` to generate it.
+</Callout>
+
+## Step 4: Migrate auth.ts
+
+This is the main migration. We'll replace the component-based client with direct integration.
+
+<Compare>
+  <CompareItem title="Before (component pattern)">
+    ```ts showLineNumbers title="convex/auth.ts" {2,7-10,13,20,25-28}
+    import { components } from "./_generated/api";
+    import { createClient, GenericCtx } from "@convex-dev/better-auth";
+    import { convex } from "@convex-dev/better-auth/plugins";
+    import authSchema from "./betterAuth/schema";
+    import authConfig from "./auth.config";
+    import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
+
+    export const authComponent = createClient<DataModel, typeof authSchema>(
+      components.betterAuth,
+      { local: { schema: authSchema }, verbose: false }
+    );
+
+    export const createAuthOptions = (ctx: GenericCtx<DataModel>) => ({
+      baseURL: process.env.SITE_URL,
+      database: authComponent.adapter(ctx),
+      // ... plugins and options
+    });
+
+    export const createAuth = (ctx: GenericCtx<DataModel>) =>
+      betterAuth(createAuthOptions(ctx));
+
+    export const { getAuthUser } = authComponent.clientApi();
+
+    export const getCurrentUser = query({
+      args: {},
+      handler: async (ctx) => {
+        return authComponent.safeGetAuthUser(ctx);
+      },
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="After (direct pattern)">
+    ```ts showLineNumbers title="convex/functions/auth.ts" {3,8,11-30,33,40-44,47}
+    import { convex } from "@convex-dev/better-auth/plugins";
+    import { betterAuth, type BetterAuthOptions } from "better-auth";
+    import { createApi, createClient, type AuthFunctions } from "better-convex/auth";
+    import { internal } from "./_generated/api";
+    import type { DataModel } from "./_generated/dataModel";
+    import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+    import authConfig from "./auth.config";
+    import schema from "./schema";
+
+    type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
+
+    // Reference internal auth functions (generated after first `npx convex dev`)
+    const authFunctions: AuthFunctions = internal.auth;
+
+    // Create the auth client with triggers
+    export const authClient = createClient<DataModel, typeof schema>({
+      authFunctions,
+      schema,
+      internalMutation, // Optional: custom mutation wrapper for triggers
+      triggers: {
+        user: {
+          beforeCreate: async (_ctx, data) => {
+            // Transform user data before creation
+            return data;
+          },
+          onCreate: async (ctx, user) => {
+            // Side effects after user creation
+            console.log("User created:", user._id);
+          },
+        },
+        session: {
+          onCreate: async (ctx, session) => {
+            // Side effects after session creation
+          },
+        },
+      },
+    });
+
+    // Auth options factory
+    const createAuthOptions = (ctx: GenericCtx) =>
+      ({
+        baseURL: process.env.SITE_URL!,
+        emailAndPassword: { enabled: true },
+        socialProviders: {
+          github: {
+            clientId: process.env.GITHUB_CLIENT_ID!,
+            clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+          },
+        },
+        plugins: [
+          convex({
+            authConfig,
+            jwks: process.env.JWKS,
+          }),
+        ],
+        database: authClient.httpAdapter(ctx),
+      }) satisfies BetterAuthOptions;
+
+    // For queries/mutations: direct DB access
+    export const getAuth = <Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) =>
+      betterAuth({
+        ...createAuthOptions(ctx),
+        database: authClient.adapter(ctx, createAuthOptions),
+      });
+
+    // For actions/HTTP routes: HTTP adapter
+    export const createAuth = (ctx: ActionCtx) =>
+      betterAuth(createAuthOptions(ctx));
+
+    // Generate internal CRUD functions
+    export const {
+      create,
+      deleteMany,
+      deleteOne,
+      findMany,
+      findOne,
+      updateMany,
+      updateOne,
+      getLatestJwks,
+      rotateKeys,
+    } = createApi(schema, createAuth, {
+      internalMutation, // Optional: same wrapper as createClient
+    });
+
+    // Generate trigger handlers
+    export const {
+      beforeCreate,
+      beforeDelete,
+      beforeUpdate,
+      onCreate,
+      onDelete,
+      onUpdate,
+    } = authClient.triggersApi();
+
+    // Export for Better Auth CLI
+    // biome-ignore lint/suspicious/noExplicitAny: Required for CLI
+    export const auth = betterAuth(createAuthOptions({} as any));
+    ```
+  </CompareItem>
+</Compare>
+
+**Key changes:**
+
+| Before | After |
+|--------|-------|
+| `createClient(components.betterAuth, {...})` | `createClient({ authFunctions, schema, triggers })` |
+| `authComponent.adapter(ctx)` | Two adapters: `httpAdapter()` and `adapter()` |
+| `authComponent.clientApi()` | `createApi()` generates internal functions |
+| No triggers | Built-in `triggers: { user, session }` |
+
+<Callout icon={<InfoIcon />}>
+**Why two adapters?** Use `httpAdapter(ctx)` for HTTP routes/actions. Use `adapter(ctx, createAuthOptions)` for queries/mutations with direct DB access (better performance).
+</Callout>
+
+<Callout icon={<InfoIcon />}>
+**Custom mutation wrapper:** The optional `internalMutation` option wraps auth mutations to support custom logic like Convex Triggers.
+</Callout>
+
+## Step 5: Add Polyfills
+
+Convex's runtime environment doesn't include `MessageChannel`, which Better Auth's HTTP handling requires. Create this polyfill file:
+
+```ts title="convex/lib/http-polyfills.ts" showLineNumbers
+// polyfill MessageChannel without using node:events
+if (typeof MessageChannel === 'undefined') {
+  class MockMessagePort {
+    onmessage: ((ev: MessageEvent) => void) | undefined;
+    onmessageerror: ((ev: MessageEvent) => void) | undefined;
+
+    addEventListener() {}
+    close() {}
+
+    dispatchEvent(_event: Event): boolean {
+      return false;
+    }
+
+    postMessage(_message: unknown, _transfer: Transferable[] = []) {}
+    removeEventListener() {}
+    start() {}
+  }
+
+  class MockMessageChannel {
+    port1: MockMessagePort;
+    port2: MockMessagePort;
+
+    constructor() {
+      this.port1 = new MockMessagePort();
+      this.port2 = new MockMessagePort();
+    }
+  }
+
+  globalThis.MessageChannel =
+    MockMessageChannel as unknown as typeof MessageChannel;
+}
+```
+
+Import this at the top of your HTTP file (before other imports).
+
+## Step 6: Update http.ts
+
+Update the Convex HTTP router to use Hono with the auth middleware.
+
+<Compare>
+  <CompareItem title="Before (convex/http.ts)">
+    ```ts showLineNumbers title="convex/http.ts"
+    import { httpRouter } from 'convex/server';
+    import { authComponent, createAuth } from './auth';
+
+    const http = httpRouter();
+
+    authComponent.registerRoutes(http, createAuth);
+
+    export default http;
+    ```
+  </CompareItem>
+  <CompareItem title="After (convex/functions/http.ts)">
+    Update the HTTP router:
+
+    <Tabs groupId="router" items={["With cRPC", "Without cRPC"]} persist>
+      <Tab value="Without cRPC">
+        ```ts title="convex/functions/http.ts" showLineNumbers {1-5,9-18,21}
+        import '../lib/http-polyfills';
+        import { authMiddleware } from 'better-convex/auth';
+        import { HttpRouterWithHono } from 'better-convex/server';
+        import { Hono } from 'hono';
+        import { cors } from 'hono/cors';
+        import { createAuth } from './auth';
+
+        const app = new Hono();
+
+        // CORS for API routes
+        app.use(
+          '/api/*',
+          cors({
+              origin: process.env.SITE_URL!,
+              allowHeaders: ['Content-Type', 'Authorization', 'Better-Auth-Cookie'],
+              exposeHeaders: ['Set-Better-Auth-Cookie'],
+              credentials: true,
+          }),
+        );
+
+        // Better Auth middleware
+        app.use(authMiddleware(createAuth));
+
+        export default new HttpRouterWithHono(app);
+        ```
+      </Tab>
+      <Tab value="With cRPC">
+        ```ts title="convex/functions/http.ts" showLineNumbers {1-6,10-19,22}
+        import '../lib/http-polyfills';
+        import { authMiddleware } from 'better-convex/auth';
+        import { createHttpRouter } from 'better-convex/server';
+        import { Hono } from 'hono';
+        import { cors } from 'hono/cors';
+        import { router } from '../lib/crpc';
+        import { createAuth } from './auth';
+
+        const app = new Hono();
+
+        // CORS for API routes
+        app.use(
+          '/api/*',
+          cors({
+            origin: process.env.SITE_URL!,
+            allowHeaders: ['Content-Type', 'Authorization', 'Better-Auth-Cookie'],
+            exposeHeaders: ['Set-Better-Auth-Cookie'],
+            credentials: true,
+          })
+        );
+
+        // Better Auth middleware
+        app.use(authMiddleware(createAuth));
+
+        export const appRouter = router({
+          // Add your routers here
+        });
+
+        export default createHttpRouter(app, appRouter);
+        ```
+
+      </Tab>
+    </Tabs>
+  </CompareItem>
+</Compare>
+
+## Step 7: Update auth-client.ts
+
+Now we'll update the client-side auth setup.
+
+<Compare>
+  <CompareItem title="Before (lib/auth-client.tsx)">
+    ```ts showLineNumbers title="lib/auth-client.tsx"
+    "use client";
+
+    import { convexClient } from "@convex-dev/better-auth/client/plugins";
+    import { createAuthClient } from "better-auth/react";
+
+    export const authClient = createAuthClient({
+      plugins: [
+        convexClient(),
+        // ... other plugins
+      ],
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="After (lib/convex/auth-client.ts)">
+    ```ts showLineNumbers title="lib/convex/auth-client.ts" {3,12-16}
+    import { convexClient } from "@convex-dev/better-auth/client/plugins";
+    import { createAuthClient } from "better-auth/react";
+    import { createAuthMutations } from "better-convex/react";
+
+    export const authClient = createAuthClient({
+      baseURL: process.env.NEXT_PUBLIC_SITE_URL!,
+      plugins: [
+        convexClient(),
+        // ... other plugins
+      ],
+    });
+
+    // Export mutation hooks for TanStack Query
+    export const {
+      useSignOutMutationOptions,
+      useSignInSocialMutationOptions,
+      useSignInMutationOptions,
+      useSignUpMutationOptions,
+    } = createAuthMutations(authClient);
+    ```
+  </CompareItem>
+</Compare>
+
+The new `createAuthMutations` helper generates TanStack Query mutation options for common auth operations.
+
+## Step 8: Update Provider
+
+Replace `ConvexBetterAuthProvider` with `ConvexAuthProvider`.
+
+<Compare>
+  <CompareItem title="Before (app/ConvexClientProvider.tsx)">
+    ```tsx showLineNumbers title="app/ConvexClientProvider.tsx" {4,12-17}
+    "use client";
+
+    import { ConvexReactClient } from "convex/react";
+    import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
+    import { authClient } from "@/lib/auth-client";
+
+    const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+    export function ConvexClientProvider({ children, initialToken }) {
+      return (
+        <ConvexBetterAuthProvider
+          client={convex}
+          authClient={authClient}
+          initialToken={initialToken}
+        >
+          {children}
+        </ConvexBetterAuthProvider>
+      );
+    }
+    ```
+  </CompareItem>
+  <CompareItem title="After (lib/convex/convex-provider.tsx)">
+    ```tsx showLineNumbers title="lib/convex/convex-provider.tsx" {4,13-22}
+    "use client";
+
+    import { ConvexReactClient } from "convex/react";
+    import { ConvexAuthProvider } from "better-convex/auth-client";
+    import { authClient } from "@/lib/convex/auth-client";
+    import { useRouter } from "next/navigation";
+
+    const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+    export function BetterConvexProvider({ children, token }) {
+      const router = useRouter();
+
+      return (
+        <ConvexAuthProvider
+          authClient={authClient}
+          client={convex}
+          initialToken={token}
+          onMutationUnauthorized={() => {
+            router.push("/login");
+          }}
+          onQueryUnauthorized={({ queryName }) => {
+            router.push("/login");
+          }}
+        >
+          {children}
+        </ConvexAuthProvider>
+      );
+    }
+    ```
+  </CompareItem>
+</Compare>
+
+**New features:**
+- `onMutationUnauthorized` - Handle auth errors on mutations
+- `onQueryUnauthorized` - Handle auth errors on queries (includes `queryName` for debugging)
+
+## Step 9: Remove AuthBoundary
+
+If you were using `AuthBoundary`, you can now handle auth errors via provider callbacks instead.
+
+**If you used `AuthBoundary`:**
+```tsx showLineNumbers
+import { AuthBoundary } from "@convex-dev/better-auth/react";
+
+export const ClientAuthBoundary = ({ children }) => {
+  const router = useRouter();
+  return (
+    <AuthBoundary
+      authClient={authClient}
+      onUnauth={() => router.push("/sign-in")}
+      getAuthUserFn={api.auth.getAuthUser}
+      isAuthError={isAuthError}
+    >
+      {children}
+    </AuthBoundary>
+  );
+};
+```
+
+Remove `AuthBoundary` and use the provider's `onQueryUnauthorized` and `onMutationUnauthorized` callbacks instead (configured in Step 8).
+
+## Step 10: Update Schema
+
+If you were using the auto-generated component schema, you'll now define auth tables in your main schema.
+
+<Tabs groupId="schema" items={["CLI Generate", "Manual"]} persist>
+  <Tab value="CLI Generate">
+    Generate auth tables using the Better Auth CLI:
+
+    ```bash
+    npx @better-auth/cli generate -y --output convex/functions/authSchema.ts --config convex/functions/auth.ts
+    ```
+
+    Then import in your schema:
+
+    ```ts title="convex/functions/schema.ts" showLineNumbers {2,5}
+    import { defineSchema } from 'convex/server';
+    import { authSchema } from './authSchema';
+
+    export default defineSchema({
+      ...authSchema,
+      // Your other tables
+    });
+    ```
+  </Tab>
+  <Tab value="Manual">
+    See [Auth Server Setup](/docs/auth/server#3-update-schema) for the full schema definition.
+  </Tab>
+</Tabs>
+
+## Step 11: Migrate Helper Methods
+
+The component pattern provided several helper methods on `authComponent`. These now use direct `ctx.db` access.
+
+### getAuthUser / safeGetAuthUser
+
+<Compare>
+  <CompareItem title="Before">
+    ```ts showLineNumbers
+    // In a query or mutation
+    const user = await authComponent.getAuthUser(ctx); // throws if not found
+    const user = await authComponent.safeGetAuthUser(ctx); // returns null
+    ```
+  </CompareItem>
+  <CompareItem title="After">
+    ```ts showLineNumbers {1,5-6,9-14}
+    import { getAuthUserIdentity } from 'better-convex/auth';
+
+    // In a query or mutation
+    export const myQuery = query({
+      handler: async (ctx) => {
+        const identity = await getAuthUserIdentity(ctx);
+        if (!identity) return null; // or throw
+
+        // Use ctx.db directly
+        const user = await ctx.db.get('user', identity.userId);
+        if (!user) throw new ConvexError("User not found");
+
+        return user;
+      },
+    });
+    ```
+  </CompareItem>
+</Compare>
+
+### getHeaders
+
+<Compare>
+  <CompareItem title="Before">
+    ```ts showLineNumbers
+    const headers = await authComponent.getHeaders(ctx);
+    ```
+  </CompareItem>
+  <CompareItem title="After">
+    ```ts showLineNumbers {1,4}
+    import { getHeaders } from 'better-convex/auth';
+
+    // In a query or mutation
+    const headers = await getHeaders(ctx);
+    ```
+  </CompareItem>
+</Compare>
+
+### getAuth
+
+<Compare>
+  <CompareItem title="Before">
+    ```ts showLineNumbers
+    const { auth, headers } = await authComponent.getAuth(createAuth, ctx);
+    const session = await auth.api.getSession({ headers });
+    ```
+  </CompareItem>
+  <CompareItem title="After">
+    ```ts showLineNumbers {1,5-6}
+    import { getHeaders, getSession } from 'better-convex/auth';
+
+    // Option 1: Use helper for common operations
+    const session = await getSession(ctx);
+
+    // Option 2: Use Better Auth API directly
+    const headers = await getHeaders(ctx);
+    const auth = getAuth(ctx); // Your getAuth function from auth.ts
+    const session = await auth.api.getSession({ headers });
+    ```
+  </CompareItem>
+</Compare>
+
+### clientApi().getAuthUser
+
+<Compare>
+  <CompareItem title="Before (convex/auth.ts)">
+    ```ts showLineNumbers title="convex/auth.ts"
+    export const { getAuthUser } = authComponent.clientApi();
+    ```
+  </CompareItem>
+  <CompareItem title="After (convex/functions/queries.ts)">
+    ```ts showLineNumbers title="convex/functions/queries.ts" {1,4-10}
+    import { getAuthUserIdentity } from 'better-convex/auth';
+
+    export const getAuthUser = query({
+      handler: async (ctx) => {
+        const identity = await getAuthUserIdentity(ctx);
+        if (!identity) throw new ConvexError("Unauthenticated");
+
+        return await ctx.db.get('user', identity.userId);
+      },
+    });
+    ```
+  </CompareItem>
+</Compare>
+
+## Migration Checklist
+
+- [ ] **Dependencies:** Remove `@convex-dev/better-auth`, install `better-convex`
+- [ ] **convex.config.ts:** Remove `app.use(betterAuth)` line
+- [ ] **betterAuth folder:** Delete the entire `convex/betterAuth/` directory
+- [ ] **auth.config.ts:** Add `jwks: process.env.JWKS` option
+- [ ] **auth.ts:** Rewrite using new `createClient` and `createApi` patterns
+- [ ] **auth-client.ts:** Add `createAuthMutations`, update imports
+- [ ] **Provider:** Replace `ConvexBetterAuthProvider` with `ConvexAuthProvider`
+- [ ] **AuthBoundary:** Remove and use provider callbacks
+- [ ] **Helper methods:** Replace `authComponent.getAuthUser` etc with `ctx.db` access
+- [ ] **Schema:** Generate or define auth tables in main schema
+- [ ] **Env vars:** Run `npx better-convex env sync --auth` for JWKS
+- [ ] **Test:** Verify sign-in, sign-up, session persistence, and token refresh
+
+## Next.js Migration
+
+If you're using Next.js with cRPC, migrate the server-side helpers.
+
+### Without cRPC
+
+If you're not using cRPC, keep using `@convex-dev/better-auth/nextjs` for server-side helpers. Still follow Steps 1-9 for the Convex backend and Step 7 for the provider migration.
+
+**Server setup** (unchanged):
+
+```ts showLineNumbers title="lib/auth-server.ts"
+import { convexBetterAuthNextJs } from "@convex-dev/better-auth/nextjs";
+
+export const { handler, getToken } = convexBetterAuthNextJs({
+  convexUrl: process.env.NEXT_PUBLIC_CONVEX_URL!,
+  convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!,
+});
+```
+
+API route (unchanged):
+
+```ts showLineNumbers title="app/api/auth/[...all]/route.ts"
+import { handler } from "@/lib/auth-server";
+
+export const { GET, POST } = handler;
+```
+
+Root layout (unchanged):
+
+```tsx showLineNumbers title="app/layout.tsx"
+import { ConvexClientProvider } from "./ConvexClientProvider";
+import { getToken } from "@/lib/auth-server";
+
+export default async function RootLayout({ children }) {
+  const token = await getToken();
+  return (
+    <html lang="en">
+      <body>
+        <ConvexClientProvider initialToken={token}>{children}</ConvexClientProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+### With cRPC
+
+**Server setup:**
+
+<Compare>
+  <CompareItem title="Before (lib/auth-server.ts)">
+    ```ts showLineNumbers title="lib/auth-server.ts"
+    import { convexBetterAuthNextJs } from "@convex-dev/better-auth/nextjs";
+
+    export const { handler, getToken } = convexBetterAuthNextJs({
+      convexUrl: process.env.NEXT_PUBLIC_CONVEX_URL!,
+      convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!,
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="After (lib/convex/server.ts)">
+    ```ts showLineNumbers title="lib/convex/server.ts" {3,5}
+    import { api } from '@convex/api';
+    import { meta } from '@convex/meta';
+    import { convexBetterAuth } from 'better-convex/auth-nextjs';
+
+    export const { createContext, createCaller, handler } = convexBetterAuth({
+      api,
+      convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!,
+      meta,
+    });
+    ```
+  </CompareItem>
+</Compare>
+
+**Root layout:**
+
+<Compare>
+  <CompareItem title="Before (app/layout.tsx)">
+    ```tsx showLineNumbers title="app/layout.tsx" {3,6}
+    import { ConvexClientProvider } from "./ConvexClientProvider";
+    import { getToken } from "@/lib/auth-server";
+
+    export default async function RootLayout({ children }) {
+      const token = await getToken();
+      return (
+        <html lang="en">
+          <body>
+            <ConvexClientProvider initialToken={token}>{children}</ConvexClientProvider>
+          </body>
+        </html>
+      );
+    }
+    ```
+  </CompareItem>
+  <CompareItem title="After (app/layout.tsx)">
+    ```tsx showLineNumbers title="app/layout.tsx" {3,6}
+    import { BetterConvexProvider } from "@/lib/convex/convex-provider";
+    import { createCaller } from "@/lib/convex/server";
+
+    export default async function RootLayout({ children }) {
+      const token = await createCaller().getToken();
+      return (
+        <html lang="en">
+          <body>
+            <BetterConvexProvider token={token}>{children}</BetterConvexProvider>
+          </body>
+        </html>
+      );
+    }
+    ```
+  </CompareItem>
+</Compare>
+
+## TanStack Start Migration
+
+For TanStack Start, follow Steps 1-9 above for core auth migration. This section covers framework-specific setup.
+
+### Server Setup
+
+Create server-side auth helpers using `@convex-dev/better-auth`:
+
+```ts showLineNumbers title="src/lib/auth-server.ts"
+import { convexBetterAuthReactStart } from '@convex-dev/better-auth/react-start';
+
+export const { handler, getToken } = convexBetterAuthReactStart({
+  convexUrl: import.meta.env.VITE_CONVEX_URL!,
+  convexSiteUrl: import.meta.env.VITE_CONVEX_SITE_URL!,
+});
+```
+
+### API Route
+
+Create the auth API route handler:
+
+```ts showLineNumbers title="src/routes/api/auth/$.ts"
+import { handler } from '@/lib/auth-server';
+import { createFileRoute } from '@tanstack/react-router';
+
+export const Route = createFileRoute('/api/auth/$')({
+  server: {
+    handlers: {
+      GET: ({ request }) => handler(request),
+      POST: ({ request }) => handler(request),
+    },
+  },
+});
+```
+
+### Router Setup
+
+Configure the router with `ConvexQueryClient`:
+
+```tsx showLineNumbers title="src/router.tsx" {4,14-20,22-29}
+import { createRouter as createTanStackRouter } from '@tanstack/react-router';
+import { QueryClient, notifyManager } from '@tanstack/react-query';
+import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query';
+import { ConvexQueryClient } from '@convex-dev/react-query';
+import { routeTree } from './routeTree.gen';
+
+export function getRouter() {
+  if (typeof document !== 'undefined') {
+    notifyManager.setScheduler(window.requestAnimationFrame);
+  }
+
+  const convexUrl = import.meta.env.VITE_CONVEX_URL!;
+
+  const convexQueryClient = new ConvexQueryClient(convexUrl, {
+    expectAuth: true,
+  });
+
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        queryKeyHashFn: convexQueryClient.hashFn(),
+        queryFn: convexQueryClient.queryFn(),
+      },
+    },
+  });
+  convexQueryClient.connect(queryClient);
+
+  const router = createTanStackRouter({
+    routeTree,
+    context: { queryClient, convexQueryClient },
+    scrollRestoration: true,
+  });
+
+  setupRouterSsrQueryIntegration({ router, queryClient });
+
+  return router;
+}
+```
+
+### Root Route
+
+Set up the root route with auth provider and SSR token:
+
+```tsx showLineNumbers title="src/routes/__root.tsx" {5-6,11-13,18-32,36-43}
+import {
+  Outlet,
+  createRootRouteWithContext,
+  useRouteContext,
+} from '@tanstack/react-router';
+import { QueryClient } from '@tanstack/react-query';
+import { ConvexQueryClient } from '@convex-dev/react-query';
+import { ConvexAuthProvider } from 'better-convex/auth-client';
+import { authClient } from '@/lib/auth-client';
+import { createServerFn } from '@tanstack/react-start';
+import { getToken } from '@/lib/auth-server';
+
+const getAuth = createServerFn({ method: 'GET' }).handler(async () => {
+  return await getToken();
+});
+
+export const Route = createRootRouteWithContext<{
+  queryClient: QueryClient;
+  convexQueryClient: ConvexQueryClient;
+}>()({
+  beforeLoad: async (ctx) => {
+    const token = await getAuth();
+
+    // Set auth token for SSR queries
+    if (token) {
+      ctx.context.convexQueryClient.serverHttpClient?.setAuth(token);
+    }
+
+    return {
+      isAuthenticated: !!token,
+      token,
+    };
+  },
+  component: RootComponent,
+});
+
+function RootComponent() {
+  const context = useRouteContext({ from: Route.id });
+
+  return (
+    <ConvexAuthProvider
+      client={context.convexQueryClient.convexClient}
+      authClient={authClient}
+      initialToken={context.token}
+    >
+      <Outlet />
+    </ConvexAuthProvider>
+  );
+}
+```
+
+### Protected Routes
+
+Create a layout route for authenticated pages:
+
+```tsx showLineNumbers title="src/routes/_authed.tsx"
+import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
+
+export const Route = createFileRoute('/_authed')({
+  beforeLoad: ({ context }) => {
+    if (!context.isAuthenticated) {
+      throw redirect({ to: '/sign-in' });
+    }
+  },
+  component: () => <Outlet />,
+});
+```
+
+### Sign-In Route
+
+Redirect authenticated users away from sign-in:
+
+```tsx showLineNumbers title="src/routes/sign-in.tsx"
+import { createFileRoute, redirect } from '@tanstack/react-router';
+import { SignIn } from '@/components/SignIn';
+
+export const Route = createFileRoute('/sign-in')({
+  component: SignIn,
+  beforeLoad: ({ context }) => {
+    if (context.isAuthenticated) {
+      throw redirect({ to: '/' });
+    }
+  },
+});
+```
+
+### Sign Out
+
+Handle sign out with a page reload (required for `expectAuth`):
+
+```tsx showLineNumbers title="src/components/SignOutButton.tsx"
+import { authClient } from '@/lib/auth-client';
+
+export function SignOutButton() {
+  const handleSignOut = async () => {
+    await authClient.signOut({
+      fetchOptions: {
+        onSuccess: () => {
+          // Reload required when using expectAuth
+          location.reload();
+        },
+      },
+    });
+  };
+
+  return <button onClick={handleSignOut}>Sign out</button>;
+}
+```
+
+## Troubleshooting
+
+### "authFunctions is undefined"
+
+Run `npx convex dev` first to generate the internal API, then reference it correctly:
+
+```ts
+const authFunctions: AuthFunctions = internal.auth;
+```
+
+### "Triggers not firing"
+
+Triggers must be defined in `createClient`. They only fire through Better Auth flows, not direct database operations.
+
+## Next Steps
+
+Done! Your auth is now migrated. Here's what to explore next:
+
+<Cards>
+  <Card title="Triggers" href="/docs/auth/triggers" description="Add user lifecycle hooks" />
+  <Card title="Organizations" href="/docs/auth/organizations" description="Multi-tenant support" />
+  <Card title="Client Setup" href="/docs/auth/client" description="React hooks and utilities" />
+</Cards>

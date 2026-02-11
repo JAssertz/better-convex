@@ -1,11 +1,11 @@
 ---
-title: Drizzle Comparison
+title: Drizzle
 description: Side-by-side API comparison between Drizzle ORM and Better-Convex with migration guide
 links:
   doc: https://orm.drizzle.team
 ---
 
-This guide compares Drizzle v1 and Better-Convex ORM side-by-side. It focuses on API mapping and the behavioral differences that matter when moving from SQL to Convex.
+This guide compares Drizzle and the ORM side-by-side. It focuses on API mapping and the behavioral differences that matter when moving from SQL to Convex. The mapping is aligned with Drizzle v1 relational APIs.
 
 ## At A Glance
 
@@ -46,7 +46,7 @@ Better‑Convex is designed as a successor to Convex‑Ents, but it follows Driz
 - No ent‑object API (`getX()`, `patch()`, lazy promises); use `ctx.orm.query.*` and mutation builders
 - No edge methods on loaded rows; use relation loading + mutation builders
 
-See [Migrate from native Convex](/docs/db/orm/migrate-from-convex) (for `ctx.db`) or [Migrate from Convex Ents](/docs/db/orm/migrate-from-ents) (for `ctx.table`) for step‑by‑step mappings.
+See [Migrate from native Convex](/docs/migrations/db) (for `ctx.db`) or [Migrate from Convex Ents](/docs/migrations/ents) (for `ctx.table`) for step‑by‑step mappings.
 
 **Concurrency note:** uniqueness is best‑effort within a mutation; concurrent mutations can still race. Prefer `onConflictDoNothing()` / retries or serialize writes per key when strict guarantees are required.
 
@@ -195,7 +195,7 @@ See [Migrate from native Convex](/docs/db/orm/migrate-from-convex) (for `ctx.db`
 
 ## API Mapping
 
-| Drizzle v1 | Better-Convex | Notes |
+| Drizzle | Better-Convex | Notes |
 |---|---|---|
 | `pgTable()` / `mysqlTable()` / `sqliteTable()` | `convexTable()` | Same surface | 
 | `defineRelations()` | `defineRelations()` | Same surface |

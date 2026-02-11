@@ -2,53 +2,7 @@ import { expect, test } from 'vitest';
 import schema from '../schema';
 import { convexTest, runCtx } from '../setup.testing';
 
-function hasStringSlug(row: unknown): row is { slug: string } {
-  if (typeof row !== 'object' || row === null) {
-    return false;
-  }
-
-  const candidate = row as { slug?: unknown };
-  return typeof candidate.slug === 'string';
-}
-
-function hasName(row: unknown): row is { name: string } {
-  if (typeof row !== 'object' || row === null) {
-    return false;
-  }
-
-  const candidate = row as { name?: unknown };
-  return typeof candidate.name === 'string';
-}
-
-function hasStatus(row: unknown): row is { status: string } {
-  if (typeof row !== 'object' || row === null) {
-    return false;
-  }
-
-  const candidate = row as { status?: unknown };
-  return typeof candidate.status === 'string';
-}
-
-function isExpandedFlatMapRow(
-  row: unknown
-): row is { parent?: { name?: string }; child: { text: string } } {
-  if (typeof row !== 'object' || row === null) {
-    return false;
-  }
-
-  const candidate = row as {
-    parent?: { name?: unknown };
-    child?: { text?: unknown };
-  };
-
-  const parentNameIsValid =
-    candidate.parent === undefined ||
-    candidate.parent === null ||
-    typeof candidate.parent.name === 'string';
-  return parentNameIsValid && typeof candidate.child?.text === 'string';
-}
-
-test('findMany pipeline union can interleave indexed streams', async () => {
+test('select chain union can interleave indexed streams', async () => {
   const t = convexTest(schema);
 
   await t.run(async (baseCtx) => {
@@ -76,32 +30,16 @@ test('findMany pipeline union can interleave indexed streams', async () => {
 
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const result = await ctx.orm.query.users.findMany({
-      cursor: null,
-      limit: 10,
-      pipeline: {
-        union: [
-          {
-            index: {
-              name: 'by_name',
-            },
-            where: { status: 'active' },
-          },
-          {
-            index: {
-              name: 'by_name',
-            },
-            where: { status: 'pending' },
-          },
-        ],
-        interleaveBy: ['name'],
-      },
-    } as any);
+    const result = await ctx.orm.query.users
+      .select()
+      .union([
+        { index: { name: 'by_name' }, where: { status: 'active' } },
+        { index: { name: 'by_name' }, where: { status: 'pending' } },
+      ])
+      .interleaveBy(['name'])
+      .paginate({ cursor: null, limit: 10 });
 
-    const namedRows = result.page.filter(hasName);
-
-    expect(namedRows).toHaveLength(4);
-    expect(namedRows.map((u) => u.name)).toEqual([
+    expect(result.page.map((u) => u.name)).toEqual([
       'Aaron',
       'Bella',
       'Chris',
@@ -110,7 +48,7 @@ test('findMany pipeline union can interleave indexed streams', async () => {
   });
 });
 
-test('findMany pipeline map/filterWith runs before pagination and supports maxScan metadata', async () => {
+test('select map/filter runs before pagination and supports maxScan metadata', async () => {
   const t = convexTest(schema);
 
   await t.run(async (baseCtx) => {
@@ -124,40 +62,20 @@ test('findMany pipeline map/filterWith runs before pagination and supports maxSc
 
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const result = await ctx.orm.query.users.findMany({
-      cursor: null,
-      limit: 5,
-      maxScan: 2,
-      pipeline: {
-        stages: [
-          {
-            filterWith: async (row: { name: string }) => row.name.endsWith('0'),
-          },
-          {
-            map: async (row: { name: string }) => ({
-              ...row,
-              slug: row.name.toLowerCase(),
-            }),
-          },
-        ],
-      },
-    } as any);
+    const result = await ctx.orm.query.users
+      .select()
+      .map(async (row) => ({ ...row, slug: row.name.toLowerCase() }))
+      .filter(async (row) => row.slug.endsWith('0'))
+      .paginate({ cursor: null, limit: 5, maxScan: 2 });
 
-    const namedRows = result.page.filter(hasName);
-
-    expect(namedRows).toHaveLength(result.page.length);
-    expect(namedRows.every((u) => u.name.endsWith('0'))).toBe(true);
-    expect(result.page.every(hasStringSlug)).toBe(true);
-    const streamMetadata = result as {
-      pageStatus?: unknown;
-      splitCursor?: unknown;
-    };
-    expect(streamMetadata.pageStatus).toBeDefined();
-    expect(streamMetadata.splitCursor).toBeDefined();
+    expect(result.page.every((u) => u.name.endsWith('0'))).toBe(true);
+    expect(result.page.every((u) => typeof u.slug === 'string')).toBe(true);
+    expect(result.pageStatus).toBeDefined();
+    expect(result.splitCursor).toBeDefined();
   });
 });
 
-test('findMany pipeline distinct supports pagination', async () => {
+test('select distinct supports pagination', async () => {
   const t = convexTest(schema);
 
   await t.run(async (baseCtx) => {
@@ -180,23 +98,17 @@ test('findMany pipeline distinct supports pagination', async () => {
 
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const result = await ctx.orm.query.users.findMany({
-      cursor: null,
-      limit: 10,
-      pipeline: {
-        stages: [{ distinct: { fields: ['status'] } }],
-      },
-      orderBy: { status: 'asc' },
-    } as any);
+    const result = await ctx.orm.query.users
+      .select()
+      .orderBy({ status: 'asc' })
+      .distinct({ fields: ['status'] })
+      .paginate({ cursor: null, limit: 10 });
 
-    const statusRows = result.page.filter(hasStatus);
-
-    expect(statusRows).toHaveLength(2);
-    expect(statusRows.map((u) => u.status)).toEqual(['active', 'pending']);
+    expect(result.page.map((u) => u.status)).toEqual(['active', 'pending']);
   });
 });
 
-test('findMany pipeline flatMap supports relation-targeted expansion (includeParent)', async () => {
+test('select flatMap includeParent=true returns parent/child rows', async () => {
   const t = convexTest(schema);
 
   await t.run(async (baseCtx) => {
@@ -231,36 +143,58 @@ test('findMany pipeline flatMap supports relation-targeted expansion (includePar
 
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
-    const result = await ctx.orm.query.users.findMany({
-      where: { name: 'Alice' },
-      cursor: null,
-      limit: 10,
-      pipeline: {
-        stages: [
-          {
-            flatMap: {
-              relation: 'posts',
-              includeParent: true,
-            },
-          },
-        ],
-      },
-    } as any);
+    const result = await ctx.orm.query.users
+      .select()
+      .where({ name: 'Alice' })
+      .flatMap('posts', { includeParent: true })
+      .paginate({ cursor: null, limit: 10 });
 
-    const expandedRows = result.page.filter(isExpandedFlatMapRow);
-
-    expect(expandedRows).toHaveLength(2);
-    expect(expandedRows.every((row) => row.parent?.name === 'Alice')).toBe(
-      true
-    );
-    expect(expandedRows.map((row) => row.child.text)).toEqual([
+    expect(result.page).toHaveLength(2);
+    expect(result.page.every((row) => row.parent.name === 'Alice')).toBe(true);
+    expect(result.page.map((row) => row.child.text)).toEqual([
       'hello',
       'world',
     ]);
   });
 });
 
-test('findMany cursor mode supports endCursor boundary pinning', async () => {
+test('select flatMap includeParent=false returns child rows', async () => {
+  const t = convexTest(schema);
+
+  await t.run(async (baseCtx) => {
+    const user = await baseCtx.db.insert('users', {
+      name: 'Alice',
+      email: 'alice-child@example.com',
+    });
+
+    await baseCtx.db.insert('posts', {
+      text: 'child-1',
+      numLikes: 1,
+      type: 'note',
+      authorId: user,
+    });
+    await baseCtx.db.insert('posts', {
+      text: 'child-2',
+      numLikes: 2,
+      type: 'note',
+      authorId: user,
+    });
+  });
+
+  await t.run(async (baseCtx) => {
+    const ctx = await runCtx(baseCtx);
+    const result = await ctx.orm.query.users
+      .select()
+      .where({ name: 'Alice' })
+      .flatMap('posts', { includeParent: false })
+      .paginate({ cursor: null, limit: 10 });
+
+    expect(result.page).toHaveLength(2);
+    expect(result.page.map((row) => row.text)).toEqual(['child-1', 'child-2']);
+  });
+});
+
+test('select paginate supports endCursor boundary pinning', async () => {
   const t = convexTest(schema);
 
   await t.run(async (baseCtx) => {
@@ -281,30 +215,29 @@ test('findMany cursor mode supports endCursor boundary pinning', async () => {
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
 
-    const first = await ctx.orm.query.users.findMany({
-      orderBy: { name: 'asc' },
-      cursor: null,
-      limit: 2,
-      pipeline: { stages: [] },
-    } as any);
+    const first = await ctx.orm.query.users
+      .select()
+      .orderBy({ name: 'asc' })
+      // Keep both queries on stream-backed pagination cursors.
+      .map((row) => row)
+      .paginate({ cursor: null, limit: 2 });
 
     await baseCtx.db.insert('users', {
       name: 'AB',
       email: 'ab@boundary.example.com',
     });
 
-    const refreshed = await ctx.orm.query.users.findMany({
-      orderBy: { name: 'asc' },
-      cursor: null,
-      endCursor: first.continueCursor,
-      limit: 2,
-      pipeline: { stages: [] },
-    } as any);
+    const refreshed = await ctx.orm.query.users
+      .select()
+      .orderBy({ name: 'asc' })
+      .map((row) => row)
+      .paginate({
+        cursor: null,
+        endCursor: first.continueCursor,
+        limit: 2,
+      });
 
-    const refreshedNamedRows = refreshed.page.filter(hasName);
-
-    expect(refreshedNamedRows).toHaveLength(3);
-    expect(refreshedNamedRows.map((u) => u.name)).toEqual(['A', 'AB', 'B']);
+    expect(refreshed.page.map((u) => u.name)).toEqual(['A', 'AB', 'B']);
     expect(refreshed.continueCursor).toBe(first.continueCursor);
   });
 });
@@ -334,64 +267,41 @@ test('findMany pageByKey returns page, indexKeys and hasMore', async () => {
         index: 'by_name',
         targetMaxRows: 2,
       },
-    } as any);
+    });
 
     expect(first.page).toHaveLength(2);
-    const keyPage = first as unknown as {
-      indexKeys: unknown[];
-      hasMore: boolean;
-    };
-    expect(keyPage.indexKeys).toHaveLength(2);
-    expect(keyPage.hasMore).toBe(true);
+    expect(first.indexKeys).toHaveLength(2);
+    expect(first.hasMore).toBe(true);
   });
 });
 
-test('findMany advanced pipeline rejects unsupported combinations', async () => {
+test('findMany pipeline mode is removed', async () => {
   const t = convexTest(schema);
 
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
 
-    await expect(() =>
-      ctx.orm.query.posts.findMany({
-        search: { index: 'text_search', query: 'hello' },
-        pipeline: { stages: [] },
-      } as any)
-    ).rejects.toThrow(/pipeline.*search/i);
-
-    await expect(() =>
-      ctx.orm.query.posts.findMany({
-        vectorSearch: {
-          index: 'embedding_vec',
-          vector: Array.from({ length: 1536 }, () => 0),
-          limit: 5,
-        },
-        pipeline: { stages: [] },
-      } as any)
-    ).rejects.toThrow(/pipeline.*vector/i);
-
-    await expect(() =>
-      ctx.orm.query.users.findMany({
-        // @ts-expect-error - endCursor requires cursor pagination.
-        endCursor: '[]',
-        limit: 1,
-      })
-    ).rejects.toThrow(/endCursor.*cursor/i);
-
-    await expect(() =>
+    expect(() =>
       ctx.orm.query.users.findMany({
         cursor: null,
         limit: 1,
-        pipeline: {
-          stages: [
-            {
-              flatMap: {
-                relation: 'doesNotExist',
-              },
-            },
-          ],
-        },
+        // Runtime-only check for legacy callers
+        pipeline: { stages: [] },
       } as any)
-    ).rejects.toThrow(/relation/i);
+    ).toThrow(/findmany\(\{ pipeline \}\) is removed/i);
+
+    expect(() =>
+      ctx.orm.query.users.findFirst({
+        // Runtime-only check for legacy callers
+        pipeline: { stages: [] },
+      } as any)
+    ).toThrow(/findmany\(\{ pipeline \}\) is removed/i);
+
+    expect(() =>
+      ctx.orm.query.users.findFirstOrThrow({
+        // Runtime-only check for legacy callers
+        pipeline: { stages: [] },
+      } as any)
+    ).toThrow(/findmany\(\{ pipeline \}\) is removed/i);
   });
 });

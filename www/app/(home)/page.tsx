@@ -1,6 +1,6 @@
 'use client';
 
-import { Code2, Globe, Lock, Radio, Server, Shield } from 'lucide-react';
+import { Code2, Database, Globe, Lock, Server, Shield } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -8,15 +8,15 @@ const features = [
   {
     icon: Code2,
     title: 'cRPC',
-    description: 'tRPC, ported to Convex. AI-ready.',
+    description: 'tRPC, ported to Convex. Real-time, AI-ready.',
     color: 'bg-indigo-500/10 text-indigo-500',
   },
   {
-    icon: Radio,
-    title: 'Real-time',
+    icon: Database,
+    title: 'ORM',
     description:
-      'WebSocket subscriptions flow directly into TanStack Query cache. No extra setup.',
-    color: 'bg-amber-500/10 text-amber-500',
+      'Drizzle v1-style relational queries. findMany, with, where, orderBy, cursor pagination.',
+    color: 'bg-emerald-500/10 text-emerald-500',
   },
   {
     icon: Shield,
@@ -273,6 +273,15 @@ function Hero() {
         Best-in-class stack
       </h2>
       <p className="mt-6 max-w-2xl text-fd-muted-foreground text-lg md:text-xl">
+        <a
+          className="font-medium text-fd-foreground underline decoration-fd-muted-foreground/50 decoration-dashed underline-offset-2 hover:decoration-fd-foreground"
+          href="https://orm.drizzle.team"
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Drizzle
+        </a>
+        {' + '}
         <a
           className="font-medium text-fd-foreground underline decoration-fd-muted-foreground/50 decoration-dashed underline-offset-2 hover:decoration-fd-foreground"
           href="https://trpc.io"

@@ -1,5 +1,5 @@
 ---
-title: Indexes & Constraints
+title: Indexes
 description: Drizzle-style indexes and constraints, enforced at runtime in Better-Convex
 ---
 
@@ -10,7 +10,7 @@ In this guide, we'll learn how to define indexes and constraints for your tables
 Better-Convex mirrors Drizzle's schema API where it makes sense, but enforces constraints **at runtime** (in ORM mutations), not inside a SQL database.
 
 <Callout icon={<AlertTriangle />}>
-**Important:** Constraints are enforced **only** by Better-Convex ORM mutations (`insert/update/delete`). Direct `ctx.db` writes bypass them.
+**Important:** Constraints are enforced **only** by ORM mutations (`insert/update/delete`). Direct `ctx.db` writes bypass them.
 </Callout>
 
 ## Constraints

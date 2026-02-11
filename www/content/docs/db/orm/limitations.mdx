@@ -1,11 +1,11 @@
 ---
-title: Limitations & Performance
-description: Understand Better-Convex ORM limitations, workarounds, and performance characteristics
+title: Limitations
+description: Understand ORM limitations, workarounds, and performance characteristics
 ---
 
 import { AlertTriangle } from "lucide-react"
 
-Better-Convex mirrors Drizzle v1’s relational query builder on top of Convex’s document database. That means a few SQL-only features do not apply, and some features are implemented post-fetch for API parity.
+Better-Convex mirrors Drizzle’s relational query builder on top of Convex’s document database. That means a few SQL-only features do not apply, and some features are implemented post-fetch for API parity.
 
 ## Not Available In Convex
 
@@ -99,7 +99,7 @@ const posts = convexTable(
 
 ## Constraints And Defaults
 
-- Unique, foreign keys, and `check()` constraints are enforced only through Better‑Convex ORM mutations
+- Unique, foreign keys, and `check()` constraints are enforced only through ORM mutations
 - Foreign key actions require an index on the referencing columns
 - Relation loading requires indexes on relation fields (missing indexes throw unless `allowFullScan`)
 - Relation loading fail-fasts when unique relation lookup keys exceed `defaults.relationFanOutMaxKeys` (default `1000`) unless `allowFullScan`
@@ -123,7 +123,7 @@ const posts = convexTable(
 - Async execution is incompatible with resolved scheduled delete mode (`.scheduled(...)` or table-level `deletion('scheduled')`)
 - Paged update/delete currently does not support multi-probe filter plans (`inArray`, some `OR`, complement ranges)
 - Check constraints follow SQL-like NULL semantics: the check fails only when the expression is `false` (and passes on `unknown`)
-- Defaults are applied only by Better‑Convex ORM inserts/updates (`.default(...)`, `$defaultFn(...)`, `$onUpdateFn(...)`)
+- Defaults are applied only by ORM inserts/updates (`.default(...)`, `$defaultFn(...)`, `$onUpdateFn(...)`)
 - Direct `ctx.db` writes bypass all ORM enforcement
 
 **Default policy**
@@ -143,7 +143,7 @@ Recommended patterns:
 
 ## Soft & Scheduled Deletes
 
-- Soft/scheduled deletes are **optional helpers** and not part of Drizzle v1
+- Soft/scheduled deletes are **optional helpers** and not part of Drizzle
 - Soft deletes require a `deletionTime` field in your table
 - Table-level defaults are supported via `deletion('hard'|'soft'|'scheduled', options?)` in `convexTable(...)` extra config
 - Per-query delete mode methods (`.hard()`, `.soft()`, `.scheduled(...)`) override table defaults

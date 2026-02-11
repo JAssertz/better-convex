@@ -38,6 +38,7 @@
 |-----------|-------|---------|------------|
 | 2026-02-08 | `ERR_REQUIRE_ESM` from `dist/cli.cjs` requiring `execa` | 1 | Switched CLI build to ESM (`dist/cli.mjs`), updated bin + watcher path, ran `bun install` to refresh workspace bin link |
 | 2026-02-08 | `node:fs` has no named export `globSync` (codegen) | 2 | Replaced glob usage with a recursive directory walker |
+| 2026-02-10 | Convex deploy failed while analyzing modules: `Multiple relations found from "projects" to "user"` (followed by many-to-many inverse + circular dependency errors once disambiguated) | 1 | Added relation aliases for disambiguation, prevented many-to-many inverse pairing via distinct aliases, removed self-referencing `todoComments` relations; verified ORM boot |
 
 ## 5-Question Reboot Check
 | Question | Answer |
@@ -59,3 +60,39 @@
   - Fixed Better Convex CLI/codegen regressions so `bun --cwd example codegen` works:
     - CLI build moved from CJS to ESM to support `execa` (ESM-only)
     - Removed invalid `globSync` import from `node:fs` in codegen.
+
+## Session: 2026-02-09
+
+### Phase 6: Verification + Gap Fixes (Follow-up)
+- **Status:** complete
+- Found remaining `ctx.db.get(...)` usage in `example/convex/lib/auth/auth-helpers.ts`.
+- Replaced those reads with ORM queries:
+  - `ctx.orm.query.user.findFirst({ where: { _id: { eq: userId } } })`
+  - `ctx.orm.query.organization.findFirst({ where: { _id: { eq: orgId } } })`
+- Re-ran sweep + `typecheck` + `lint` + `codegen`.
+
+## Test Results (2026-02-09)
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Sweep | `rg -n "\\bctx\\.db\\b|\\bctx\\.table\\(|convex-ents" example/` | No matches | No matches | pass |
+| Typecheck | `bun --cwd example typecheck` | Pass | Pass | pass |
+| Lint | `bun --cwd example lint` | Pass | Pass | pass |
+| Codegen | `bun --cwd example codegen` | Pass | Pass | pass |
+
+## Session: 2026-02-10
+
+### Deploy Push Fix (Schema Relations)
+- **Status:** complete
+- Actions taken:
+  - Fixed relation inverse auto-detection ambiguity for `projects` <-> `user` by adding aliases on the owner relation pair.
+  - Prevented invalid inverse pairing for many-to-many relations (`projects.members`, `todos.tags`) by using non-matching aliases.
+  - Removed unsupported self-referencing `todoComments` relations (circular dependency detection).
+  - Verified: ORM boots, `typecheck`, `lint`, and `codegen` are green.
+
+## Test Results (2026-02-10)
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| ORM boot (import) | `bun -e "import('./example/convex/lib/orm.ts')"` | No throw | No throw | pass |
+| Typecheck | `bun --cwd example typecheck` | Pass | Pass | pass |
+| Lint | `bun --cwd example lint` | Pass | Pass | pass |
+| Codegen | `bun --cwd example codegen` | Pass | Pass | pass |

@@ -1716,7 +1716,9 @@ export class GelRelationalQuery<
         continue;
       }
       if ('map' in stage && typeof stage.map === 'function') {
-        streamQuery = streamQuery.map(async (row: any) => await stage.map(row));
+        streamQuery = streamQuery.map(
+          async (row: any) => (await stage.map(row)) as any
+        );
         continue;
       }
       if ('distinct' in stage) {
@@ -1745,6 +1747,7 @@ export class GelRelationalQuery<
     const pipeline = config.pipeline as
       | FindManyPipelineConfig<TSchema, TTableConfig>
       | undefined;
+    const allowPipelineFromSelect = config.__allowPipelineFromSelect === true;
     const pageByKey = config.pageByKey as
       | {
           index?: string;
@@ -1806,6 +1809,12 @@ export class GelRelationalQuery<
       );
     }
 
+    if (pipeline && !allowPipelineFromSelect) {
+      throw new Error(
+        'findMany({ pipeline }) is removed; use db.query.<table>.select() chain instead'
+      );
+    }
+
     if (pipeline) {
       if (searchConfig) {
         throw new Error(
@@ -1820,6 +1829,19 @@ export class GelRelationalQuery<
       if (config.offset !== undefined) {
         throw new Error(
           'pipeline cannot be combined with offset in findMany().'
+        );
+      }
+      if (config.with !== undefined) {
+        throw new Error('pipeline cannot be combined with with in findMany().');
+      }
+      if (config.extras !== undefined) {
+        throw new Error(
+          'pipeline cannot be combined with extras in findMany().'
+        );
+      }
+      if (config.columns !== undefined) {
+        throw new Error(
+          'pipeline cannot be combined with columns in findMany().'
         );
       }
     }

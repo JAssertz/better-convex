@@ -108,6 +108,8 @@ export {
 } from './constraints';
 export type {
   CreateOrmOptions,
+  GenericOrm,
+  GenericOrmCtx,
   OrmApiResult,
   OrmClientBase,
   OrmClientWithApi,

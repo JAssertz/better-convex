@@ -10,7 +10,7 @@ Deep audit of `packages/better-convex/src/orm` (~16k LOC), 212 runtime tests, 18
 
 ## Ranked Recommendations
 
-### TIER 1: Breaking — Must Fix Before Stable
+### TIER 1: Breaking - Must Fix Before Stable
 
 #### 2. [BREAKING] Unbounded `.collect()` in Update/Delete
 
@@ -71,7 +71,7 @@ Calling `db.update(table).set({...})` without `.where()` requires `allowFullScan
 
 ---
 
-### TIER 2: Performance — Fix Before or Shortly After Stable
+### TIER 2: Performance - Fix Before or Shortly After Stable
 
 #### 7. [PERF] Relation Loading N+1 Pattern
 
@@ -133,14 +133,14 @@ Negation operators can never use indexes (Convex doesn't support NOT index range
 
 ---
 
-### TIER 3: Parity — Convex Native Gaps
+### TIER 3: Parity - Convex Native Gaps
 
 #### 11. [PARITY] Vector Search Query API
 
 **Severity**: High
 **Gap**: Schema supports `vectorIndex()` definitions but no query builder for `db.query.table.findMany({ vectorSearch: {...} })`.
 
-Convex native: `ctx.vectorSearch(table, indexName, { vector, limit, filter })` — returns sorted by similarity.
+Convex native: `ctx.vectorSearch(table, indexName, { vector, limit, filter })` - returns sorted by similarity.
 
 **Proposed**: Add to findMany config:
 
@@ -217,7 +217,7 @@ This is the largest Convex parity gap on the read path.
 
 ### TIER 5: convex-helpers Fork Decisions
 
-#### 18. [FORK] stream.ts — Already Forked, Keep Internal
+#### 18. [FORK] stream.ts - Already Forked, Keep Internal
 
 **Status**: Already forked into `packages/better-convex/src/orm/stream.ts`.
 **LOC**: 1,888 (convex-helpers) → adapted in ORM.
@@ -225,14 +225,14 @@ This is the largest Convex parity gap on the read path.
 
 ---
 
-#### 19. [FORK] pagination.ts — Already Integrated
+#### 19. [FORK] pagination.ts - Already Integrated
 
 **Status**: ORM has `getPage()` and cursor pagination built-in.
 **Decision**: **KEEP INTERNAL**. ORM's `.paginate()` supersedes.
 
 ---
 
-#### 20. [IGNORE] relationships.ts — ORM Supersedes
+#### 20. [IGNORE] relationships.ts - ORM Supersedes
 
 **LOC**: 547
 **Assessment**: `getManyFrom`, `getOneFrom`, `getManyVia` are exactly what ORM's `.with()` does. ORM's typed relation loading is strictly more powerful.
@@ -240,7 +240,7 @@ This is the largest Convex parity gap on the read path.
 
 ---
 
-#### 21. [IGNORE] rowLevelSecurity.ts — ORM Has Own RLS
+#### 21. [IGNORE] rowLevelSecurity.ts - ORM Has Own RLS
 
 **LOC**: 430
 **Assessment**: convex-helpers RLS wraps database reader/writer. ORM has its own RLS system (`rls/` directory) integrated into query/mutation execution.
@@ -248,7 +248,7 @@ This is the largest Convex parity gap on the read path.
 
 ---
 
-#### 22. [IGNORE] customFunctions.ts — Orthogonal
+#### 22. [IGNORE] customFunctions.ts - Orthogonal
 
 **LOC**: 667
 **Assessment**: Middleware pattern for wrapping query/mutation/action. Useful for users but not ORM-core.
@@ -256,7 +256,7 @@ This is the largest Convex parity gap on the read path.
 
 ---
 
-#### 23. [IGNORE] filter.ts — ORM Where Clause Is Superior
+#### 23. [IGNORE] filter.ts - ORM Where Clause Is Superior
 
 **LOC**: 198
 **Assessment**: Post-pagination async filter. ORM's WhereClauseCompiler is index-aware and more powerful.
@@ -264,7 +264,7 @@ This is the largest Convex parity gap on the read path.
 
 ---
 
-#### 24. [IGNORE] triggers.ts — Application Layer
+#### 24. [IGNORE] triggers.ts - Application Layer
 
 **LOC**: 508
 **Assessment**: DB write callbacks. Application concern, not query layer.
@@ -272,7 +272,7 @@ This is the largest Convex parity gap on the read path.
 
 ---
 
-#### 25. [IGNORE] crud.ts — ORM Supersedes
+#### 25. [IGNORE] crud.ts - ORM Supersedes
 
 **LOC**: 180
 **Assessment**: Basic CRUD generators. ORM is the successor.
@@ -280,7 +280,7 @@ This is the largest Convex parity gap on the read path.
 
 ---
 
-#### 26. [IGNORE] validators.ts — Recommend as Peer
+#### 26. [IGNORE] validators.ts - Recommend as Peer
 
 **LOC**: 1,047
 **Assessment**: `partial()`, `pick()`, `omit()` utilities. Useful but not ORM-core.
@@ -307,7 +307,7 @@ All either deprecated (use components), orthogonal to ORM, or package-level conc
 | Operation                   |  Index Required   |    Can Full Scan    | Silent Truncation | Notes                |
 | --------------------------- | :---------------: | :-----------------: | :---------------: | -------------------- |
 | `findMany`                  |    Recommended    | Yes (strict warns)  |  Yes (1000 cap)   | Use limit/paginate   |
-| `findFirst`                 |    Recommended    | Yes (strict warns)  |   No (limit 1)    | —                    |
+| `findFirst`                 |    Recommended    | Yes (strict warns)  |   No (limit 1)    | - |
 | `update().where()`          |    Recommended    | Yes (allowFullScan) |        No         | .collect() unbounded |
 | `delete().where()`          |    Recommended    | Yes (allowFullScan) |        No         | .collect() unbounded |
 | `with: { relation: true }`  | Required (strict) | Yes (allowFullScan) |        No         | N+1 per parent       |

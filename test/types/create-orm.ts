@@ -1,6 +1,8 @@
 import {
   createOrm,
   defineRelations,
+  type GenericOrm,
+  type GenericOrmCtx,
   type OrmReader,
   type OrmWriter,
 } from 'better-convex/orm';
@@ -35,6 +37,35 @@ const db = orm.db(mockDb);
   // @ts-expect-error - insert is not available on a reader db
   _reader.insert;
 }
+
+type ReaderCtx = { db: GenericDatabaseReader<any> };
+type WriterCtx = { db: GenericDatabaseWriter<any> };
+type ReaderOrm = GenericOrm<ReaderCtx, typeof schemaConfig>;
+type WriterOrm = GenericOrm<WriterCtx, typeof schemaConfig>;
+type ReaderOrWriterOrm = GenericOrm<ReaderCtx | WriterCtx, typeof schemaConfig>;
+type ReaderWithOrmCtx = GenericOrmCtx<ReaderCtx, typeof schemaConfig>;
+type WriterWithOrmCtx = GenericOrmCtx<WriterCtx, typeof schemaConfig>;
+type ReaderOrWriterWithOrmCtx = GenericOrmCtx<
+  ReaderCtx | WriterCtx,
+  typeof schemaConfig
+>;
+
+Expect<Equal<ReaderOrm, OrmReader<typeof schemaConfig>>>;
+Expect<Equal<WriterOrm, OrmWriter<typeof schemaConfig>>>;
+Expect<
+  Equal<
+    ReaderOrWriterOrm,
+    OrmReader<typeof schemaConfig> | OrmWriter<typeof schemaConfig>
+  >
+>;
+Expect<Equal<ReaderWithOrmCtx['orm'], OrmReader<typeof schemaConfig>>>;
+Expect<Equal<WriterWithOrmCtx['orm'], OrmWriter<typeof schemaConfig>>>;
+Expect<
+  Equal<
+    ReaderOrWriterWithOrmCtx['orm'],
+    OrmReader<typeof schemaConfig> | OrmWriter<typeof schemaConfig>
+  >
+>;
 
 // ORM db intentionally does NOT expose raw Convex db methods. It only exposes:
 // - `query.*` builders

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "version": "1.0.0-m6",
-  "description": "Better-Convex ORM API Catalog (M1-M6) - Schema definition with column builders, relations, query operations, filtering, and mutations",
+  "description": "ORM API Catalog (M1-M6) - Schema definition with column builders, relations, query operations, filtering, and mutations",
   "lastUpdated": "2026-02-02",
   "status": "Implemented: schema with column builders, relations definition, queries, filtering, mutations. Coming Phase 4: relation loading (with:)",
 

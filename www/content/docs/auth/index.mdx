@@ -29,7 +29,7 @@ Let's understand the key concepts.
 | Approach | Schema Location | Database Access |
 |----------|-----------------|-----------------|
 | Component (`@convex-dev/better-auth`) | Component schema | Via `ctx.runQuery`/`ctx.runMutation` |
-| **Local** (`better-convex/auth`) | Your app schema | Better-Convex ORM (`ctx.orm`) |
+| **Local** (`better-convex/auth`) | Your app schema | ORM (`ctx.orm`) |
 
 better-convex uses the **local approach**:
 - Auth tables live in your app schema
@@ -323,7 +323,7 @@ When you use `useCRPC().posts.list.useQuery()` in client components:
 **Key difference from REST APIs:** REST queries fire immediately and validate auth inline. Convex WebSocket queries are **blocked until the auth handshake completes**. With Static JWKS, this handshake is instant. With Dynamic JWKS, it adds 100-400ms blocking time on page load.
 </Callout>
 
-That's the complete authentication flow. You now understand how JWT validation (Step 1) and session lookup (Step 2) work together—and why revoking a session immediately invalidates access, even with a valid JWT.
+That's the complete authentication flow. You now understand how JWT validation (Step 1) and session lookup (Step 2) work together - and why revoking a session immediately invalidates access, even with a valid JWT.
 
 ## Next Steps
 

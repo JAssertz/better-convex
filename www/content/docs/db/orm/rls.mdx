@@ -1,6 +1,6 @@
 ---
-title: Row-Level Security
-description: Drizzle-style rlsPolicy rules enforced at runtime for Better-Convex ORM
+title: RLS
+description: Drizzle-style rlsPolicy rules enforced at runtime for the ORM
 ---
 
 import { InfoIcon, AlertTriangle } from "lucide-react"
@@ -155,7 +155,7 @@ const ormDb = orm.db(ctx, {
 
 ## Drizzle Differences
 
-Better-Convex RLS is inspired by Drizzle v1 but runs differently since Convex is not a SQL database. Here are the key distinctions to keep in mind.
+Better-Convex RLS is inspired by Drizzle but runs differently since Convex is not a SQL database. Here are the key distinctions to keep in mind.
 
 Policies are enforced at runtime in your application layer, not inside a database engine. This means `ctx.db` (raw Convex access) always bypasses RLS -- only `ctx.orm` enforces your rules.
 

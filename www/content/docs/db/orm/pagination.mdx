@@ -1,6 +1,6 @@
 ---
 title: Pagination
-description: Offset, cursor, pipeline, and key-based pagination in Better-Convex ORM
+description: Offset, cursor, composed, and key-based pagination in the ORM
 ---
 
 import { AlertTriangle, InfoIcon } from "lucide-react"
@@ -8,7 +8,7 @@ import { AlertTriangle, InfoIcon } from "lucide-react"
 In this guide, we'll choose the right pagination mode for your query shape and data size.
 We'll start with a quick comparison, then walk through each mode with practical examples.
 
-Better-Convex ORM exposes pagination through `findMany` only.
+The ORM exposes pagination through `findMany` only.
 
 ## Quick Recommendation
 
@@ -16,7 +16,7 @@ If you just want the default that scales:
 
 1. Start with cursor pagination: `findMany({ cursor, limit })`.
 2. Add `endCursor` when you need boundary pinning during reactive refreshes.
-3. Use `pipeline` for advanced pre-pagination transforms (union/interleave/filter/map/flatMap/distinct).
+3. Use `select()` composition for advanced pre-pagination transforms (union/interleave/filter/map/flatMap/distinct).
 4. Use `pageByKey` when you need deterministic key boundaries.
 5. Use `offset` only for shallow page-number UIs.
 
@@ -26,11 +26,11 @@ If you just want the default that scales:
 |---|---|---|---|---|---|
 | Offset | `findMany({ offset, limit })` | Page-number UIs, small datasets | No | No | Simple, but slower at large offsets |
 | Cursor | `findMany({ cursor, limit })` | Infinite scroll and large lists | Yes | Yes (cursor mode only) | Efficient and stable when order/index are aligned |
-| Pipeline | `findMany({ cursor, limit, pipeline })` | Advanced stream-like composition before pagination | Yes | Yes | Supports union/interleave/map/filterWith/flatMap/distinct |
+| Composition | `select().map/filter/flatMap/union/interleaveBy(...).paginate({ cursor, limit })` | Advanced stream-like composition before pagination | Yes | Yes | Supports union/interleave/map/filter/flatMap/distinct |
 | Key-based | `findMany({ pageByKey })` | Deterministic key boundaries and adjacency control | N/A | N/A | Returns `{ page, indexKeys, hasMore }` |
 
 <Callout icon={<InfoIcon />}>
-There is no public `db.stream()` API anymore. Advanced stream behavior is available through `findMany({ pipeline })`.
+There is no public `db.stream()` API anymore. Advanced stream behavior is available through the `select()` composition chain.
 </Callout>
 
 ## Offset Pagination
@@ -123,83 +123,68 @@ If cursor pagination needs a scan-fallback plan and:
 - `strict: true`: missing `maxScan` throws.
 - `strict: false`: missing `maxScan` warns and runs uncapped.
 
-## Pipeline Pagination (Advanced)
+## Composition Pagination (Advanced)
 
-Pipeline mode is the public way to do stream-style composition before pagination.
+`select()` composition is the public way to do stream-style transforms before pagination.
 
 ### Union/interleave (merged-stream behavior)
 
-`pipeline.union + interleaveBy` is the `findMany` equivalent of merged streams.
+`select().union(...).interleaveBy(...)` is the merged-stream equivalent.
 
 ```ts showLineNumbers
-const page = await db.query.messages.findMany({
-  cursor: null,
-  limit: 20,
-  pipeline: {
-    union: [
-      {
-        index: {
-          name: 'by_from_to',
-          range: (q) => q.eq('from', me).eq('to', them),
-        },
+const page = await db.query.messages
+  .select()
+  .union([
+    {
+      index: {
+        name: 'by_from_to',
+        range: (q) => q.eq('from', me).eq('to', them),
       },
-      {
-        index: {
-          name: 'by_from_to',
-          range: (q) => q.eq('from', them).eq('to', me),
-        },
+    },
+    {
+      index: {
+        name: 'by_from_to',
+        range: (q) => q.eq('from', them).eq('to', me),
       },
-    ],
-    interleaveBy: ['_creationTime', '_id'],
-  },
-});
+    },
+  ])
+  .interleaveBy(['_creationTime', '_id'])
+  .paginate({ cursor: null, limit: 20 });
 ```
 
 ### Pre-pagination transforms
 
-You can apply transforms in order with `stages`:
+You can apply transforms in order by chaining:
 
 ```ts showLineNumbers
-const page = await db.query.messages.findMany({
-  cursor: null,
-  limit: 20,
-  maxScan: 500,
-  pipeline: {
-    stages: [
-      { filterWith: async (m) => !m.deletedAt },
-      { map: async (m) => ({ ...m, preview: m.body.slice(0, 120) }) },
-      { distinct: { fields: ['channelId'] } },
-    ],
-  },
-});
+const page = await db.query.messages
+  .select()
+  .filter(async (m) => !m.deletedAt)
+  .map(async (m) => ({ ...m, preview: m.body.slice(0, 120) }))
+  .distinct({ fields: ['channelId'] })
+  .paginate({ cursor: null, limit: 20, maxScan: 500 });
 ```
 
 ### Relation-targeted `flatMap`
 
 ```ts showLineNumbers
-const page = await db.query.users.findMany({
-  cursor: null,
-  limit: 20,
-  pipeline: {
-    stages: [
-      {
-        flatMap: {
-          relation: 'posts',
-          includeParent: true,
-        },
-      },
-    ],
-  },
-});
+const page = await db.query.users
+  .select()
+  .flatMap('posts', { includeParent: true })
+  .paginate({ cursor: null, limit: 20 });
 ```
 
-### Pipeline limitations (v1)
+### Composition limitations
 
 | Combination | Status |
 |---|---|
-| `pipeline + search` | Not supported |
-| `pipeline + vectorSearch` | Not supported |
-| `pipeline + offset` | Not supported |
+| Composition entrypoint | `select()` chain only |
+| `select() + search` | Not supported |
+| `select() + vectorSearch` | Not supported |
+| `select() + offset` | Not supported |
+| `select() + with` | Not supported |
+| `select() + extras` | Not supported |
+| `select() + columns` | Not supported |
 
 ## Key-Based Paging (`pageByKey`)
 
@@ -250,9 +235,9 @@ If you previously used stream helpers directly, map them to `findMany` like this
 
 | Previous pattern | New pattern |
 |---|---|
-| `db.stream().query(...).filterWith(...).paginate(...)` | `findMany({ cursor, limit, pipeline: { stages: [{ filterWith }] } })` |
-| `mergedStream([...], fields)` | `findMany({ cursor, limit, pipeline: { union: [...], interleaveBy: fields } })` |
-| manual `map`/`flatMap` stream chains | `findMany({ pipeline: { stages: [{ map }, { flatMap }] } })` |
+| `db.stream().query(...).filterWith(...).paginate(...)` | `select().filter(...).paginate({ cursor, limit })` |
+| `mergedStream([...], fields)` | `select().union([...]).interleaveBy(fields).paginate({ cursor, limit })` |
+| manual `map`/`flatMap` stream chains | `select().map(...).flatMap(...).paginate({ cursor, limit })` |
 | `getPage(...)` key-boundary paging | `findMany({ pageByKey: { ... } })` |
 | `paginator(...).query(...).paginate(...)` | `findMany({ cursor, limit, ... })` |
 

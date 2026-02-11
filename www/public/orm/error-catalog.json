@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Better-Convex ORM Error Catalog",
-  "description": "Common TypeScript errors and their solutions for Better-Convex ORM",
+  "title": "ORM Error Catalog",
+  "description": "Common TypeScript errors and their solutions for the ORM",
   "version": "1.0.0-m6",
   "lastUpdated": "2026-02-02",
   "errors": {

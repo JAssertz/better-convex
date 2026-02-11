@@ -20,9 +20,9 @@ dist
 /out-tsc
 **/build
 
-findings*.md
-progress*.md
-task_plan*.md
+findings*
+progress*
+task_plan*
 
 # Runtime data
 pids

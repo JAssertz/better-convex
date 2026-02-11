@@ -68,39 +68,96 @@ export type FindManyUnionSource<
   where?: RelationsFilter<TTableConfig, any> | WherePredicate<TTableConfig>;
 };
 
+type PipelineRelationName<TTableConfig extends TableRelationalConfig> = Extract<
+  keyof TTableConfig['relations'],
+  string
+>;
+
+export type FindManyPipelineFlatMapConfig<
+  TTableConfig extends TableRelationalConfig = TableRelationalConfig,
+  TRelationName extends
+    PipelineRelationName<TTableConfig> = PipelineRelationName<TTableConfig>,
+> = {
+  relation: TRelationName;
+  where?: unknown;
+  orderBy?: unknown;
+  limit?: number;
+  includeParent?: boolean;
+};
+
 export type FindManyPipelineFlatMapStage<
   TTableConfig extends TableRelationalConfig = TableRelationalConfig,
 > = {
-  flatMap: {
-    relation: Extract<keyof TTableConfig['relations'], string>;
-    where?: unknown;
-    orderBy?: unknown;
-    limit?: number;
-    includeParent?: boolean;
-  };
+  flatMap: FindManyPipelineFlatMapConfig<TTableConfig>;
 };
 
-export type FindManyPipelineStage<
+export type FindManyPipelineFilterWithStage<TRow = unknown> = {
+  filterWith: (row: TRow) => boolean | Promise<boolean>;
+};
+
+export type FindManyPipelineMapStage<TRow = unknown, TOutput = unknown> = {
+  map: (row: TRow) => TOutput | null | Promise<TOutput | null>;
+};
+
+export type FindManyPipelineDistinctStage = {
+  distinct: { fields: string[] };
+};
+
+export type FindManyPipelineStageForInput<
+  TSchema extends TablesRelationalConfig = TablesRelationalConfig,
   TTableConfig extends TableRelationalConfig = TableRelationalConfig,
+  TRow = BuildQueryResult<TSchema, TTableConfig, true>,
 > =
-  | {
-      filterWith: (row: any) => boolean | Promise<boolean>;
-    }
-  | {
-      map: (row: any) => any | null | Promise<any | null>;
-    }
-  | {
-      distinct: { fields: string[] };
-    }
+  | FindManyPipelineFilterWithStage<TRow>
+  | FindManyPipelineMapStage<TRow>
+  | FindManyPipelineDistinctStage
   | FindManyPipelineFlatMapStage<TTableConfig>;
 
-export type FindManyPipelineConfig<
-  _TSchema extends TablesRelationalConfig = TablesRelationalConfig,
+export type FindManyPipelineStage<
+  TSchema extends TablesRelationalConfig = TablesRelationalConfig,
   TTableConfig extends TableRelationalConfig = TableRelationalConfig,
+  TRow = BuildQueryResult<TSchema, TTableConfig, true>,
+> = FindManyPipelineStageForInput<TSchema, TTableConfig, TRow>;
+
+export type ValidatedFindManyPipelineStages<
+  TSchema extends TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig,
+  TCurrentRow,
+  TStages extends readonly unknown[],
+> = number extends TStages['length']
+  ? readonly FindManyPipelineStageForInput<TSchema, TTableConfig, TCurrentRow>[]
+  : TStages extends readonly []
+    ? readonly []
+    : TStages extends readonly [infer TStage, ...infer TRest]
+      ? TStage extends FindManyPipelineStageForInput<
+          TSchema,
+          TTableConfig,
+          TCurrentRow
+        >
+        ? readonly [
+            TStage,
+            ...ValidatedFindManyPipelineStages<
+              TSchema,
+              TTableConfig,
+              ApplyPipelineStage<TCurrentRow, TStage, TSchema, TTableConfig>,
+              Extract<TRest, readonly unknown[]>
+            >,
+          ]
+        : never
+      : never;
+
+export type FindManyPipelineConfig<
+  TSchema extends TablesRelationalConfig = TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig = TableRelationalConfig,
+  TStages extends readonly unknown[] = readonly FindManyPipelineStageForInput<
+    TSchema,
+    TTableConfig,
+    BuildQueryResult<TSchema, TTableConfig, true>
+  >[],
 > = {
   union?: FindManyUnionSource<TTableConfig>[];
   interleaveBy?: string[];
-  stages?: FindManyPipelineStage<TTableConfig>[];
+  stages?: TStages;
 };
 
 export type FindManyPageByKeyConfig = {
@@ -1044,6 +1101,91 @@ export type FindTableByDBName<
     ? K
     : never]: TSchema[K];
 }>;
+
+type PipelineFlatMapTargetRow<
+  TSchema extends TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig,
+  TRelationName extends PipelineRelationName<TTableConfig>,
+> = TTableConfig['relations'][TRelationName] extends infer TRelation extends
+  Relation<any>
+  ? BuildQueryResult<
+      TSchema,
+      FindTableByDBName<TSchema, TRelation['targetTableName']>,
+      true
+    >
+  : never;
+
+type PipelineFlatMapOutput<
+  TCurrentRow,
+  TFlatMapConfig,
+  TSchema extends TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig,
+> = TFlatMapConfig extends {
+  relation: infer TRelationName extends PipelineRelationName<TTableConfig>;
+}
+  ? TFlatMapConfig extends { includeParent: false }
+    ? PipelineFlatMapTargetRow<TSchema, TTableConfig, TRelationName>
+    : {
+        parent: TCurrentRow;
+        child: PipelineFlatMapTargetRow<TSchema, TTableConfig, TRelationName>;
+      }
+  : never;
+
+export type ApplyPipelineStage<
+  TCurrentRow,
+  TStage,
+  TSchema extends TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig,
+> = TStage extends FindManyPipelineFilterWithStage<any>
+  ? TCurrentRow
+  : TStage extends { map: (...args: any[]) => infer TMapOutput }
+    ? NonNullable<Awaited<TMapOutput>>
+    : TStage extends FindManyPipelineDistinctStage
+      ? TCurrentRow
+      : TStage extends { flatMap: infer TFlatMapConfig }
+        ? PipelineFlatMapOutput<
+            TCurrentRow,
+            TFlatMapConfig,
+            TSchema,
+            TTableConfig
+          >
+        : TCurrentRow;
+
+export type ApplyPipelineStages<
+  TInitialRow,
+  TStages extends readonly unknown[],
+  TSchema extends TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig,
+> = number extends TStages['length']
+  ? TInitialRow
+  : TStages extends readonly [infer TStage, ...infer TRest]
+    ? ApplyPipelineStages<
+        ApplyPipelineStage<TInitialRow, TStage, TSchema, TTableConfig>,
+        Extract<TRest, readonly unknown[]>,
+        TSchema,
+        TTableConfig
+      >
+    : TInitialRow;
+
+export type PipelineOutputRow<
+  TConfig,
+  TSchema extends TablesRelationalConfig,
+  TTableConfig extends TableRelationalConfig,
+> = TConfig extends {
+  pipeline: infer TPipeline extends FindManyPipelineConfig<
+    TSchema,
+    TTableConfig
+  >;
+}
+  ? ApplyPipelineStages<
+      BuildQueryResult<TSchema, TTableConfig, true>,
+      TPipeline extends FindManyPipelineConfig<any, any, infer TStages>
+        ? TStages
+        : readonly [],
+      TSchema,
+      TTableConfig
+    >
+  : BuildQueryResult<TSchema, TTableConfig, true>;
 
 /**
  * Filter object keys to only non-undefined values

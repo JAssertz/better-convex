@@ -1,5 +1,5 @@
 ---
-title: Querying Data
+title: Queries
 description: Query tables with findMany, findFirst, filtering, and relation loading
 ---
 
@@ -61,7 +61,7 @@ const user = await ctx.orm.query.users.findFirstOrThrow({
 
 ## Filtering With `where`
 
-Use object filters (Drizzle v1 style) to narrow results. The shape mirrors Drizzle but is executed in Convex:
+Use object filters (Drizzle style) to narrow results. The shape mirrors Drizzle but is executed in Convex:
 
 ```ts showLineNumbers {2-5}
 // Schema: index('by_role').on(t.role) on users table

@@ -1,6 +1,6 @@
 ---
 title: Relations
-description: Define relationships between tables with Better-Convex ORM
+description: Define relationships between tables with the ORM
 ---
 
 import { InfoIcon, AlertTriangle } from "lucide-react"
@@ -9,7 +9,7 @@ In this guide, we'll learn how to define relationships between tables. You'll ma
 
 ## Overview
 
-Relations in Better-Convex ORM use the same API as Drizzle v1 for **defining** and **loading** relationships. The `with:` option is type-safe, with a few nested constraints noted below.
+Relations in the ORM use the same API as Drizzle for **defining** and **loading** relationships. The `with:` option is type-safe, with a few nested constraints noted below.
 
 Relation loading via `with:` works end-to-end. Nested `with` has a depth limit, and per-relation filters for `many()` relations are applied post-fetch.
 
@@ -510,7 +510,7 @@ export const usersToGroups = convexTable(
 
 ## Relation Loading with `with:`
 
-Better-Convex ORM supports Drizzle-style relation loading. Here's how to eagerly load posts for each user:
+The ORM supports Drizzle-style relation loading. Here's how to eagerly load posts for each user:
 
 ```ts showLineNumbers {3-7}
 const db = ctx.orm;
@@ -531,7 +531,7 @@ const usersWithPosts = await db.query.users.findMany({
 
 ### Column Selection Semantics
 
-`columns` follows Drizzle v1 selection rules. You can include specific columns, exclude them, or select none:
+`columns` follows Drizzle selection rules. You can include specific columns, exclude them, or select none:
 
 ```ts title="convex/queries.ts" showLineNumbers {2,6,10-11}
 const users = await db.query.users.findMany({

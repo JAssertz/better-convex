@@ -31,7 +31,7 @@ Before you know it, the elegant simplicity that drew you to Convex gets buried u
 
 - **tRPC-style API:** A fluent builder pattern for defining procedures with full type inference.
 - **TanStack Query Native:** First-class integration with `useQuery`, `useMutation`, and React Query DevTools.
-- **Real-time by Default:** Queries subscribe to WebSocket updates automatically—no extra setup.
+- **Real-time by Default:** Queries subscribe to WebSocket updates automatically - no extra setup.
 - **End-to-end Type Safety:** From your schema to your React components, everything is typed.
 - **Middleware Chains:** Composable layers for auth, rate limiting, and custom context.
 
@@ -69,7 +69,7 @@ _The auth middleware runs once, adds `user` to context, and every procedure that
 
 ## Real-time First
 
-Convex queries are reactive—when data changes, subscribers get updates. Better Convex preserves this while giving you TanStack Query's API:
+Convex queries are reactive - when data changes, subscribers get updates. Better Convex preserves this while giving you TanStack Query's API:
 
 ```tsx showLineNumbers {1}
 const { data, isPending } = useQuery(crpc.todos.list.queryOptions({}));
@@ -96,7 +96,7 @@ Every procedure receives a `ctx` object containing database access and any data 
 
 ```ts showLineNumbers {7-8}
 // Base context from cRPC setup
-ctx.orm       // Better-Convex ORM (queries + mutations)
+ctx.orm       // ORM (queries + mutations)
 ctx.auth      // Convex auth object
 
 // Added by auth middleware
@@ -125,7 +125,7 @@ _Define the middleware once, use it everywhere. When you need admin-only access,
 
 ## Database Layer
 
-Better Convex uses Better-Convex ORM for Drizzle-style queries, relations, and runtime enforcement.
+Better Convex uses the ORM for Drizzle-style queries, relations, and runtime enforcement.
 
 ### ORM Relations
 

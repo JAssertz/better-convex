@@ -1,5 +1,5 @@
 ---
-title: Column Types
+title: Columns
 description: Better-Convex column builders (Drizzle-style) and their TypeScript types
 ---
 
@@ -60,7 +60,7 @@ type NewPost = InferInsertModel<typeof posts>;
 
 ## Column Hooks (Defaults and Type Overrides)
 
-Better-Convex supports Drizzle v1-style column hooks for common patterns like timestamps and JSON blobs.
+Better-Convex supports Drizzle-style column hooks for common patterns like timestamps and JSON blobs.
 
 Here's how to use `$defaultFn`, `$onUpdateFn`, and `json<T>()` together:
 
@@ -82,7 +82,7 @@ The available hooks are:
 - `$onUpdateFn(fn)` / `$onUpdate(fn)` -- runs on update when the field is not explicitly set (and can also fill missing values on insert)
 
 <Callout icon={<AlertTriangle />}>
-**Important:** These hooks run only through Better-Convex ORM mutations. Direct `ctx.db` writes bypass them.
+**Important:** These hooks run only through ORM mutations. Direct `ctx.db` writes bypass them.
 </Callout>
 
 ## Builder Reference

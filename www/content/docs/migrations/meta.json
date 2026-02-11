@@ -1,0 +1,5 @@
+{
+  "title": "Migrations",
+  "defaultOpen": false,
+  "pages": ["convex", "db", "ents", "auth"]
+}

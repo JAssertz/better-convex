@@ -1,0 +1,691 @@
+---
+title: From DB
+description: A step-by-step migration playbook from ctx.db to the ORM + cRPC
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+This guide shows how to migrate from native Convex database access (`ctx.db`) to the ORM (`ctx.orm`) without losing Convex's strengths.
+
+We'll go step by step, from schema wiring to reads, joins, filtering, pagination, search, vector search, and writes.
+
+The "after" snippets are cRPC-first, but the same ORM calls work in vanilla Convex query/mutation handlers.
+
+<Callout icon={<InfoIcon />}>
+If you're new to cRPC, start with [/docs/server/procedures](/docs/server/procedures).
+</Callout>
+
+## Why migrate now
+
+Native Convex is excellent: explicit index usage, reactive queries, simple transactional writes, and clean JavaScript control flow.
+
+The ORM adds another layer for teams that want safer defaults and more expressive relational reads:
+
+- Drizzle-style query and mutation builders.
+- Relation loading with `with:` instead of manual join assembly.
+- Runtime defaults, constraints, and RLS on ORM writes.
+- Strong type inference across schema, queries, and writes.
+
+You are not giving up raw power. `ctx.db` still exists and stays useful as an escape hatch.
+
+## Migration Checklist
+
+Use this rollout order so migration is predictable and low-risk:
+
+- Define tables and indexes with `convexTable()` for query paths you already use.
+- Define relations with `defineRelations()`.
+- Attach ORM once in context as `ctx.orm`.
+- Migrate read endpoints (`db.get`, `db.query`) first.
+- Migrate relation-heavy endpoints (`manual joins` -> `with:`).
+- Migrate pagination and search/vector endpoints.
+- Migrate write endpoints (`insert/patch/replace/delete` -> ORM builders).
+- Turn on guardrails (defaults, constraints, RLS) where needed.
+- Keep `db.system` / `ctx.db` explicit for system tables and intentional raw paths.
+
+## Step 1: Prepare schema + `ctx.orm` once
+
+We'll start by setting up schema and context once. This keeps every later endpoint change small and mechanical.
+
+### Define tables, indexes, and relations
+
+```ts title="convex/schema.ts" showLineNumbers {3-7,10-14,16-22}
+import { convexTable, defineRelations, defineSchema, text, boolean, integer, id, index } from 'better-convex/orm';
+
+export const users = convexTable('users', {
+  name: text().notNull(),
+  email: text().notNull(),
+  role: text(),
+  age: integer(),
+});
+
+export const posts = convexTable('posts', {
+  title: text().notNull(),
+  content: text().notNull(),
+  published: boolean(),
+  userId: id('users'),
+}, (t) => [index('by_user').on(t.userId)]);
+
+export const relations = defineRelations({ users, posts }, (r) => ({
+  users: { posts: r.many.posts() },
+  posts: {
+    author: r.one.users({ from: r.posts.userId, to: r.users._id }),
+  },
+}));
+
+export default defineSchema({ users, posts });
+```
+
+This mirrors native Convex indexing discipline: index the fields you filter and sort by.
+
+### Attach ORM to context once
+
+```ts title="convex/lib/orm.ts" showLineNumbers {2-3,6-9}
+import type { GenericDatabaseWriter } from 'convex/server';
+import { createOrm } from 'better-convex/orm';
+import { relations } from '../schema';
+
+const orm = createOrm({ schema: relations });
+
+export const withOrm = <Ctx extends { db: GenericDatabaseWriter<any> }>(ctx: Ctx) => {
+  return { ...ctx, orm: orm.db(ctx) };
+};
+```
+
+```ts title="convex/lib/crpc.ts" showLineNumbers {3-4}
+const c = initCRPC
+  .dataModel<DataModel>()
+  .context({
+    query: (ctx) => withOrm(ctx),
+    mutation: (ctx) => withOrm(ctx),
+  })
+  .create({ ... });
+```
+
+Done once, every handler can read through `ctx.orm`.
+
+## Step 2: Migrate core reads
+
+Now we'll migrate the read paths you use every day: single-row lookups, lists, and filtered/sorted queries.
+
+### Read one document (`db.get` -> `findFirst`)
+
+<Compare>
+  <CompareItem title="Before (native Convex `db.get`)">
+    ```ts title="convex/functions/users.ts" showLineNumbers
+    import { query } from './_generated/server';
+    import { v } from 'convex/values';
+
+    export const getById = query({
+      args: { userId: v.id('users') },
+      handler: async (ctx, args) => {
+        return ctx.db.get('users', args.userId);
+      },
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="After (ORM + cRPC)">
+    ```ts title="convex/functions/users.ts" showLineNumbers {2-4,7-11}
+    import { z } from 'zod';
+    import { zid } from 'convex-helpers/server/zod4';
+    import { publicQuery } from '../lib/crpc';
+
+    export const getById = publicQuery
+      .input(z.object({ userId: zid('users') }))
+      .query(async ({ ctx, input }) => {
+        return ctx.orm.query.users.findFirst({ where: { _id: input.userId } });
+      });
+    ```
+  </CompareItem>
+</Compare>
+
+The migration is direct: `_id` equality through `where` is the ORM equivalent of a point lookup.
+
+### List/filter/order (`db.query` -> `findMany`)
+
+<Compare>
+  <CompareItem title="Before (native Convex)">
+    ```ts showLineNumbers {3-5}
+    const posts = await ctx.db
+      .query('posts')
+      .withIndex('by_user', (q) => q.eq('userId', args.userId))
+      .order('desc')
+      .take(20);
+    ```
+  </CompareItem>
+  <CompareItem title="After (ORM)">
+    ```ts showLineNumbers {2-5}
+    const posts = await ctx.orm.query.posts.findMany({
+      where: { userId: input.userId },
+      orderBy: { _creationTime: 'desc' },
+      limit: 20,
+    });
+    ```
+  </CompareItem>
+</Compare>
+
+In native Convex you always name the index with `withIndex(...)`. In ORM, index-backed plans are inferred from `where` + `orderBy` when possible, but the same index design rules still matter.
+
+<Callout icon={<AlertTriangle />}>
+`findMany()` must be explicitly sized: provide `limit`, use cursor pagination (`cursor` + `limit`), set schema `defaultLimit`, or explicitly opt in with `allowFullScan`.
+</Callout>
+
+## Step 3: Replace manual joins with `with:`
+
+Native Convex has no SQL joins, so relation loading means manual multi-query assembly. ORM `with:` removes that plumbing while keeping explicit schema relations.
+
+### `one()` relation (`with: { author: true }`)
+
+<Compare>
+  <CompareItem title="ORM (`with`)">
+    ```ts showLineNumbers {2-7}
+    const posts = await ctx.orm.query.posts.findMany({
+      orderBy: { _creationTime: 'desc' },
+      limit: 20,
+      with: { author: true },
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="Native Convex (manual join)">
+    ```ts showLineNumbers {1,3-7,9-12}
+    const posts = await ctx.db.query('posts').order('desc').take(20);
+
+    const authorIds = [...new Set(posts.map((p) => p.userId))];
+    const authors = await Promise.all(authorIds.map((id) => ctx.db.get('users', id)));
+    const authorById = new Map(authors.filter(Boolean).map((u) => [u._id, u]));
+
+    const postsWithAuthor = posts.map((p) => ({
+      ...p,
+      author: authorById.get(p.userId) ?? null,
+    }));
+    ```
+  </CompareItem>
+</Compare>
+
+The manual pattern works, but `with:` keeps the same outcome with less boilerplate and clearer intent.
+
+### `many()` relation (`with: { posts: { ... } }`)
+
+<Compare>
+  <CompareItem title="ORM">
+    ```ts showLineNumbers {2-8}
+    const users = await ctx.orm.query.users.findMany({
+      limit: 10,
+      with: {
+        posts: { limit: 5, orderBy: { _creationTime: 'desc' } },
+      },
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="Native Convex (indexed query per parent)">
+    ```ts showLineNumbers {1-3,5-13,15-18}
+    // Schema: index('by_user').on(t.userId) on posts
+    const users = await ctx.db.query('users').take(10);
+
+    const postsByUserId = new Map(
+      await Promise.all(
+        users.map(async (u) => [
+          u._id,
+          await ctx.db
+            .query('posts')
+            .withIndex('by_user', (q) => q.eq('userId', u._id))
+            .order('desc')
+            .take(5),
+        ])
+      )
+    );
+
+    const usersWithPosts = users.map((u) => ({
+      ...u,
+      posts: postsByUserId.get(u._id) ?? [],
+    }));
+    ```
+  </CompareItem>
+</Compare>
+
+This is the same data shape. ORM gives you relation loading as a first-class query option.
+
+### Nested many-to-many (join table + payload)
+
+<Compare>
+  <CompareItem title="ORM (nested `with`)">
+    ```ts showLineNumbers {2-10}
+    const usersWithGroups = await ctx.orm.query.users.findMany({
+      limit: 10,
+      with: {
+        memberships: {
+          columns: { role: true, joinedAt: true },
+          with: { group: true },
+        },
+      },
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="Native Convex (manual join hops)">
+    ```ts showLineNumbers {4-12,14-18,20-26}
+    const users = await ctx.db.query('users').take(10);
+
+    const membershipsByUserId = new Map();
+    const allMemberships = [];
+    for (const u of users) {
+      const rows = await ctx.db
+        .query('memberships')
+        .withIndex('by_user', (q) => q.eq('userId', u._id))
+        .collect();
+      membershipsByUserId.set(u._id, rows);
+      allMemberships.push(...rows);
+    }
+
+    const groupIds = [...new Set(allMemberships.map((m) => m.groupId))];
+    const groups = await Promise.all(groupIds.map((id) => ctx.db.get('groups', id)));
+    const groupById = new Map(groups.filter(Boolean).map((g) => [g._id, g]));
+
+    const usersWithGroups = users.map((u) => ({
+      ...u,
+      memberships: (membershipsByUserId.get(u._id) ?? []).map((m) => ({
+        role: m.role,
+        joinedAt: m.joinedAt,
+        group: groupById.get(m.groupId) ?? null,
+      })),
+    }));
+    ```
+  </CompareItem>
+</Compare>
+
+That's the core migration win for relational reads: same result, much less custom join code.
+
+### Relation existence and cross-table filters
+
+ORM can express relation-based filters directly:
+
+```ts showLineNumbers
+await ctx.orm.query.users.findMany({
+  where: { posts: true },
+  limit: 50,
+});
+
+await ctx.orm.query.users.findMany({
+  where: { posts: { published: true } },
+  limit: 50,
+});
+```
+
+Native Convex equivalents are usually:
+
+- Denormalize (`hasPosts`, `postCount`, `hasPublishedPosts`) and index those fields.
+- Or run two-phase queries (query child table, dedupe parent IDs, load parents).
+
+The denormalized path is usually the long-term scalable one.
+
+## Step 4: Filtering and index strategy
+
+Now let's lock how to choose filter modes so migration stays fast at scale.
+
+| Need | Native Convex | ORM |
+|---|---|---|
+| Indexed equality/range filtering | `withIndex("...")` range expression | object `where` (index-compiled when possible) |
+| Complex JS predicate filtering | `.filter(...)` (table/index scan semantics) | predicate `where` + explicit `index: { name, range? }` |
+| Full-text relevance search | `withSearchIndex(...)` | `findMany({ search })` |
+| Vector similarity search | `ctx.vectorSearch(...)` in actions | `findMany({ vectorSearch })` (or native action pattern) |
+
+Here are the guardrails to keep in mind during migration:
+
+- Native Convex requires explicit `withIndex(...)` to force index usage.
+- ORM compiles index plans from `where`/`orderBy` where possible, but still enforces sizing and scan guardrails.
+- Compound indexes follow prefix rules in both worlds: constrain leading index fields before trailing fields.
+- Predicate `where` in ORM must include explicit `index` and should be bounded with `maxScan` in cursor mode.
+
+Example predicate `where` in ORM:
+
+```ts showLineNumbers {3-4}
+const page = await ctx.orm.query.users.findMany({
+  where: (u) => u.email.endsWith('@example.com'),
+  index: { name: 'by_email' },
+  cursor: null,
+  limit: 20,
+  maxScan: 500,
+});
+```
+
+This makes scan behavior explicit instead of accidental.
+
+## Step 5: Pagination migration
+
+Next we'll migrate pagination. The mapping is straightforward: native `paginate` becomes ORM cursor paging.
+
+<Compare>
+  <CompareItem title="Before (`paginate(paginationOpts)`)">
+    ```ts title="convex/functions/posts.ts" showLineNumbers {3-7,11}
+    import { query } from './_generated/server';
+    import { paginationOptsValidator } from 'convex/server';
+
+    export const list = query({
+      args: { paginationOpts: paginationOptsValidator },
+      handler: async (ctx, args) => {
+        return ctx.db.query('posts').order('desc').paginate(args.paginationOpts);
+      },
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="After (`findMany({ cursor, limit })`)">
+    ```ts title="convex/functions/posts.ts" showLineNumbers {2-4,8-12}
+    import { z } from 'zod';
+    import { publicQuery } from '../lib/crpc';
+
+    export const list = publicQuery
+      .input(z.object({ cursor: z.string().nullable() }))
+      .query(async ({ ctx, input }) => {
+        return ctx.orm.query.posts.findMany({
+          orderBy: { _creationTime: 'desc' },
+          cursor: input.cursor,
+          limit: 20,
+        });
+      });
+    ```
+  </CompareItem>
+</Compare>
+
+The ORM page shape matches Convex pagination shape: `{ page, continueCursor, isDone }`.
+
+If you want standardized pagination input/output at the procedure layer, use `publicQuery.paginated(...)`.
+
+<Callout icon={<InfoIcon />}>
+Like native Convex pagination, page boundaries are reactive. As rows are inserted or removed, a page can shrink or grow between refreshes.
+</Callout>
+
+## Step 6: Full-text search migration
+
+We'll now map native `withSearchIndex` calls to ORM search mode.
+
+<Compare>
+  <CompareItem title="Before (`withSearchIndex`)">
+    ```ts showLineNumbers {4-6}
+    const messages = await ctx.db
+      .query('messages')
+      .withSearchIndex('search_body', (q) =>
+        q.search('body', args.query).eq('channel', '#general')
+      )
+      .take(10);
+    ```
+  </CompareItem>
+  <CompareItem title="After (`findMany({ search })`)">
+    ```ts showLineNumbers {2-9}
+    const messages = await ctx.orm.query.messages.findMany({
+      search: {
+        index: 'search_body',
+        query: input.query,
+        filters: { channel: '#general' },
+      },
+      cursor: null,
+      limit: 10,
+    });
+    ```
+  </CompareItem>
+</Compare>
+
+Search stays relevance-ordered in both models. You should not expect custom `orderBy` in search mode.
+
+## Step 7: Vector search migration
+
+Vector search in native Convex is action-only. The migration keeps that shape: run vector search in an action, then hydrate documents via a query.
+
+<Compare>
+  <CompareItem title="Before (native Convex)">
+    ```ts title="convex/functions/posts.ts" showLineNumbers {2-4,14-19}
+    import { v } from 'convex/values';
+    import { action, internalQuery } from './_generated/server';
+    import { internal } from './_generated/api';
+
+    export const fetchByIds = internalQuery({
+      args: { ids: v.array(v.id('posts')) },
+      handler: async (ctx, args) => {
+        const rows = [];
+        for (const id of args.ids) {
+          const doc = await ctx.db.get('posts', id);
+          if (doc) rows.push(doc);
+        }
+        return rows;
+      },
+    });
+
+    export const similarPosts = action({
+      args: { embedding: v.array(v.number()) },
+      handler: async (ctx, args) => {
+        const hits = await ctx.vectorSearch('posts', 'embedding_vec', {
+          vector: args.embedding,
+          limit: 10,
+        });
+        return ctx.runQuery(internal.posts.fetchByIds, {
+          ids: hits.map((h) => h._id),
+        });
+      },
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="After (ORM + cRPC)">
+    ```ts title="convex/functions/posts.ts" showLineNumbers {2-7,16-28}
+    import { z } from 'zod';
+    import { zid } from 'convex-helpers/server/zod4';
+    import { internal } from './_generated/api';
+    import { publicAction, privateQuery } from '../lib/crpc';
+
+    export const fetchByIds = privateQuery
+      .input(z.object({ ids: z.array(zid('posts')) }))
+      .query(async ({ ctx, input }) => {
+        return ctx.orm.query.posts.findMany({
+          where: { _id: { in: input.ids } },
+          limit: input.ids.length,
+          with: { author: true },
+        });
+      });
+
+    export const similarPosts = publicAction
+      .input(z.object({ embedding: z.array(z.number()) }))
+      .action(async ({ ctx, input }) => {
+        const hits = await ctx.vectorSearch('posts', 'embedding_vec', {
+          vector: input.embedding,
+          limit: 10,
+          filter: (q) => q.eq('type', 'news'),
+        });
+
+        const rows = await ctx.runQuery(internal.posts.fetchByIds, {
+          ids: hits.map((h) => h._id),
+        });
+
+        const scoreById = new Map(hits.map((h) => [String(h._id), h._score]));
+        return rows.map((row) => ({
+          ...row,
+          _score: scoreById.get(String(row._id)) ?? 0,
+        }));
+      });
+    ```
+  </CompareItem>
+</Compare>
+
+This preserves the native Convex action pattern and adds cleaner ORM hydration logic.
+
+## Step 8: Write migration semantics
+
+Now we'll map writes carefully, because semantics differ most here.
+
+### Insert (`db.insert` -> `insert().values()`)
+
+<Compare>
+  <CompareItem title="Before (native Convex)">
+    ```ts title="convex/functions/users.ts" showLineNumbers
+    import { mutation } from './_generated/server';
+    import { v } from 'convex/values';
+
+    export const createUser = mutation({
+      args: { name: v.string(), email: v.string() },
+      handler: async (ctx, args) => {
+        return ctx.db.insert('users', { name: args.name, email: args.email });
+      },
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="After (ORM + cRPC)">
+    ```ts title="convex/functions/users.ts" showLineNumbers {2-6,11-18}
+    import { z } from 'zod';
+    import { publicMutation } from '../lib/crpc';
+    import { users } from '../schema';
+
+    export const createUser = publicMutation
+      .input(z.object({ name: z.string(), email: z.string().email() }))
+      .mutation(async ({ ctx, input }) => {
+        const [row] = await ctx.orm
+          .insert(users)
+          .values({ name: input.name, email: input.email })
+          .returning({ id: users._id });
+        return row.id;
+      });
+    ```
+  </CompareItem>
+</Compare>
+
+Native `insert` returns an ID directly. ORM returns `void` unless you call `.returning(...)`.
+
+### Patch/replace semantics (`db.patch` / `db.replace` -> `update().set().where()`)
+
+```ts showLineNumbers {2}
+import { eq, unsetToken } from 'better-convex/orm';
+```
+
+```ts showLineNumbers
+const { userId, ...patch } = input;
+
+// Patch-style update: undefined keys are ignored.
+await ctx.orm.update(users).set(patch).where(eq(users._id, userId));
+
+// Native Convex equivalent of removing a field via patch({ field: undefined }):
+await ctx.orm.update(users).set({ nickname: unsetToken }).where(eq(users._id, userId));
+
+// Replace-style update: set all fields explicitly.
+await ctx.orm
+  .update(users)
+  .set({ name: input.name, email: input.email, role: input.role })
+  .where(eq(users._id, userId));
+```
+
+<Callout icon={<AlertTriangle />}>
+Native Convex treats `patch({ field: undefined })` as field removal. ORM uses `unsetToken` for that explicit unset behavior.
+</Callout>
+
+Also watch output shapes during migration: nullable ORM columns come back as `null`, while native Convex often represents missing fields as `undefined`.
+
+### Delete (`db.delete` -> `delete().where()`)
+
+<Compare>
+  <CompareItem title="Before (native Convex)">
+    ```ts showLineNumbers
+    await ctx.db.delete('users', args.userId);
+    ```
+  </CompareItem>
+  <CompareItem title="After (ORM)">
+    ```ts showLineNumbers
+    await ctx.orm.delete(users).where(eq(users._id, input.userId));
+    ```
+  </CompareItem>
+</Compare>
+
+### Upsert conflict mapping
+
+<Compare>
+  <CompareItem title="ORM (`onConflictDoUpdate`)">
+    ```ts showLineNumbers {1-7}
+    const [row] = await ctx.orm
+      .insert(users)
+      .values({ email: input.email, name: input.name })
+      .onConflictDoUpdate({
+        target: users.email,
+        set: { name: input.name },
+      })
+      .returning({ id: users._id });
+    ```
+  </CompareItem>
+  <CompareItem title="Native Convex (manual unique lookup + patch/insert)">
+    ```ts showLineNumbers {1-4,6-11}
+    // Schema: index('by_email').on(t.email) on users
+    const existing = await ctx.db
+      .query('users')
+      .withIndex('by_email', (q) => q.eq('email', input.email))
+      .unique();
+
+    if (existing) {
+      await ctx.db.patch('users', existing._id, { name: input.name });
+      return existing._id;
+    }
+    return await ctx.db.insert('users', { email: input.email, name: input.name });
+    ```
+  </CompareItem>
+</Compare>
+
+## Step 9: Guarantees and caveats
+
+Let's close with the guarantees you gain and the caveats you still need to own.
+
+### What ORM adds
+
+- Runtime constraint/default enforcement on ORM mutation paths.
+- Optional RLS policy enforcement on ORM paths.
+- Drizzle-style mutation/query ergonomics.
+
+### What still bypasses enforcement
+
+`ctx.db` is still raw native access and bypasses ORM constraints/defaults/RLS.
+
+<Callout icon={<AlertTriangle />}>
+Use `ctx.db` intentionally. If you mix `ctx.db` writes into an ORM-migrated codebase, you're opting out of ORM enforcement on those paths.
+</Callout>
+
+### Uniqueness under concurrency
+
+Runtime uniqueness checks are best-effort within one mutation. Concurrent mutations can still race.
+
+Use idempotent patterns (`onConflictDoNothing` / `onConflictDoUpdate`), retries, or serialize writes by key when strict guarantees are required.
+
+### System-table parity
+
+System tables remain raw passthrough access in both models:
+
+```ts showLineNumbers {2-8}
+const db = ctx.orm;
+
+const files = await db.system.query('_storage').take(20);
+const jobs = await db.system.query('_scheduled_functions').collect();
+```
+
+This maps directly to native `ctx.db.system.get/query` semantics.
+
+## Rollout playbook
+
+If you're migrating an existing app, this order keeps risk low and progress measurable.
+
+1. Migrate read-only endpoints that already have clear index paths.
+2. Migrate relation-heavy endpoints and delete manual join assembly.
+3. Migrate writes table by table (`insert`, then `update`, then `delete`, then upserts).
+4. Migrate search endpoints.
+5. Migrate vector action flows.
+6. Enable stricter defaults/constraints/RLS where needed.
+
+### Done criteria
+
+Use this checklist to know migration is complete:
+
+- [ ] App tables read through `ctx.orm.query.*` by default.
+- [ ] List endpoints are explicitly sized (`limit` or cursor pagination).
+- [ ] Manual join assembly is replaced by `with:` where practical.
+- [ ] Patch/remove semantics are explicit (`unsetToken` where needed).
+- [ ] Search/vector endpoints follow mode constraints and documented patterns.
+- [ ] Any remaining `ctx.db` usage is intentional and documented in code comments.
+
+That's it. You now have an ORM migration path that preserves Convex strengths while reducing repetitive query and write plumbing.
+
+## Next Steps
+
+<Cards>
+  <Card title="Querying Data" href="/docs/db/orm/queries" />
+  <Card title="Pagination" href="/docs/db/orm/pagination" />
+  <Card title="Mutations" href="/docs/db/orm/mutations" />
+  <Card title="RLS Policies" href="/docs/db/orm/rls" />
+  <Card title="Limitations" href="/docs/db/orm/limitations" />
+</Cards>

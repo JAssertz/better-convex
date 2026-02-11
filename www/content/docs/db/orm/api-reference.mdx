@@ -1,11 +1,11 @@
 ---
-title: API Reference
-description: Complete API reference for Better-Convex ORM with functions, operators, and types
+title: API
+description: Complete API reference for the ORM with functions, operators, and types
 ---
 
 import { InfoIcon } from "lucide-react"
 
-This is the full API surface for Better‑Convex ORM. The goal is to match Drizzle v1’s relational query builder while adapting to Convex’s document model.
+This is the full API surface for the ORM. The goal is to match Drizzle’s relational query builder while adapting to Convex’s document model.
 
 ## Schema
 
@@ -102,7 +102,7 @@ const memberships = convexTable(
 ```
 
 Use `.onUpdate()` / `.onDelete()` to configure foreign key actions.
-Actions are enforced at runtime by Better-Convex ORM mutations.
+Actions are enforced at runtime by ORM mutations.
 
 For `cascade` / `set null` / `set default`, add an index on the referencing columns.
 Without an index, Better-Convex will throw when it detects referencing rows.
@@ -121,7 +121,7 @@ const users = convexTable(
 );
 ```
 
-Checks are enforced at runtime by Better-Convex ORM mutations and follow SQL-like NULL semantics (the check fails only when the expression is `false`).
+Checks are enforced at runtime by ORM mutations and follow SQL-like NULL semantics (the check fails only when the expression is `false`).
 
 ### `searchIndex()`
 
@@ -318,7 +318,7 @@ await db.query.users.findMany({
 ```
 
 **Options**
-- `where`: object filter (Drizzle v1 shape) or predicate function
+- `where`: object filter (Drizzle shape) or predicate function
 - `search`: `{ index, query, filters? }` (full‑text search mode; only on tables with search indexes)
 - `vectorSearch`: `{ index, vector, limit, includeScore?, filter? }` (vector similarity mode; only on tables with vector indexes)
 - `index`: required when `where` is a function (`{ name, range? }`)
@@ -419,27 +419,45 @@ await db.query.posts.findMany({
 });
 ```
 
-### `findMany({ pipeline })` (advanced)
+### `select()` composition (advanced)
 
 ```ts showLineNumbers
-const page = await db.query.messages.findMany({
-  cursor: null,
-  limit: 20,
-  pipeline: {
-    union: [
-      { index: { name: 'by_from_to', range: (q) => q.eq('from', me).eq('to', them) } },
-      { index: { name: 'by_from_to', range: (q) => q.eq('from', them).eq('to', me) } },
-    ],
-    interleaveBy: ['_creationTime', '_id'],
-    stages: [
-      { filterWith: async (m) => !m.deletedAt },
-      { map: async (m) => ({ ...m, preview: m.body.slice(0, 120) }) },
-    ],
-  },
-});
+const page = await db.query.messages
+  .select()
+  .union([
+    { index: { name: 'by_from_to', range: (q) => q.eq('from', me).eq('to', them) } },
+    { index: { name: 'by_from_to', range: (q) => q.eq('from', them).eq('to', me) } },
+  ])
+  .interleaveBy(['_creationTime', '_id'])
+  .filter(async (m) => !m.deletedAt)
+  .map(async (m) => ({ ...m, preview: m.body.slice(0, 120) }))
+  .paginate({ cursor: null, limit: 20 });
 ```
 
-Use pipeline mode when you need pre-pagination transforms (`filterWith`, `map`, `distinct`, relation `flatMap`) or SQL-like unions/interleaving.
+Composition stage output is inferred in order:
+
+```ts
+const page = await db.query.messages
+  .select()
+  .map(async (m) => ({ ...m, preview: m.body.slice(0, 120) }))
+  .filter(async (m) => m.preview.length > 0)
+  .paginate({ cursor: null, limit: 20 });
+
+page.page[0].preview; // string
+```
+
+`flatMap` infers relation-targeted output:
+
+```ts
+const expanded = await db.query.users
+  .select()
+  .flatMap('posts', { includeParent: false })
+  .paginate({ cursor: null, limit: 20 });
+
+expanded.page[0].text; // post field
+```
+
+Use `select()` when you need pre-pagination transforms (`filter`, `map`, `distinct`, relation `flatMap`) or SQL-like unions/interleaving.
 
 ### `findMany({ pageByKey })` (advanced)
 

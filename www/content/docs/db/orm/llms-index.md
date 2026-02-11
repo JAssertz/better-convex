@@ -1,11 +1,11 @@
 ---
 title: LLMs Index
-description: Structured index of Better-Convex ORM documentation for AI assistants and code completion tools
+description: Structured index of ORM documentation for AI assistants and code completion tools
 ---
 
-# Better-Convex ORM Documentation Index
+# ORM Documentation Index
 
-This file provides a structured index of Better‑Convex ORM documentation for AI assistants and code completion tools.
+This file provides a structured index of the ORM documentation for AI assistants and code completion tools.
 
 ## Core Concepts
 

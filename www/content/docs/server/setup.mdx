@@ -89,7 +89,7 @@ That's it for the basic setup! You can now use `publicQuery`, `publicMutation`, 
 
 ## Define Your Schema
 
-Before creating procedures, you'll need a database schema. These docs assume Better-Convex ORM (see [/docs/db/orm](/docs/db/orm)):
+Before creating procedures, you'll need a database schema. These docs assume the ORM (see [/docs/db/orm](/docs/db/orm)):
 
 ```ts title="convex/functions/schema.ts" showLineNumbers {1-7,9-29,31-42}
 import {
@@ -267,7 +267,7 @@ export const adminQuery = c.query
 
 ## Customizing Context
 
-You can add custom properties to the base context. The most common is attaching Better-Convex ORM as `ctx.orm`:
+You can add custom properties to the base context. The most common is attaching the ORM as `ctx.orm`:
 
 ```ts title="convex/lib/crpc.ts" showLineNumbers {1,4-9}
 import { withOrm } from './orm';
