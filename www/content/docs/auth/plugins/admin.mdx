@@ -243,7 +243,7 @@ export const checkUserAdminStatus = authQuery
   }))
   .query(async ({ ctx, input }) => {
     const user = await ctx.orm.query.user.findFirst({
-      where: { _id: input.userId },
+      where: { id: input.userId },
     });
     if (!user) {
       throw new CRPCError({ code: 'NOT_FOUND', message: 'User not found' });
@@ -273,7 +273,7 @@ export const updateUserRole = authMutation
     }
 
     const targetUser = await ctx.orm.query.user.findFirst({
-      where: { _id: input.userId },
+      where: { id: input.userId },
     });
     if (!targetUser) {
       throw new CRPCError({ code: 'NOT_FOUND', message: 'User not found' });
@@ -289,7 +289,7 @@ export const updateUserRole = authMutation
     await ctx.orm
       .update(user)
       .set({ role: input.role.toLowerCase() })
-      .where(eq(user._id, targetUser._id));
+      .where(eq(user.id, targetUser.id));
     return true;
   });
 ```
@@ -316,8 +316,8 @@ export const grantAdminByEmail = authMutation
     await ctx.orm
       .update(user)
       .set({ role: input.role.toLowerCase() })
-      .where(eq(user._id, existingUser._id));
-    return { success: true, userId: existingUser._id };
+      .where(eq(user.id, existingUser.id));
+    return { success: true, userId: existingUser.id };
   });
 ```
 
@@ -325,7 +325,7 @@ export const grantAdminByEmail = authMutation
 
 ```ts title="convex/functions/admin.ts" showLineNumbers {1-11,13-14,17-25}
 const UserListItemSchema = z.object({
-  _id: zid('user'),
+  id: zid('user'),
   _creationTime: z.number(),
   name: z.string().optional(),
   email: z.string(),
@@ -369,7 +369,7 @@ export const getDashboardStats = authQuery
   .meta({ role: 'admin' })
   .output(z.object({
     recentUsers: z.array(z.object({
-      _id: zid('user'),
+      id: zid('user'),
       _creationTime: z.number(),
       image: z.string().nullish(),
       name: z.string().optional(),

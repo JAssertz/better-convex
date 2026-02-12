@@ -89,7 +89,7 @@ export const authClient = createClient<DataModel, typeof schema>({
       onCreate: async (ctx, user) => {
         // Create related records after signup
         await ctx.orm.insert(profiles).values({
-          userId: user._id,
+          userId: user.id,
           bio: '',
         });
       },
@@ -710,7 +710,7 @@ if (!userId) {
 }
 
 // userId is Id<'user'>
-const user = await ctx.orm.query.user.findFirst({ where: { _id: userId } });
+const user = await ctx.orm.query.user.findFirst({ where: { id: userId } });
 ```
 
 ### getSession
@@ -723,7 +723,7 @@ import { getSession } from 'better-convex/auth';
 const session = await getSession(ctx);
 
 if (session) {
-  session._id;                  // Id<'session'>
+  session.id;                  // Id<'session'>
   session.userId;               // Id<'user'>
   session.activeOrganizationId; // Id<'organization'> | null
   session.expiresAt;            // number

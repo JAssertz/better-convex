@@ -29,7 +29,7 @@ Use `.input()` to define and validate procedure arguments. The schema runs befor
 export const getById = publicQuery
   .input(z.object({ id: zid('user') }))
   .query(async ({ ctx, input }) => {
-    return ctx.orm.query.user.findFirst({ where: { _id: input.id } });
+    return ctx.orm.query.user.findFirst({ where: { id: input.id } });
   });
 ```
 
@@ -71,7 +71,7 @@ const userProcedure = authQuery
   .input(z.object({ userId: zid('user') }))
   .use(async ({ ctx, input, next }) => {
     const targetUser = await ctx.orm.query.user.findFirst({
-      where: { _id: input.userId },
+      where: { id: input.userId },
     });
     if (!targetUser) throw new CRPCError({ code: 'NOT_FOUND' });
     return next({ ctx: { ...ctx, targetUser } });
@@ -101,13 +101,13 @@ export const getById = publicQuery
   .input(z.object({ id: zid('user') }))
   .output(
     z.object({
-      _id: zid('user'),
+      id: zid('user'),
       name: z.string(),
       email: z.string(),
     })
   )
   .query(async ({ ctx, input }) => {
-    const user = await ctx.orm.query.user.findFirst({ where: { _id: input.id } });
+    const user = await ctx.orm.query.user.findFirst({ where: { id: input.id } });
     if (!user) throw new CRPCError({ code: 'NOT_FOUND' });
     return user;
   });
@@ -154,7 +154,7 @@ export const create = publicMutation
 export const remove = publicMutation
   .input(z.object({ id: zid('user') }))
   .mutation(async ({ ctx, input }) => {
-    await ctx.orm.delete(user).where(eq(user._id, input.id));
+    await ctx.orm.delete(user).where(eq(user.id, input.id));
   });
 ```
 
@@ -177,7 +177,7 @@ For large datasets, use `.paginated()` for cursor-based pagination. It automatic
 
 ```ts showLineNumbers {7-8,14}
 const SessionSchema = z.object({
-  _id: zid('session'),
+  id: zid('session'),
   userId: zid('user'),
   token: z.string(),
 });
@@ -245,7 +245,7 @@ export const list = publicQuery.query(async ({ ctx }) => {
 export const getById = publicQuery
   .input(z.object({ id: zid('user') }))
   .query(async ({ ctx, input }) => {
-    return ctx.orm.query.user.findFirst({ where: { _id: input.id } });
+    return ctx.orm.query.user.findFirst({ where: { id: input.id } });
   });
 
 export const create = publicMutation
@@ -255,7 +255,7 @@ export const create = publicMutation
     const [row] = await ctx.orm
       .insert(user)
       .values(input)
-      .returning({ id: user._id });
+      .returning({ id: user.id });
     return row.id;
   });
 
@@ -263,7 +263,7 @@ export const update = publicMutation
   .input(userSchema.partial().extend({ id: zid('user') }))
   .mutation(async ({ ctx, input }) => {
     const { id, ...data } = input;
-    await ctx.orm.update(user).set(data).where(eq(user._id, id));
+    await ctx.orm.update(user).set(data).where(eq(user.id, id));
   });
 ```
 
@@ -307,7 +307,7 @@ If you're coming from vanilla Convex, here's what changes.
       args: { id: v.id('user') },
       handler: async (ctx, args) => {
         const db = orm.db(ctx);
-        return db.query.user.findFirst({ where: { _id: args.id } });
+        return db.query.user.findFirst({ where: { id: args.id } });
       },
     });
     ```
@@ -321,7 +321,7 @@ If you're coming from vanilla Convex, here's what changes.
     export const getById = publicQuery
       .input(z.object({ id: zid('user') }))
       .query(async ({ ctx, input }) => {
-        return ctx.orm.query.user.findFirst({ where: { _id: input.id } });
+        return ctx.orm.query.user.findFirst({ where: { id: input.id } });
       });
     ```
   </CompareItem>

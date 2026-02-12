@@ -333,7 +333,7 @@ const randomAggregate = new TableAggregate<{
   DataModel: DataModel;
   TableName: 'songs';
 }>(components.randomAggregate, {
-  sortKey: () => null, // No sorting = random by _id
+  sortKey: () => null, // No sorting = random by id
 });
 
 // Get random song
@@ -343,7 +343,7 @@ if (count === 0) return null;
 const randomIndex = Math.floor(Math.random() * count);
 const result = await randomAggregate.at(ctx, randomIndex);
 const song = result
-  ? await ctx.orm.query.songs.findFirst({ where: { _id: result.doc._id } })
+  ? await ctx.orm.query.songs.findFirst({ where: { id: result.doc.id } })
   : null;
 ```
 
@@ -723,7 +723,7 @@ triggers.register('user', async (ctx, change) => {
 
     for (const char of characterRows) {
       // Aggregate trigger fires on each delete!
-      await ctx.orm.delete(characters).where(eq(characters._id, char._id));
+      await ctx.orm.delete(characters).where(eq(characters.id, char.id));
     }
   }
 });
@@ -851,7 +851,7 @@ Handle aggregate-specific errors gracefully:
 export const deleteScore = authMutation
   .input(z.object({ scoreId: zid('scores') }))
   .mutation(async ({ ctx, input }) => {
-    const doc = await ctx.orm.query.scores.findFirst({ where: { _id: input.scoreId } });
+    const doc = await ctx.orm.query.scores.findFirst({ where: { id: input.scoreId } });
     if (!doc) throw new CRPCError({ code: 'NOT_FOUND', message: 'Score not found' });
 
     try {
@@ -865,7 +865,7 @@ export const deleteScore = authMutation
       }
     }
 
-    await ctx.orm.delete(scores).where(eq(scores._id, input.scoreId));
+    await ctx.orm.delete(scores).where(eq(scores.id, input.scoreId));
   });
 ```
 

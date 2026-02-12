@@ -115,9 +115,9 @@ const authQuery = c.query.use(async ({ ctx, next }) => {
   if (!identity) throw new CRPCError({ code: 'UNAUTHORIZED' });
 
   const userId = identity.subject as GenericId<'user'>;
-  const user = await ctx.orm.query.user.findFirst({ where: { _id: userId } });
+  const user = await ctx.orm.query.user.findFirst({ where: { id: userId } });
   if (!user) throw new CRPCError({ code: 'UNAUTHORIZED' });
-  return next({ ctx: { ...ctx, user, userId: user._id } });
+  return next({ ctx: { ...ctx, user, userId: user.id } });
 });
 ```
 
@@ -133,7 +133,7 @@ Define relations with `defineRelations()` and load them with `with:`:
 
 ```ts showLineNumbers
 const user = await ctx.orm.query.user.findFirst({
-  where: { _id: userId },
+  where: { id: userId },
   with: { posts: { limit: 10, orderBy: { _creationTime: 'desc' } } },
 });
 ```
@@ -160,7 +160,7 @@ triggers.register('user', async (ctx, change) => {
       limit: 100,
     });
     for (const postRow of posts) {
-      await ctx.orm.delete(post).where(eq(post._id, postRow._id));
+      await ctx.orm.delete(post).where(eq(post.id, postRow.id));
     }
   }
 });

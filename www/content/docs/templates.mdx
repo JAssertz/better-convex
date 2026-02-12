@@ -384,7 +384,7 @@ export const optionalAuthQuery = c.query
     }
 
     const user = await ctx.orm.query.user.findFirst({
-      where: { _id: session.userId },
+      where: { id: session.userId },
     });
 
     if (!user) {
@@ -399,8 +399,8 @@ export const optionalAuthQuery = c.query
           ...getAuth(ctx),
           headers: await getHeaders(ctx, session),
         },
-        user: { id: user._id, session, ...user },
-        userId: user._id,
+        user: { id: user.id, session, ...user },
+        userId: user.id,
       },
     });
   });
@@ -416,7 +416,7 @@ export const authQuery = c.query
     }
 
     const user = await ctx.orm.query.user.findFirst({
-      where: { _id: session.userId },
+      where: { id: session.userId },
     });
 
     if (!user) {
@@ -431,8 +431,8 @@ export const authQuery = c.query
           ...getAuth(ctx),
           headers: await getHeaders(ctx, session),
         },
-        user: { id: user._id, session, ...user },
-        userId: user._id,
+        user: { id: user.id, session, ...user },
+        userId: user.id,
       },
     });
   })
@@ -459,7 +459,7 @@ export const optionalAuthMutation = c.mutation
     }
 
     const user = await ctx.orm.query.user.findFirst({
-      where: { _id: session.userId },
+      where: { id: session.userId },
     });
 
     if (!user) {
@@ -474,8 +474,8 @@ export const optionalAuthMutation = c.mutation
           ...getAuth(ctx),
           headers: await getHeaders(ctx, session),
         },
-        user: { id: user._id, session, ...user },
-        userId: user._id,
+        user: { id: user.id, session, ...user },
+        userId: user.id,
       },
     });
   })
@@ -492,7 +492,7 @@ export const authMutation = c.mutation
     }
 
     const user = await ctx.orm.query.user.findFirst({
-      where: { _id: session.userId },
+      where: { id: session.userId },
     });
 
     if (!user) {
@@ -507,8 +507,8 @@ export const authMutation = c.mutation
           ...getAuth(ctx),
           headers: await getHeaders(ctx, session),
         },
-        user: { id: user._id, session, ...user },
-        userId: user._id,
+        user: { id: user.id, session, ...user },
+        userId: user.id,
       },
     });
   })
@@ -582,7 +582,7 @@ import type { appRouter } from '../functions/http';
 export type DocWithId<TableName extends TableNames> = WithoutSystemFields<
   Doc<TableName>
 > & {
-  id: Doc<TableName>['_id'];
+  id: Doc<TableName>['id'];
 };
 
 // API type with HTTP router (http is optional for type inference)
@@ -644,7 +644,7 @@ export const authClient = createClient<DataModel, typeof schema>({
       },
       onCreate: async (ctx, user) => {
         await ctx.orm.insert(profiles).values({
-          userId: user._id,
+          userId: user.id,
           bio: '',
         });
       },
@@ -879,7 +879,7 @@ Session user type for auth context. Customize based on your user table fields.
 ```ts title="convex/shared/auth-shared.ts" showLineNumbers {3-9}
 import type { Doc, Id } from '../functions/_generated/dataModel';
 
-export type SessionUser = Omit<Doc<'user'>, '_creationTime' | '_id'> & {
+export type SessionUser = Omit<Doc<'user'>, '_creationTime' | 'id'> & {
   id: Id<'user'>;
   isAdmin: boolean;
   session: Doc<'session'>;
@@ -1396,7 +1396,7 @@ export const deletePage = privateMutation
 
 		    for (const row of results.page) {
 		      try {
-		        await ctx.orm.delete(table).where(eq(table._id, row._id));
+		        await ctx.orm.delete(table).where(eq(table.id, row.id));
 		      } catch {
 		        // Document might have been deleted by a trigger
 		      }

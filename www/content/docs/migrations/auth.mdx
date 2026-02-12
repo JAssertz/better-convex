@@ -37,13 +37,19 @@ bun add better-convex
 Next, we'll remove the Convex component configuration. This is the biggest architectural change.
 
 <Callout icon={<InfoIcon />}>
-**Already in production?** Use the [migration component](https://www.convex.dev/components/migrations) to copy data from component tables to your app tables before deleting the `betterAuth` folder.
+**Production only:** Run component-data migration only if this app already has production data in `_components/betterAuth`.
 </Callout>
 
-### Migrate component data to app namespace
+### Production only: Migrate component data to app namespace
+
+If you are not migrating existing production data, skip this sub-step and continue with file deletion below.
 
 <Callout icon={<AlertTriangle />}>
-**Warning:** This ID remap flow is validated for the latest Convex document ID format (`id_v6`, footer version `0`). Older historical ID formats may exist and are not guaranteed by this script.
+**Warning:** This ID remap flow is validated for the [latest Convex document ID format](https://github.com/get-convex/convex-backend/blob/main/crates/value/src/id_v6.rs). Older historical ID formats may exist and are not guaranteed by this script.
+</Callout>
+
+<Callout icon={<AlertTriangle />}>
+**Test locally first:** Run this migration end-to-end against a local/dev copy before touching production. Convex internals can change over time, which can invalidate this migration.
 </Callout>
 
 <Callout icon={<AlertTriangle />}>
@@ -60,16 +66,28 @@ Next, we'll remove the Convex component configuration. This is the biggest archi
 npx convex export --path ./snapshot.zip
 ```
 
-**2) Install migration zip dependencies**
+**2) Download migration utility files**
+
+Create a local folder and download the migration utility files:
+
+```bash
+mkdir -p ./better-auth-component-migration
+curl -fsSL https://raw.githubusercontent.com/udecode/better-convex/main/tooling/migrations/better-auth-component/cli.ts -o ./better-auth-component-migration/cli.ts
+curl -fsSL https://raw.githubusercontent.com/udecode/better-convex/main/tooling/migrations/better-auth-component/id-v6.ts -o ./better-auth-component-migration/id-v6.ts
+curl -fsSL https://raw.githubusercontent.com/udecode/better-convex/main/tooling/migrations/better-auth-component/migrate-snapshot.ts -o ./better-auth-component-migration/migrate-snapshot.ts
+curl -fsSL https://raw.githubusercontent.com/udecode/better-convex/main/tooling/migrations/better-auth-component/zip.ts -o ./better-auth-component-migration/zip.ts
+```
+
+**3) Install migration zip dependencies**
 
 ```bash
 npm i -D yazl yauzl
 ```
 
-**3) Run the migration utility (creates a new `migration.zip`)**
+**4) Run the migration utility (creates a new `migration.zip`)**
 
 ```bash
-node --experimental-strip-types ./tooling/migrations/better-auth-component/cli.ts \
+node --experimental-strip-types ./better-auth-component-migration/cli.ts \
   --snapshotZip ./snapshot.zip \
   --outputZip ./migration.zip
 ```
@@ -77,13 +95,22 @@ node --experimental-strip-types ./tooling/migrations/better-auth-component/cli.t
 Optional: migrate only specific tables:
 
 ```bash
-node --experimental-strip-types ./tooling/migrations/better-auth-component/cli.ts \
+node --experimental-strip-types ./better-auth-component-migration/cli.ts \
   --snapshotZip ./snapshot.zip \
   --outputZip ./migration.zip \
   --filters=user,jwks
 ```
 
-**4) Import manually**
+Optional: set a custom temp working directory:
+
+```bash
+node --experimental-strip-types ./better-auth-component-migration/cli.ts \
+  --snapshotZip ./snapshot.zip \
+  --outputZip ./migration.zip \
+  --workDir ./snapshot.temp
+```
+
+**5) Import manually**
 
 ```bash
 npx convex import ./migration.zip --replace -y
@@ -222,7 +249,7 @@ This is the main migration. We'll replace the component-based client with direct
           },
           onCreate: async (ctx, user) => {
             // Side effects after user creation
-            console.log("User created:", user._id);
+            console.log("User created:", user.id);
           },
         },
         session: {

@@ -116,7 +116,7 @@ triggers: {
     onCreate: async (ctx, user) => {
       // Create default profile
       await ctx.orm.insert(profiles).values({
-        userId: user._id,
+        userId: user.id,
         bio: '',
         avatar: user.image,
       });
@@ -124,13 +124,13 @@ triggers: {
       // Create personal organization
       await ctx.orm.insert(organizations).values({
         name: `${user.name}'s Workspace`,
-        ownerId: user._id,
+        ownerId: user.id,
         type: 'personal',
       });
 
       // Schedule welcome email
       await ctx.scheduler.runAfter(0, internal.emails.sendWelcome, {
-        userId: user._id,
+        userId: user.id,
         email: user.email,
       });
     },
@@ -149,14 +149,14 @@ triggers: {
       // Sync avatar change to profiles
       if (newDoc.image !== oldDoc.image) {
         const profile = await ctx.orm.query.profiles.findFirst({
-          where: { userId: newDoc._id },
+          where: { userId: newDoc.id },
         });
 
         if (profile) {
           await ctx.orm
             .update(profiles)
             .set({ avatar: newDoc.image })
-            .where(eq(profiles._id, profile._id));
+            .where(eq(profiles.id, profile.id));
         }
       }
     },
@@ -179,20 +179,20 @@ triggers: {
       // Index profiles.userId and organizations.ownerId.
       // Delete user's profiles
       const profilesToDelete = await ctx.orm.query.profiles.findMany({
-        where: { userId: user._id },
+        where: { userId: user.id },
         limit: 1000,
       });
       for (const profile of profilesToDelete) {
-        await ctx.orm.delete(profiles).where(eq(profiles._id, profile._id));
+        await ctx.orm.delete(profiles).where(eq(profiles.id, profile.id));
       }
 
       // Delete user's organizations
       const orgsToDelete = await ctx.orm.query.organizations.findMany({
-        where: { ownerId: user._id },
+        where: { ownerId: user.id },
         limit: 1000,
       });
       for (const org of orgsToDelete) {
-        await ctx.orm.delete(organizations).where(eq(organizations._id, org._id));
+        await ctx.orm.delete(organizations).where(eq(organizations.id, org.id));
       }
     },
   },
@@ -212,14 +212,14 @@ triggers: {
       // Set active organization from user's last active
       if (!sessionDoc.activeOrganizationId) {
         const user = await ctx.orm.query.user.findFirst({
-          where: { _id: sessionDoc.userId },
+          where: { id: sessionDoc.userId },
         });
 
         if (user?.lastActiveOrganizationId) {
           await ctx.orm
             .update(session)
             .set({ activeOrganizationId: user.lastActiveOrganizationId })
-            .where(eq(session._id, sessionDoc._id));
+            .where(eq(session.id, sessionDoc.id));
         }
       }
     },
@@ -259,9 +259,9 @@ triggers: {
       return data;
     },
 
-    // `doc` includes _id and system fields
+    // `doc` includes id and system fields
     onCreate: async (ctx, doc) => {
-      doc._id;           // Id<'user'>
+      doc.id;           // Id<'user'>
       doc._creationTime; // number
       doc.email;         // string
     },

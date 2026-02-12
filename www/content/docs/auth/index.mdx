@@ -80,7 +80,7 @@ Let's understand how authentication works. Every request - whether from SSR or c
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  STEP 2: Session Lookup (database)                                      │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ Query: session._id = sessionId AND expiresAt > now                │  │
+│  │ Query: session.id = sessionId AND expiresAt > now                │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │  • Session found & valid    → ✅ Request proceeds                       │
 │  • Session not found        → ❌ 401 (revoked or never existed)         │
@@ -245,7 +245,7 @@ When you call `caller.posts.list()` on the server:
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  4. Session Lookup (Step 2 from above)                                   │
-│     Query: session._id = sessionId AND expiresAt > now                  │
+│     Query: session.id = sessionId AND expiresAt > now                  │
 │     ├─ Session valid → ✅ Query executes                                │
 │     └─ Session invalid → ❌ 401 Unauthorized                            │
 └─────────────────────────────────────────────────────────────────────────┘

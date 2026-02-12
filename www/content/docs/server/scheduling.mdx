@@ -119,7 +119,7 @@ export const cleanupStaleData = privateMutation
     });
 
     for (const sessionRow of staleSessions) {
-      await ctx.orm.delete(session).where(eq(session._id, sessionRow._id));
+      await ctx.orm.delete(session).where(eq(session.id, sessionRow.id));
     }
 
     return { deletedCount: staleSessions.length };
@@ -175,7 +175,7 @@ export const processOrder = authMutation
     await ctx.orm
       .update(orders)
       .set({ status: 'processing' })
-      .where(eq(orders._id, input.orderId));
+      .where(eq(orders.id, input.orderId));
 
     // Run after 5 seconds
     await ctx.scheduler.runAfter(5000, internal.orders.charge, {
@@ -198,7 +198,7 @@ export const createItem = authMutation
     const [row] = await ctx.orm
       .insert(items)
       .values({ name: input.name })
-      .returning({ id: items._id });
+      .returning({ id: items.id });
     const itemId = row.id;
 
     // Action runs immediately after mutation commits
@@ -265,7 +265,7 @@ export const createSubscription = authMutation
         planId: input.planId,
         expirationJobId,
       })
-      .returning({ id: subscriptions._id });
+      .returning({ id: subscriptions.id });
     return row.id;
   });
 ```
@@ -278,7 +278,7 @@ export const cancelSubscription = authMutation
   .output(z.null())
   .mutation(async ({ ctx, input }) => {
     const subscription = await ctx.orm.query.subscriptions.findFirst({
-      where: { _id: input.subscriptionId },
+      where: { id: input.subscriptionId },
     });
 
     if (!subscription) {
@@ -292,7 +292,7 @@ export const cancelSubscription = authMutation
 
     await ctx.orm
       .delete(subscriptions)
-      .where(eq(subscriptions._id, subscription._id));
+      .where(eq(subscriptions.id, subscription.id));
 
     return null;
   });
@@ -326,7 +326,7 @@ List all pending jobs:
 export const listPendingJobs = publicQuery
   .input(z.object({}))
   .output(z.array(z.object({
-    _id: zid('_scheduled_functions'),
+    id: zid('_scheduled_functions'),
     name: z.string(),
     scheduledTime: z.number(),
   })))
@@ -336,8 +336,8 @@ export const listPendingJobs = publicQuery
       .filter((q) => q.eq(q.field('state.kind'), 'pending'))
       .collect();
 
-    return jobs.map(({ _id, name, scheduledTime }) => ({
-      _id,
+    return jobs.map(({ id, name, scheduledTime }) => ({
+      id,
       name,
       scheduledTime,
     }));

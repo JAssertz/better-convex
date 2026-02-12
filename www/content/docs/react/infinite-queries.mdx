@@ -39,7 +39,7 @@ function SessionList({ userId }: { userId: string }) {
   return (
     <div>
       {data.map((session) => (
-        <SessionCard key={session._id} session={session} />
+        <SessionCard key={session.id} session={session} />
       ))}
       {hasNextPage && (
         <button onClick={() => fetchNextPage()}>Load more</button>
@@ -129,7 +129,7 @@ const { data, isPlaceholderData } = useInfiniteQuery(
     {},
     {
       placeholderData: Array.from({ length: crpc.session.list.meta.limit }).map((_, i) => ({
-        _id: i.toString() as Id<'session'>,
+        id: i.toString() as Id<'session'>,
         token: 'Loading...',
         expiresAt: 0,
       })),
@@ -140,7 +140,7 @@ const { data, isPlaceholderData } = useInfiniteQuery(
 return (
   <div>
     {data.map((session) => (
-      <WithSkeleton key={session._id} isLoading={isPlaceholderData}>
+      <WithSkeleton key={session.id} isLoading={isPlaceholderData}>
         <SessionCard session={session} />
       </WithSkeleton>
     ))}
@@ -169,7 +169,7 @@ function SessionFeed() {
   return (
     <div>
       {data.map((session) => (
-        <SessionCard key={session._id} session={session} />
+        <SessionCard key={session.id} session={session} />
       ))}
       {isFetching && <Spinner />}
       <div ref={bottomRef} />
@@ -188,7 +188,7 @@ import { zid } from 'convex-helpers/server/zod4';
 import { publicQuery } from './lib/crpc';
 
 const SessionSchema = z.object({
-  _id: zid('session'),
+  id: zid('session'),
   userId: z.string(),
   token: z.string(),
 });

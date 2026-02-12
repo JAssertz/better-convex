@@ -64,7 +64,7 @@ export function PostList() {
   return (
     <ul>
       {posts?.map((post) => (
-        <li key={post._id}>{post.title}</li>
+        <li key={post.id}>{post.title}</li>
       ))}
     </ul>
   );

@@ -121,7 +121,7 @@ export default defineSchema(tables, { strict: false });
 
 export const relations = defineRelations(tables, (r) => ({
   user: { posts: r.many.posts() },
-  posts: { author: r.one.user({ from: r.posts.userId, to: r.user._id }) },
+  posts: { author: r.one.user({ from: r.posts.userId, to: r.user.id }) },
 }));
 ```
 
@@ -224,13 +224,13 @@ export const list = publicQuery
   .output(
     z.array(
       z.object({
-        _id: zid('user'),
+        id: zid('user'),
         _creationTime: z.number(),
         name: z.string(),
         email: z.string(),
         posts: z.array(
           z.object({
-            _id: zid('posts'),
+            id: zid('posts'),
             _creationTime: z.number(),
             title: z.string(),
             published: z.boolean().nullable(),
@@ -247,7 +247,7 @@ export const list = publicQuery
           limit: 5,
           orderBy: { _creationTime: 'desc' },
           columns: {
-            _id: true,
+            id: true,
             _creationTime: true,
             title: true,
             published: true,
@@ -264,7 +264,7 @@ export const create = publicMutation
     const [row] = await ctx.orm
       .insert(user)
       .values(input)
-      .returning({ id: user._id });
+      .returning({ id: user.id });
     return row.id;
   });
 ```
@@ -384,7 +384,7 @@ export default function UserPage() {
         Create User
       </button>
       {users?.map((user) => (
-        <div key={user._id}>{user.name}</div>
+        <div key={user.id}>{user.name}</div>
       ))}
     </div>
   );

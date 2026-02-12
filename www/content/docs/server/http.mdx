@@ -45,7 +45,7 @@ export function TodoList() {
   return (
     <div>
       {todos.map(todo => (
-        <div key={todo._id}>{todo.title}</div>
+        <div key={todo.id}>{todo.title}</div>
       ))}
       {/* JSON body at root level (tRPC-style) */}
       <button onClick={() => createTodo.mutate({ title: 'New Todo' })}>
@@ -301,7 +301,7 @@ import { zid } from 'convex-helpers/server/zod4';
 import { router, publicRoute, authRoute } from '../lib/crpc';
 
 const todoSchema = z.object({
-  _id: zid('todos'),
+  id: zid('todos'),
   title: z.string(),
   completed: z.boolean(),
   description: z.string().optional(),
@@ -502,7 +502,7 @@ export const download = authRoute
     if (params.format === 'csv') {
       const csv = [
         'id,title,completed',
-        ...todos.map((t) => `${t._id},${t.title},${t.completed}`),
+        ...todos.map((t) => `${t.id},${t.title},${t.completed}`),
       ].join('\n');
       return c.text(csv);
     }
@@ -687,7 +687,7 @@ export function TodoList() {
   return (
     <ul>
       {todos.map(todo => (
-        <li key={todo._id}>{todo.title}</li>
+        <li key={todo.id}>{todo.title}</li>
       ))}
     </ul>
   );

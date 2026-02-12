@@ -68,7 +68,7 @@ export const posts = convexTable('posts', {
 export const relations = defineRelations({ users, posts }, (r) => ({
   users: { posts: r.many.posts() },
   posts: {
-    author: r.one.users({ from: r.posts.userId, to: r.users._id }),
+    author: r.one.users({ from: r.posts.userId, to: r.users.id }),
   },
 }));
 
@@ -134,13 +134,13 @@ Now we'll migrate the read paths you use every day: single-row lookups, lists, a
     export const getById = publicQuery
       .input(z.object({ userId: zid('users') }))
       .query(async ({ ctx, input }) => {
-        return ctx.orm.query.users.findFirst({ where: { _id: input.userId } });
+        return ctx.orm.query.users.findFirst({ where: { id: input.userId } });
       });
     ```
   </CompareItem>
 </Compare>
 
-The migration is direct: `_id` equality through `where` is the ORM equivalent of a point lookup.
+The migration is direct: `id` equality through `where` is the ORM equivalent of a point lookup.
 
 ### List/filter/order (`db.query` -> `findMany`)
 
@@ -168,7 +168,7 @@ The migration is direct: `_id` equality through `where` is the ORM equivalent of
 In native Convex you always name the index with `withIndex(...)`. In ORM, index-backed plans are inferred from `where` + `orderBy` when possible, but the same index design rules still matter.
 
 <Callout icon={<AlertTriangle />}>
-Most `findMany()` calls must be explicitly sized: provide `limit`, use cursor pagination (`cursor` + `limit`), set schema `defaultLimit`, or explicitly opt in with `allowFullScan`. `_id` / `_id in [...]` lookups are the main exception.
+Most `findMany()` calls must be explicitly sized: provide `limit`, use cursor pagination (`cursor` + `limit`), set schema `defaultLimit`, or explicitly opt in with `allowFullScan`. `id` / `id in [...]` lookups are the main exception.
 </Callout>
 
 ## Step 3: Replace manual joins with `with:`
@@ -193,7 +193,7 @@ Native Convex has no SQL joins, so relation loading means manual multi-query ass
 
     const authorIds = [...new Set(posts.map((p) => p.userId))];
     const authors = await Promise.all(authorIds.map((id) => ctx.db.get('users', id)));
-    const authorById = new Map(authors.filter(Boolean).map((u) => [u._id, u]));
+    const authorById = new Map(authors.filter(Boolean).map((u) => [u.id, u]));
 
     const postsWithAuthor = posts.map((p) => ({
       ...p,
@@ -226,10 +226,10 @@ The manual pattern works, but `with:` keeps the same outcome with less boilerpla
     const postsByUserId = new Map(
       await Promise.all(
         users.map(async (u) => [
-          u._id,
+          u.id,
           await ctx.db
             .query('posts')
-            .withIndex('by_user', (q) => q.eq('userId', u._id))
+            .withIndex('by_user', (q) => q.eq('userId', u.id))
             .order('desc')
             .take(5),
         ])
@@ -238,7 +238,7 @@ The manual pattern works, but `with:` keeps the same outcome with less boilerpla
 
     const usersWithPosts = users.map((u) => ({
       ...u,
-      posts: postsByUserId.get(u._id) ?? [],
+      posts: postsByUserId.get(u.id) ?? [],
     }));
     ```
   </CompareItem>
@@ -271,19 +271,19 @@ This is the same data shape. ORM gives you relation loading as a first-class que
     for (const u of users) {
       const rows = await ctx.db
         .query('memberships')
-        .withIndex('by_user', (q) => q.eq('userId', u._id))
+        .withIndex('by_user', (q) => q.eq('userId', u.id))
         .collect();
-      membershipsByUserId.set(u._id, rows);
+      membershipsByUserId.set(u.id, rows);
       allMemberships.push(...rows);
     }
 
     const groupIds = [...new Set(allMemberships.map((m) => m.groupId))];
     const groups = await Promise.all(groupIds.map((id) => ctx.db.get('groups', id)));
-    const groupById = new Map(groups.filter(Boolean).map((g) => [g._id, g]));
+    const groupById = new Map(groups.filter(Boolean).map((g) => [g.id, g]));
 
     const usersWithGroups = users.map((u) => ({
       ...u,
-      memberships: (membershipsByUserId.get(u._id) ?? []).map((m) => ({
+      memberships: (membershipsByUserId.get(u.id) ?? []).map((m) => ({
         role: m.role,
         joinedAt: m.joinedAt,
         group: groupById.get(m.groupId) ?? null,
@@ -457,7 +457,7 @@ Vector search in native Convex is action-only. The migration keeps that shape: r
           limit: 10,
         });
         return ctx.runQuery(internal.posts.fetchByIds, {
-          ids: hits.map((h) => h._id),
+          ids: hits.map((h) => h.id),
         });
       },
     });
@@ -474,7 +474,7 @@ Vector search in native Convex is action-only. The migration keeps that shape: r
       .input(z.object({ ids: z.array(zid('posts')) }))
       .query(async ({ ctx, input }) => {
         return ctx.orm.query.posts.findMany({
-          where: { _id: { in: input.ids } },
+          where: { id: { in: input.ids } },
           limit: input.ids.length,
           with: { author: true },
         });
@@ -490,13 +490,13 @@ Vector search in native Convex is action-only. The migration keeps that shape: r
         });
 
         const rows = await ctx.runQuery(internal.posts.fetchByIds, {
-          ids: hits.map((h) => h._id),
+          ids: hits.map((h) => h.id),
         });
 
-        const scoreById = new Map(hits.map((h) => [String(h._id), h._score]));
+        const scoreById = new Map(hits.map((h) => [String(h.id), h._score]));
         return rows.map((row) => ({
           ...row,
-          _score: scoreById.get(String(row._id)) ?? 0,
+          _score: scoreById.get(String(row.id)) ?? 0,
         }));
       });
     ```
@@ -537,7 +537,7 @@ Now we'll map writes carefully, because semantics differ most here.
         const [row] = await ctx.orm
           .insert(users)
           .values({ name: input.name, email: input.email })
-          .returning({ id: users._id });
+          .returning({ id: users.id });
         return row.id;
       });
     ```
@@ -556,16 +556,16 @@ import { eq, unsetToken } from 'better-convex/orm';
 const { userId, ...patch } = input;
 
 // Patch-style update: undefined keys are ignored.
-await ctx.orm.update(users).set(patch).where(eq(users._id, userId));
+await ctx.orm.update(users).set(patch).where(eq(users.id, userId));
 
 // Native Convex equivalent of removing a field via patch({ field: undefined }):
-await ctx.orm.update(users).set({ nickname: unsetToken }).where(eq(users._id, userId));
+await ctx.orm.update(users).set({ nickname: unsetToken }).where(eq(users.id, userId));
 
 // Replace-style update: set all fields explicitly.
 await ctx.orm
   .update(users)
   .set({ name: input.name, email: input.email, role: input.role })
-  .where(eq(users._id, userId));
+  .where(eq(users.id, userId));
 ```
 
 <Callout icon={<AlertTriangle />}>
@@ -584,7 +584,7 @@ Also watch output shapes during migration: nullable ORM columns come back as `nu
   </CompareItem>
   <CompareItem title="After (ORM)">
     ```ts showLineNumbers
-    await ctx.orm.delete(users).where(eq(users._id, input.userId));
+    await ctx.orm.delete(users).where(eq(users.id, input.userId));
     ```
   </CompareItem>
 </Compare>
@@ -601,7 +601,7 @@ Also watch output shapes during migration: nullable ORM columns come back as `nu
         target: users.email,
         set: { name: input.name },
       })
-      .returning({ id: users._id });
+      .returning({ id: users.id });
     ```
   </CompareItem>
   <CompareItem title="Native Convex (manual unique lookup + patch/insert)">
@@ -613,8 +613,8 @@ Also watch output shapes during migration: nullable ORM columns come back as `nu
       .unique();
 
     if (existing) {
-      await ctx.db.patch('users', existing._id, { name: input.name });
-      return existing._id;
+      await ctx.db.patch('users', existing.id, { name: input.name });
+      return existing.id;
     }
     return await ctx.db.insert('users', { email: input.email, name: input.name });
     ```

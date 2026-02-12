@@ -83,7 +83,7 @@ export const createSession = authMutation
     const [row] = await ctx.orm
       .insert(session)
       .values({ token: input.token, userId: ctx.userId })
-      .returning({ id: session._id });
+      .returning({ id: session.id });
     return row.id;
   });
 ```

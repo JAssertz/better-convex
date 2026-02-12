@@ -183,7 +183,7 @@ Base context properties work identically:
   <CompareItem title="After (cRPC)">
     ```ts showLineNumbers {1-5,7-8}
     const UserSchema = z.object({
-      _id: zid('user'),
+      id: zid('user'),
       name: z.string(),
       email: z.string(),
     });
@@ -228,7 +228,7 @@ The output is automatically typed as `{ continueCursor, isDone, page: User[] }`.
         throw new CRPCError({ code: 'UNAUTHORIZED' });
       }
       const user = await ctx.db.get(session.userId);
-      return next({ ctx: { ...ctx, user, userId: user._id } });
+      return next({ ctx: { ...ctx, user, userId: user.id } });
     });
 
     // Use everywhere
@@ -269,7 +269,7 @@ The output is automatically typed as `{ continueCursor, isDone, page: User[] }`.
         throw new CRPCError({ code: 'UNAUTHORIZED' });
       }
       const user = await ctx.db.get(session.userId);
-      return next({ ctx: { ...ctx, user, userId: user._id } });
+      return next({ ctx: { ...ctx, user, userId: user.id } });
     });
 
     // Use everywhere

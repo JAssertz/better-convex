@@ -110,7 +110,7 @@ export const queryWithProject = publicQuery
   .input(z.object({ projectId: zid('projects'), name: z.string() }))
   .use(async ({ ctx, input, next }) => {
     const project = await ctx.orm.query.projects.findFirst({
-      where: { _id: input.projectId },
+      where: { id: input.projectId },
     });
     // Add to context, enrich input, or override fields
     return next({ ctx: { ...ctx, project }, input: { ...input, name: input.name.trim() } });
@@ -279,7 +279,7 @@ export const authQuery = c.query.use(async ({ ctx, next }) => {
   }
 
   const user = await ctx.orm.query.user.findFirst({
-    where: { _id: session.userId },
+    where: { id: session.userId },
   });
   if (!user) {
     throw new CRPCError({ code: 'UNAUTHORIZED', message: 'User not found' });
@@ -288,8 +288,8 @@ export const authQuery = c.query.use(async ({ ctx, next }) => {
   return next({
     ctx: {
       ...ctx,
-      user: { id: user._id, ...user },
-      userId: user._id,
+      user: { id: user.id, ...user },
+      userId: user.id,
     },
   });
 });
@@ -307,7 +307,7 @@ export const optionalAuthQuery = c.query.use(async ({ ctx, next }) => {
   }
 
   const user = await ctx.orm.query.user.findFirst({
-    where: { _id: session.userId },
+    where: { id: session.userId },
   });
   if (!user) {
     return next({ ctx: { ...ctx, user: null, userId: null } });
@@ -316,8 +316,8 @@ export const optionalAuthQuery = c.query.use(async ({ ctx, next }) => {
   return next({
     ctx: {
       ...ctx,
-      user: { id: user._id, ...user },
-      userId: user._id,
+      user: { id: user.id, ...user },
+      userId: user.id,
     },
   });
 });

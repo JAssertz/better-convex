@@ -172,19 +172,19 @@ triggers.register('post', async (ctx, change) => {
     if (!post.authorId) return;
 
     const existing = await ctx.orm.query.userActivity.findFirst({
-      where: { userId: post.authorId, postId: post._id },
+      where: { userId: post.authorId, postId: post.id },
     });
 
     if (existing) {
       await ctx.orm
         .update(userActivity)
         .set({ lastActivityAt: post.updatedAt })
-        .where(eq(userActivity._id, existing._id));
+        .where(eq(userActivity.id, existing.id));
       return;
     }
 
     await ctx.orm.insert(userActivity).values({
-      postId: post._id,
+      postId: post.id,
       lastActivityAt: post.updatedAt,
       userId: post.authorId,
     });
@@ -216,7 +216,7 @@ triggers.register('organization', async (ctx, change) => {
       await ctx.orm
         .update(user)
         .set({ activeOrganizationId: null })
-        .where(eq(user._id, userRow._id));
+        .where(eq(user.id, userRow.id));
     }
   }
 });
@@ -258,14 +258,14 @@ triggers.register('postTag', async (ctx, change) => {
 
     const tagIds = postTags.map((pt) => pt.tagId);
     const tags = await Promise.all(
-      tagIds.map((id) => ctx.orm.query.tag.findFirst({ where: { _id: id } }))
+      tagIds.map((id) => ctx.orm.query.tag.findFirst({ where: { id: id } }))
     );
     const tagNames = tags
       .filter((t) => t !== null)
       .map((t) => t!.name.toLowerCase())
       .sort();
 
-    await ctx.orm.update(post).set({ tagNames }).where(eq(post._id, postId));
+    await ctx.orm.update(post).set({ tagNames }).where(eq(post.id, postId));
   }
 });
 ```
@@ -435,7 +435,7 @@ triggers.register('session', async (ctx, change) => {
     await ctx.orm
       .update(session)
       .set({ isExpired })
-      .where(eq(session._id, change.id));
+      .where(eq(session.id, change.id));
   }
 });
 ```
@@ -458,7 +458,7 @@ export const updateSession = authMutation
       await ctx.orm
         .update(session)
         .set({ token: input.token })
-        .where(eq(session._id, input.id)); // Succeeds
+        .where(eq(session.id, input.id)); // Succeeds
     } catch (e) {
       console.error('failed'); // Trigger error caught
     }
@@ -472,7 +472,7 @@ export const updateSession = authMutation
     await ctx.orm
       .update(session)
       .set({ token: input.token })
-      .where(eq(session._id, input.id)); // Trigger errors will fail mutation
+      .where(eq(session.id, input.id)); // Trigger errors will fail mutation
   });
 ```
 
@@ -492,7 +492,7 @@ async function createUser(ctx: MutationCtx, data: UserData) {
   const [row] = await ctx.orm
     .insert(user)
     .values(data)
-    .returning({ id: user._id });
+    .returning({ id: user.id });
 
   await ctx.orm.insert(profile).values({ userId: row.id });
   return row.id;

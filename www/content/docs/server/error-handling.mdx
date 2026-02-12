@@ -156,7 +156,7 @@ export const getById = authQuery
   .input(z.object({ id: zid('posts') }))
   .query(async ({ ctx, input }) => {
     const post = await ctx.orm.query.posts.findFirst({
-      where: { _id: input.id },
+      where: { id: input.id },
     });
     if (!post) {
       throw new CRPCError({

@@ -450,15 +450,15 @@ export const list = authQuery
     const orgs = (
       await asyncMap(members, async (member) => {
         const org = await ctx.orm.query.organization.findFirst({
-          where: { _id: member.organizationId },
+          where: { id: member.organizationId },
         });
         if (!org) return null;
         return {
-          id: org._id,
+          id: org.id,
           name: org.name,
           slug: org.slug,
           logo: org.logo,
-          isPersonal: org._id === ctx.user.personalOrganizationId,
+          isPersonal: org.id === ctx.user.personalOrganizationId,
         };
       })
     ).filter((org): org is NonNullable<typeof org> => !!org);
@@ -529,7 +529,7 @@ export const update = authMutation
     await ctx.orm
       .update(organization)
       .set(input)
-      .where(eq(organization._id, ctx.user.activeOrganization!.id));
+      .where(eq(organization.id, ctx.user.activeOrganization!.id));
 
     return null;
   });
@@ -622,7 +622,7 @@ export const acceptInvitation = authMutation
   .output(z.null())
   .mutation(async ({ ctx, input }) => {
     const invitation = await ctx.orm.query.invitation.findFirst({
-      where: { _id: input.invitationId },
+      where: { id: input.invitationId },
     });
 
     if (!invitation || invitation.email !== ctx.user.email) {
@@ -656,7 +656,7 @@ export const rejectInvitation = authMutation
   .output(z.null())
   .mutation(async ({ ctx, input }) => {
     const invitation = await ctx.orm.query.invitation.findFirst({
-      where: { _id: input.invitationId },
+      where: { id: input.invitationId },
     });
 
     if (!invitation || invitation.email !== ctx.user.email) {
@@ -719,13 +719,13 @@ export const listUserInvitations = authQuery
 
     return asyncMap(invitations, async (inv) => {
       const org = await ctx.orm.query.organization.findFirst({
-        where: { _id: inv.organizationId },
+        where: { id: inv.organizationId },
       });
       const inviter = await ctx.orm.query.user.findFirst({
-        where: { _id: inv.inviterId },
+        where: { id: inv.inviterId },
       });
       return {
-        id: inv._id,
+        id: inv.id,
         organizationName: org?.name ?? '',
         organizationSlug: org?.slug ?? '',
         role: inv.role || 'member',
@@ -755,15 +755,15 @@ export const listPendingInvitations = authQuery
     const org = await ctx.orm.query.organization.findFirst({
       where: { slug: input.slug },
     });
-    if (!org || ctx.user.activeOrganization?.id !== org._id) return [];
+    if (!org || ctx.user.activeOrganization?.id !== org.id) return [];
 
     const invitations = await ctx.orm.query.invitation.findMany({
-      where: { organizationId: org._id, status: 'pending' },
+      where: { organizationId: org.id, status: 'pending' },
       limit: 100,
     });
 
     return invitations.map((inv) => ({
-      id: inv._id,
+      id: inv.id,
       email: inv.email,
       role: inv.role || 'member',
       expiresAt: inv.expiresAt,
@@ -799,7 +799,7 @@ export const getActiveMember = authQuery
     if (!member) return null;
 
     return {
-      id: member._id,
+      id: member.id,
       role: member.role,
       createdAt: member.createdAt,
     };
@@ -863,7 +863,7 @@ export const listMembers = authQuery
     if (!org) return { members: [] };
 
     const members = await ctx.orm.query.member.findMany({
-      where: { organizationId: org._id },
+      where: { organizationId: org.id },
       limit: 100,
     });
 
@@ -871,14 +871,14 @@ export const listMembers = authQuery
       await Promise.all(
         members.map(async (member) => {
           const user = await ctx.orm.query.user.findFirst({
-            where: { _id: member.userId },
+            where: { id: member.userId },
           });
           if (!user) return null;
           return {
-            id: member._id,
+            id: member.id,
             role: member.role,
             user: {
-              id: user._id,
+              id: user.id,
               name: user.name,
               email: user.email,
               image: user.image,
@@ -912,7 +912,7 @@ export const updateMemberRole = authMutation
     await ctx.orm
       .update(member)
       .set({ role: input.role })
-      .where(eq(member._id, input.memberId));
+      .where(eq(member.id, input.memberId));
 
     return null;
   });

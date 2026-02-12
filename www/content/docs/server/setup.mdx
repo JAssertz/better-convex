@@ -105,8 +105,8 @@ export const tables = { user, session };
 export default defineSchema(tables, { strict: false });
 
 export const relations = defineRelations(tables, (r) => ({
-  user: { sessions: r.many.session({ from: r.user._id, to: r.session.userId }) },
-  session: { user: r.one.user({ from: r.session.userId, to: r.user._id }) },
+  user: { sessions: r.many.session({ from: r.user.id, to: r.session.userId }) },
+  session: { user: r.one.user({ from: r.session.userId, to: r.user.id }) },
 }));
 ```
 

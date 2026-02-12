@@ -45,7 +45,7 @@ The database is your primary way to read and write data. In queries, you can onl
 import { user } from './schema';
 
 // Read
-const one = await ctx.orm.query.user.findFirst({ where: { _id: id } });
+const one = await ctx.orm.query.user.findFirst({ where: { id: id } });
 const many = await ctx.orm.query.user.findMany({ limit: 100 });
 
 // Write (mutations only)
@@ -86,12 +86,12 @@ export const authQuery = c.query.use(async ({ ctx, next }) => {
   }
 
   const user = await ctx.orm.query.user.findFirst({
-    where: { _id: session.userId },
+    where: { id: session.userId },
   });
   if (!user) throw new CRPCError({ code: 'UNAUTHORIZED' });
 
   return next({
-    ctx: { ...ctx, user: { id: user._id, session, ...user }, userId: user._id },
+    ctx: { ...ctx, user: { id: user.id, session, ...user }, userId: user.id },
   });
 });
 
@@ -121,7 +121,7 @@ export const create = authMutation
         userId: ctx.userId,
         expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
       })
-      .returning({ id: session._id });
+      .returning({ id: session.id });
     return row.id;
   });
 ```

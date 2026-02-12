@@ -172,7 +172,7 @@ export const authQuery = c.query.use(async ({ ctx, next }) => {
   const session = await getSession(ctx);
   if (!session) throw new CRPCError({ code: 'UNAUTHORIZED' });
   const user = await ctx.db.get(session.userId);
-  return next({ ctx: { ...ctx, user, userId: user._id } });
+  return next({ ctx: { ...ctx, user, userId: user.id } });
 });
 
 // Use everywhere

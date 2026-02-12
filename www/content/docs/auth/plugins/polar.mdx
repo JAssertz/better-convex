@@ -142,7 +142,7 @@ export const authClient = createClient<DataModel, typeof schema>({
         await ctx.scheduler.runAfter(0, internal.polarCustomer.createCustomer, {
           email: user.email,
           name: user.name || user.username,
-          userId: user._id,
+          userId: user.id,
         });
       },
     },
@@ -529,7 +529,7 @@ export const updateUserPolarCustomerId = privateMutation
   .output(z.null())
   .mutation(async ({ ctx, input: args }) => {
     const targetUser = await ctx.orm.query.user.findFirst({
-      where: { _id: args.userId },
+      where: { id: args.userId },
     });
     if (!targetUser) throw new CRPCError({ code: 'NOT_FOUND', message: 'User not found' });
 
@@ -538,7 +538,7 @@ export const updateUserPolarCustomerId = privateMutation
       where: { customerId: args.customerId },
     });
 
-    if (existingUser && existingUser._id !== args.userId) {
+    if (existingUser && existingUser.id !== args.userId) {
       throw new CRPCError({
         code: 'CONFLICT',
         message: `Another user already has Polar customer ID ${args.customerId}`,
@@ -548,7 +548,7 @@ export const updateUserPolarCustomerId = privateMutation
     await ctx.orm
       .update(user)
       .set({ customerId: args.customerId })
-      .where(eq(user._id, targetUser._id));
+      .where(eq(user.id, targetUser.id));
     return null;
   });
 ```
@@ -601,7 +601,7 @@ export const updateSubscription = privateMutation
     await ctx.orm
       .update(subscriptions)
       .set(args.subscription)
-      .where(eq(subscriptions._id, existing._id));
+      .where(eq(subscriptions.id, existing.id));
     return { updated: true };
   });
 

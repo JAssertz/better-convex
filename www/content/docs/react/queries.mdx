@@ -144,7 +144,7 @@ const { data: user } = useQuery(crpc.user.get.queryOptions({ id: userId }));
 // Only fetch settings after user is loaded
 const { data: settings } = useQuery(
   crpc.user.getSettings.queryOptions(
-    { userId: user?._id },
+    { userId: user?.id },
     { enabled: !!user }
   )
 );
@@ -200,7 +200,7 @@ export const getSettings = c
   .query()
   .meta({ auth: 'required' })  // Won't run if not authenticated
   .handler(async ({ ctx }) => {
-    return ctx.orm.query.user.findFirst({ where: { _id: ctx.user._id } });
+    return ctx.orm.query.user.findFirst({ where: { id: ctx.user.id } });
   });
 
 // Client-side - automatically skips when logged out
@@ -241,8 +241,8 @@ const { data, isPlaceholderData } = useQuery(
     {
       placeholderData: {
         users: [
-          { _id: '0' as Id<'user'>, name: 'Loading...' },
-          { _id: '2' as Id<'user'>, name: 'Loading...' },
+          { id: '0' as Id<'user'>, name: 'Loading...' },
+          { id: '2' as Id<'user'>, name: 'Loading...' },
         ],
       },
     }
@@ -252,7 +252,7 @@ const { data, isPlaceholderData } = useQuery(
 return (
   <div>
     {data?.users.map((user) => (
-      <WithSkeleton key={user._id} isLoading={isPlaceholderData}>
+      <WithSkeleton key={user.id} isLoading={isPlaceholderData}>
         <UserCard user={user} />
       </WithSkeleton>
     ))}
