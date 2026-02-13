@@ -34,7 +34,7 @@ describe('auth/create-api createApi()', () => {
 
   test('builds typed validators and internal actions', async () => {
     const authCalls: any[] = [];
-    const createAuth = (ctx: any) => {
+    const getAuth = (ctx: any) => {
       authCalls.push(ctx);
       return {
         options: {
@@ -57,7 +57,7 @@ describe('auth/create-api createApi()', () => {
       };
     };
 
-    const api = createApi(schema, createAuth as any);
+    const api = createApi(schema, getAuth as any);
 
     expect(api).toHaveProperty('create');
     expect(api).toHaveProperty('findOne');
@@ -76,13 +76,13 @@ describe('auth/create-api createApi()', () => {
       (api.rotateKeys as any)._handler({ id: 'ctx2' }, {})
     ).resolves.toBe('rotated');
 
-    // createApi() calls createAuth({} as any) once during construction to read options.
-    // The two action handlers call createAuth(ctx) for the provided ctx values.
+    // createApi() calls getAuth({} as any) once during construction to read options.
+    // The two action handlers call getAuth(ctx) for the provided ctx values.
     expect(authCalls).toEqual([{}, { id: 'ctx1' }, { id: 'ctx2' }]);
   });
 
   test('generated functions execute their handler closures (coverage smoke)', async () => {
-    const createAuth = (_ctx: any) => ({
+    const getAuth = (_ctx: any) => ({
       options: {
         // Override built-in unique fields so checkUniqueFields returns early.
         plugins: [
@@ -102,7 +102,7 @@ describe('auth/create-api createApi()', () => {
       },
     });
 
-    const api = createApi(schema, createAuth as any);
+    const api = createApi(schema, getAuth as any);
 
     const store = new Map<string, any>([
       ['user-1', { _id: 'user-1', email: 'a@site.com', name: 'alice' }],
@@ -214,7 +214,7 @@ describe('auth/create-api createApi()', () => {
   });
 
   test('skipValidation toggles exported arg schema shape', async () => {
-    const createAuth = (_ctx: any) => ({
+    const getAuth = (_ctx: any) => ({
       options: {
         plugins: [
           {
@@ -233,8 +233,8 @@ describe('auth/create-api createApi()', () => {
       },
     });
 
-    const strict = createApi(schema, createAuth as any);
-    const loose = createApi(schema, createAuth as any, {
+    const strict = createApi(schema, getAuth as any);
+    const loose = createApi(schema, getAuth as any, {
       skipValidation: true,
     });
 
@@ -246,7 +246,7 @@ describe('auth/create-api createApi()', () => {
   });
 
   test('options.internalMutation overrides internalMutationGeneric', async () => {
-    const createAuth = (_ctx: any) => ({
+    const getAuth = (_ctx: any) => ({
       options: {
         plugins: [
           {
@@ -271,7 +271,7 @@ describe('auth/create-api createApi()', () => {
       return internalMutationGeneric(cfg);
     };
 
-    createApi(schema, createAuth as any, {
+    createApi(schema, getAuth as any, {
       internalMutation: internalMutation as any,
       skipValidation: true,
     });
@@ -281,7 +281,7 @@ describe('auth/create-api createApi()', () => {
   });
 
   test('dbTriggers.wrapDB runs before context for CRUD mutations', async () => {
-    const createAuth = (_ctx: any) => ({
+    const getAuth = (_ctx: any) => ({
       options: {
         plugins: [
           {
@@ -301,7 +301,7 @@ describe('auth/create-api createApi()', () => {
     });
 
     const order: string[] = [];
-    const api = createApi(schema, createAuth as any, {
+    const api = createApi(schema, getAuth as any, {
       dbTriggers: {
         wrapDB: (ctx: any) => {
           order.push('db');
@@ -339,7 +339,7 @@ describe('auth/create-api createApi()', () => {
   });
 
   describe('ORM-first writes', () => {
-    const createAuth = (_ctx: any) => ({
+    const getAuth = (_ctx: any) => ({
       options: {
         plugins: [
           {
@@ -381,8 +381,8 @@ describe('auth/create-api createApi()', () => {
         }),
       }));
 
-      const ormSet = mock((update: Record<string, unknown>) => ({
-        where: async (expr: any) => {
+      const ormSet = mock((update: Record<string, unknown>) => {
+        const where = async (expr: any) => {
           const id = expr?.operands?.[1] as string | undefined;
           const current = id ? store.get(id) : undefined;
           if (!id || !current) {
@@ -398,8 +398,13 @@ describe('auth/create-api createApi()', () => {
           }
           store.set(id, nextDoc);
           return [nextDoc];
-        },
-      }));
+        };
+
+        return {
+          where,
+          returning: () => ({ where }),
+        };
+      });
 
       const ormUpdate = mock((_table: any) => ({
         set: ormSet,
@@ -444,7 +449,7 @@ describe('auth/create-api createApi()', () => {
     };
 
     test('deleteOne uses ORM delete path when ctx.orm exists', async () => {
-      const api = createApi(schema, createAuth as any);
+      const api = createApi(schema, getAuth as any);
       const { ctx, spies, store } = createOrmCtx({
         'user-1': { _id: 'user-1', email: 'a@site.com', name: 'alice' },
       });
@@ -462,7 +467,7 @@ describe('auth/create-api createApi()', () => {
     });
 
     test('deleteMany uses ORM delete path per document when ctx.orm exists', async () => {
-      const api = createApi(schema, createAuth as any);
+      const api = createApi(schema, getAuth as any);
       const { ctx, spies, store } = createOrmCtx({
         'user-1': { _id: 'user-1', email: 'a@site.com', name: 'alice' },
         'user-2': { _id: 'user-2', email: 'b@site.com', name: 'bob' },
@@ -484,7 +489,7 @@ describe('auth/create-api createApi()', () => {
     });
 
     test('updateOne uses ORM update path when ctx.orm exists', async () => {
-      const api = createApi(schema, createAuth as any);
+      const api = createApi(schema, getAuth as any);
       const { ctx, spies, store } = createOrmCtx({
         'user-1': { _id: 'user-1', email: 'a@site.com', name: 'alice' },
       });
@@ -503,8 +508,130 @@ describe('auth/create-api createApi()', () => {
       expect(store.get('user-1')?.name).toBe('updated');
     });
 
+    test('updateOne supports ORM update builders that require returning()', async () => {
+      const api = createApi(schema, getAuth as any);
+      const store = new Map<string, any>([
+        ['user-1', { _id: 'user-1', email: 'a@site.com', name: 'alice' }],
+      ]);
+
+      const ormUpdate = mock((_table: any) => ({
+        set: (update: Record<string, unknown>) => ({
+          returning: () => ({
+            where: async (expr: any) => {
+              const id = expr?.operands?.[1] as string | undefined;
+              const current = id ? store.get(id) : undefined;
+              if (!id || !current) {
+                return [];
+              }
+              const nextDoc = { ...current, ...update };
+              store.set(id, nextDoc);
+              return [nextDoc];
+            },
+          }),
+        }),
+      }));
+
+      const ctx = {
+        db: {
+          insert: mock(async () => {
+            throw new Error('db.insert should not be called when orm exists');
+          }),
+          get: async (id: string) => store.get(id) ?? null,
+          patch: mock(async () => {
+            throw new Error('db.patch should not be called when orm exists');
+          }),
+          delete: mock(async () => {
+            throw new Error('db.delete should not be called when orm exists');
+          }),
+        },
+        orm: {
+          insert: mock(() => ({
+            values: () => ({
+              returning: async () => [],
+            }),
+          })),
+          update: ormUpdate,
+          delete: mock(() => ({
+            where: async () => undefined,
+          })),
+        },
+        runMutation: mock(async () => undefined),
+      };
+
+      const result = await (api.updateOne as any)._handler(ctx, {
+        input: {
+          model: 'user',
+          update: { name: 'updated' },
+          where: [{ field: '_id', operator: 'eq', value: 'user-1' }],
+        },
+      });
+
+      expect(ormUpdate).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ _id: 'user-1', name: 'updated' });
+      expect(store.get('user-1')?.name).toBe('updated');
+    });
+
+    test('updateOne returns normalized ORM docs with _id when ORM returns only id', async () => {
+      const api = createApi(schema, getAuth as any);
+      const store = new Map<string, any>([
+        ['user-1', { _id: 'user-1', email: 'a@site.com', name: 'alice' }],
+      ]);
+      const ormUpdate = mock((_table: any) => ({
+        set: () => ({
+          returning: () => ({
+            where: async () => [
+              { id: 'user-1', email: 'a@site.com', name: 'updated' },
+            ],
+          }),
+        }),
+      }));
+
+      const ctx = {
+        db: {
+          insert: mock(async () => {
+            throw new Error('db.insert should not be called when orm exists');
+          }),
+          get: async (id: string) => store.get(id) ?? null,
+          patch: mock(async () => {
+            throw new Error('db.patch should not be called when orm exists');
+          }),
+          delete: mock(async () => {
+            throw new Error('db.delete should not be called when orm exists');
+          }),
+        },
+        orm: {
+          insert: mock(() => ({
+            values: () => ({
+              returning: async () => [],
+            }),
+          })),
+          update: ormUpdate,
+          delete: mock(() => ({
+            where: async () => undefined,
+          })),
+        },
+        runMutation: mock(async () => undefined),
+      };
+
+      const result = await (api.updateOne as any)._handler(ctx, {
+        input: {
+          model: 'user',
+          update: { name: 'updated' },
+          where: [{ field: '_id', operator: 'eq', value: 'user-1' }],
+        },
+      });
+
+      expect(ormUpdate).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({
+        _id: 'user-1',
+        email: 'a@site.com',
+        id: 'user-1',
+        name: 'updated',
+      });
+    });
+
     test('updateMany uses ORM update path per document when ctx.orm exists', async () => {
-      const api = createApi(schema, createAuth as any);
+      const api = createApi(schema, getAuth as any);
       const { ctx, spies, store } = createOrmCtx({
         'user-1': { _id: 'user-1', email: 'a@site.com', name: 'alice' },
         'user-2': { _id: 'user-2', email: 'b@site.com', name: 'bob' },
@@ -528,7 +655,7 @@ describe('auth/create-api createApi()', () => {
     });
 
     test('create uses ORM insert path when ctx.orm exists', async () => {
-      const api = createApi(schema, createAuth as any);
+      const api = createApi(schema, getAuth as any);
       const { ctx, spies, store } = createOrmCtx({});
 
       const created = await (api.create as any)._handler(ctx, {
@@ -544,8 +671,118 @@ describe('auth/create-api createApi()', () => {
       expect(store.size).toBe(1);
     });
 
+    test('create normalizes ORM docs to include _id for onCreate hooks', async () => {
+      const api = createApi(schema, getAuth as any);
+      const runMutation = mock(async () => undefined);
+
+      const ctx = {
+        db: {
+          insert: mock(async () => {
+            throw new Error('db.insert should not be called when orm exists');
+          }),
+          get: async () => null,
+          patch: mock(async () => {
+            throw new Error('db.patch should not be called when orm exists');
+          }),
+          delete: mock(async () => {
+            throw new Error('db.delete should not be called when orm exists');
+          }),
+        },
+        orm: {
+          insert: mock(() => ({
+            values: () => ({
+              returning: async () => [
+                { id: 'user-1', email: 'c@site.com', name: 'carol' },
+              ],
+            }),
+          })),
+          update: mock(() => ({
+            set: () => ({
+              returning: () => ({
+                where: async () => [],
+              }),
+            }),
+          })),
+          delete: mock(() => ({
+            where: async () => undefined,
+          })),
+        },
+        runMutation,
+      };
+
+      await (api.create as any)._handler(ctx, {
+        input: {
+          model: 'user',
+          data: { email: 'c@site.com', name: 'carol' },
+        },
+        onCreateHandle: 'on-create',
+      });
+
+      expect(runMutation).toHaveBeenCalledWith('on-create', {
+        doc: {
+          _id: 'user-1',
+          email: 'c@site.com',
+          id: 'user-1',
+          name: 'carol',
+        },
+        model: 'user',
+      });
+    });
+
+    test('create returns normalized ORM docs with _id when ORM returns only id', async () => {
+      const api = createApi(schema, getAuth as any);
+      const ctx = {
+        db: {
+          insert: mock(async () => {
+            throw new Error('db.insert should not be called when orm exists');
+          }),
+          get: async () => null,
+          patch: mock(async () => {
+            throw new Error('db.patch should not be called when orm exists');
+          }),
+          delete: mock(async () => {
+            throw new Error('db.delete should not be called when orm exists');
+          }),
+        },
+        orm: {
+          insert: mock(() => ({
+            values: () => ({
+              returning: async () => [
+                { id: 'user-1', email: 'c@site.com', name: 'carol' },
+              ],
+            }),
+          })),
+          update: mock(() => ({
+            set: () => ({
+              returning: () => ({
+                where: async () => [],
+              }),
+            }),
+          })),
+          delete: mock(() => ({
+            where: async () => undefined,
+          })),
+        },
+        runMutation: mock(async () => undefined),
+      };
+
+      const created = await (api.create as any)._handler(ctx, {
+        input: {
+          model: 'user',
+          data: { email: 'c@site.com', name: 'carol' },
+        },
+      });
+
+      expect(created).toMatchObject({
+        _id: 'user-1',
+        email: 'c@site.com',
+        id: 'user-1',
+        name: 'carol',
+      });
+    });
+
     test('falls back to ctx.db writes when ctx.orm is absent', async () => {
-      const api = createApi(schema, createAuth as any);
+      const api = createApi(schema, getAuth as any);
       const store = new Map<string, any>([
         ['user-1', { _id: 'user-1', email: 'a@site.com', name: 'alice' }],
       ]);
@@ -596,7 +833,7 @@ describe('auth/create-api createApi()', () => {
     });
 
     test('ORM update maps undefined fields to unsetToken', async () => {
-      const api = createApi(schema, createAuth as any);
+      const api = createApi(schema, getAuth as any);
       const { ctx, spies, store } = createOrmCtx({
         'user-1': { _id: 'user-1', email: 'a@site.com', name: 'alice' },
       });

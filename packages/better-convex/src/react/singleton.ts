@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { ConvexReactClient } from 'convex/react';
 
+import type { DataTransformerOptions } from '../crpc/transformer';
 import type { AuthStore } from './auth-store';
 import { ConvexQueryClient } from './client';
 
@@ -29,6 +30,8 @@ export type ConvexQueryClientSingletonOptions = {
    * @default 3000
    */
   unsubscribeDelay?: number;
+  /** Optional payload transformer (always composed with built-in Date support). */
+  transformer?: DataTransformerOptions;
 };
 
 /** Get/create ConvexQueryClient singleton (fresh on SSR, singleton on client) */
@@ -38,6 +41,7 @@ export const getConvexQueryClientSingleton = ({
   queryClient,
   symbolKey = 'convex.convexQueryClient',
   unsubscribeDelay,
+  transformer,
 }: ConvexQueryClientSingletonOptions): ConvexQueryClient => {
   const key = Symbol.for(symbolKey);
   const isServer = typeof window === 'undefined';
@@ -45,7 +49,11 @@ export const getConvexQueryClientSingleton = ({
   let client: ConvexQueryClient;
 
   if (isServer) {
-    client = new ConvexQueryClient(convex, { authStore, unsubscribeDelay });
+    client = new ConvexQueryClient(convex, {
+      authStore,
+      unsubscribeDelay,
+      transformer,
+    });
   } else {
     if (globalStore[key]) {
       // Update authStore on reuse (HMR fix: jotai store may reset)
@@ -54,6 +62,7 @@ export const getConvexQueryClientSingleton = ({
       globalStore[key] = new ConvexQueryClient(convex, {
         authStore,
         unsubscribeDelay,
+        transformer,
       });
     }
     client = globalStore[key] as ConvexQueryClient;

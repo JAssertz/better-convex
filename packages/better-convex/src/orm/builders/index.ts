@@ -46,6 +46,12 @@ export {
   custom,
   json,
 } from './custom';
+// Date builder
+export {
+  ConvexDateBuilder,
+  type ConvexDateBuilderInitial,
+  date,
+} from './date';
 // ID builder (Convex-specific)
 export {
   ConvexIdBuilder,
@@ -60,10 +66,13 @@ export {
 } from './number';
 // System fields
 export {
+  ConvexSystemCreatedAtBuilder,
   ConvexSystemCreationTimeBuilder,
   ConvexSystemIdBuilder,
   createSystemFields,
+  type SystemFieldAliases,
   type SystemFields,
+  type SystemFieldsWithAliases,
 } from './system-fields';
 // Text builder
 export {

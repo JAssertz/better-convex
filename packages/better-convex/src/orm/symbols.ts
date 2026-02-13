@@ -15,6 +15,14 @@ export type OrmRuntimeDefaults = {
   mutationAsyncDelayMs?: number;
 };
 
+export type OrmTypeOptions = {
+  date?: boolean;
+};
+
+export type ResolvedOrmTypeOptions = {
+  date: boolean;
+};
+
 export type OrmDeleteMode = 'hard' | 'soft' | 'scheduled';
 
 export type OrmTableDeleteConfig = {

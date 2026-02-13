@@ -24,8 +24,12 @@ import type {
   UseQueryOptions,
 } from '@tanstack/react-query';
 import type { z } from 'zod';
-
 import { HttpClientError, type HttpErrorCode } from '../crpc/http-types';
+import {
+  type CombinedDataTransformer,
+  type DataTransformerOptions,
+  getTransformer,
+} from '../crpc/transformer';
 import type { DistributiveOmit, Simplify } from '../internal/types';
 import type { CRPCHttpRouter, HttpRouterRecord } from '../server/http-router';
 import type { HttpProcedure } from '../server/http-types';
@@ -397,6 +401,8 @@ export interface HttpProxyOptions<TRoutes extends HttpRouteMap> {
   fetch?: typeof fetch;
   /** Error handler called on HTTP errors */
   onError?: (error: HttpClientError) => void;
+  /** Optional payload transformer (always composed with built-in Date support). */
+  transformer?: DataTransformerOptions;
 }
 
 // ============================================================================
@@ -454,6 +460,8 @@ async function executeHttpRequest(opts: {
         | Promise<{ [key: string]: string | undefined }>);
   /** Base fetch from proxy config */
   baseFetch?: typeof fetch;
+  /** Wire transformer for payload serialization. */
+  transformer: CombinedDataTransformer;
 }): Promise<unknown> {
   const { method, path } = opts.route;
   const args = opts.args ?? {};
@@ -484,7 +492,7 @@ async function executeHttpRequest(opts: {
       }
     }
     if (Object.keys(jsonBody).length > 0) {
-      rBody = JSON.stringify(jsonBody);
+      rBody = JSON.stringify(opts.transformer.input.serialize(jsonBody));
       cType = 'application/json';
     }
   }
@@ -581,7 +589,7 @@ async function executeHttpRequest(opts: {
   // Check Content-Type to determine how to parse the response
   const contentType = response.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
-    return response.json();
+    return opts.transformer.output.deserialize(await response.json());
   }
 
   // Non-JSON responses (text/plain, text/csv, etc.) return as text
@@ -610,6 +618,7 @@ function createRecursiveHttpProxy(
           | Promise<{ [key: string]: string | undefined }>);
     fetch?: typeof fetch;
     onError?: (error: HttpClientError) => void;
+    transformer: CombinedDataTransformer;
   },
   path: string[] = []
 ): unknown {
@@ -637,6 +646,7 @@ function createRecursiveHttpProxy(
               args,
               baseHeaders: opts.headers,
               baseFetch: opts.fetch,
+              transformer: opts.transformer,
             });
           } catch (error) {
             if (opts.onError && error instanceof HttpClientError) {
@@ -662,6 +672,7 @@ function createRecursiveHttpProxy(
               args,
               baseHeaders: opts.headers,
               baseFetch: opts.fetch,
+              transformer: opts.transformer,
             });
           } catch (error) {
             if (opts.onError && error instanceof HttpClientError) {
@@ -696,6 +707,7 @@ function createRecursiveHttpProxy(
                 args,
                 baseHeaders: opts.headers,
                 baseFetch: opts.fetch,
+                transformer: opts.transformer,
               });
             } catch (error) {
               if (opts.onError && error instanceof HttpClientError) {
@@ -765,6 +777,7 @@ function createRecursiveHttpProxy(
                 args,
                 baseHeaders: opts.headers,
                 baseFetch: opts.fetch,
+                transformer: opts.transformer,
               });
             } catch (error) {
               if (opts.onError && error instanceof HttpClientError) {
@@ -814,11 +827,13 @@ export function createHttpProxy<
   TRouter extends CRPCHttpRouter<any>,
   TRoutes extends HttpRouteMap = HttpRouteMap,
 >(opts: HttpProxyOptions<TRoutes>): HttpCRPCClientFromRouter<TRouter> {
+  const transformer = getTransformer(opts.transformer);
   return createRecursiveHttpProxy({
     convexSiteUrl: opts.convexSiteUrl,
     routes: opts.routes,
     headers: opts.headers,
     fetch: opts.fetch,
     onError: opts.onError,
+    transformer,
   }) as HttpCRPCClientFromRouter<TRouter>;
 }

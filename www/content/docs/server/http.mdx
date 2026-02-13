@@ -356,7 +356,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { router } from '../lib/crpc';
 
-import { createAuth } from './auth';
+import { getAuth } from './auth';
 import { health } from '../routers/health';
 import { todosRouter } from '../routers/todos';
 
@@ -374,7 +374,7 @@ app.use(
 );
 
 // Better Auth middleware
-app.use(authMiddleware(createAuth));
+app.use(authMiddleware(getAuth));
 
 // cRPC router
 export const appRouter = router({
@@ -390,7 +390,7 @@ export default createHttpRouter(app, appRouter);
 | Component | Purpose |
 |-----------|---------|
 | `Hono` | Route handling, middleware, CORS |
-| `authMiddleware(createAuth)` | Better Auth routes middleware |
+| `authMiddleware(getAuth)` | Better Auth routes middleware |
 | `createHttpRouter(app, appRouter)` | Creates Convex HttpRouter with Hono + cRPC |
 
 ## CORS
@@ -662,6 +662,8 @@ export const { CRPCProvider, useCRPC } = createCRPCContext<Api>({
   convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!, // Required for HTTP
 });
 ```
+
+If you customize wire serialization, pass `transformer` here too. `Date` stays always-on (`$date`), and your custom transformer is additive.
 
 ### GET Requests
 

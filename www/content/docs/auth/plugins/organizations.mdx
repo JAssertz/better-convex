@@ -36,7 +36,7 @@ Add the organization plugin to your auth options:
 import { organization } from 'better-auth/plugins';
 import type { ActionCtx } from './_generated/server';
 
-export const createAuthOptions = (ctx: GenericCtx) =>
+export const getAuthOptions = (ctx: GenericCtx) =>
   ({
     // ... existing config
     plugins: [

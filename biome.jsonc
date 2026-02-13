@@ -37,7 +37,8 @@
         "noEmptyBlockStatements": "off", // chill
         "useAwait": "off", // chill
         "noDocumentCookie": "off", // shadcn
-        "noThenProperty": "off" // drizzle
+        "noThenProperty": "off", // drizzle,
+        "noBitwiseOperators": "off"
       },
       "style": {
         "noMagicNumbers": "off", // chill
@@ -185,12 +186,6 @@
       }
     },
     {
-      "includes": ["convex/**", "test/**"],
-      "linter": {
-        "enabled": false
-      }
-    },
-    {
       "includes": ["packages/**/*.ts"],
       "linter": {
         "rules": {
@@ -208,6 +203,12 @@
             "noBarrelFile": "off"
           }
         }
+      }
+    },
+    {
+      "includes": ["convex/**", "test/**", "**/*.test.*"],
+      "linter": {
+        "enabled": false
       }
     }
   ]

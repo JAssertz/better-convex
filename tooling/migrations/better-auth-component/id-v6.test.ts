@@ -75,9 +75,9 @@ describe('id-v6 codec', () => {
   });
 
   test('decode rejects invalid base32', () => {
-    expect(() => decodeDeveloperDocumentId('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')).toThrow(
-      /valid base32/i,
-    );
+    expect(() =>
+      decodeDeveloperDocumentId('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+    ).toThrow(/valid base32/i);
   });
 
   test('decode rejects invalid footer version', () => {
@@ -97,13 +97,13 @@ describe('id-v6 codec', () => {
 
     const tamperedId = base32Encode(full);
     expect(() => decodeDeveloperDocumentId(tamperedId)).toThrow(
-      /Invalid ID version/i,
+      /Invalid ID version/i
     );
   });
 
   test('decode rejects known non-canonical encoding', () => {
     expect(() =>
-      decodeDeveloperDocumentId('mz1xn7tymdnktmmzqy5xxhn7tjs2nkkfmtjjr'),
+      decodeDeveloperDocumentId('mz1xn7tymdnktmmzqy5xxhn7tjs2nkkfmtjjr')
     ).toThrow();
   });
 
@@ -120,7 +120,7 @@ describe('id-v6 codec', () => {
 
     expect(remappedDecoded.tableNumber).toBe(77);
     expect(Array.from(remappedDecoded.internalId)).toEqual(
-      Array.from(originalDecoded.internalId),
+      Array.from(originalDecoded.internalId)
     );
     expect(remapped).not.toBe(original);
   });

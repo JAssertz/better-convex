@@ -57,7 +57,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content 3',
       published: true,
       authorId: user1,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -67,7 +67,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content 1',
       published: true,
       authorId: user2,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -77,18 +77,18 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content 2',
       published: true,
       authorId: user3,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
 
-    // Query with ascending order by createdAt
+    // Query with ascending order by publishedAt
     const posts = await db.query.posts.findMany({
-      orderBy: (posts: any, { asc }: any) => asc(posts.createdAt),
+      orderBy: (posts: any, { asc }: any) => asc(posts.publishedAt),
     });
 
     expect(posts).toHaveLength(3);
-    expect(posts[0].createdAt).toBe(1000);
-    expect(posts[1].createdAt).toBe(2000);
-    expect(posts[2].createdAt).toBe(3000);
+    expect(posts[0].publishedAt).toBe(1000);
+    expect(posts[1].publishedAt).toBe(2000);
+    expect(posts[2].publishedAt).toBe(3000);
   });
 
   test('desc() orders by field descending', async ({ ctx }) => {
@@ -116,7 +116,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content 1',
       published: true,
       authorId: user1,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -126,7 +126,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content 2',
       published: true,
       authorId: user2,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -136,18 +136,18 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content 3',
       published: true,
       authorId: user3,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
-    // Query with descending order by createdAt
+    // Query with descending order by publishedAt
     const posts = await db.query.posts.findMany({
-      orderBy: (posts: any, { desc }: any) => desc(posts.createdAt),
+      orderBy: (posts: any, { desc }: any) => desc(posts.publishedAt),
     });
 
     expect(posts).toHaveLength(3);
-    expect(posts[0].createdAt).toBe(3000);
-    expect(posts[1].createdAt).toBe(2000);
-    expect(posts[2].createdAt).toBe(1000);
+    expect(posts[0].publishedAt).toBe(3000);
+    expect(posts[1].publishedAt).toBe(2000);
+    expect(posts[2].publishedAt).toBe(1000);
   });
 
   test('orderBy callback accepts column builder (defaults to asc)', async ({
@@ -168,7 +168,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content 3',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -178,7 +178,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content 1',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -188,20 +188,20 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content 2',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
 
     const posts = await db.query.posts.findMany({
-      orderBy: (posts: any) => posts.createdAt,
+      orderBy: (posts: any) => posts.publishedAt,
     });
 
     expect(posts).toHaveLength(3);
-    expect(posts[0].createdAt).toBe(1000);
-    expect(posts[1].createdAt).toBe(2000);
-    expect(posts[2].createdAt).toBe(3000);
+    expect(posts[0].publishedAt).toBe(1000);
+    expect(posts[1].publishedAt).toBe(2000);
+    expect(posts[2].publishedAt).toBe(3000);
   });
 
-  test('orderBy by _creationTime uses default index', async ({ ctx }) => {
+  test('orderBy by createdAt uses default index', async ({ ctx }) => {
     const db = ctx.orm;
 
     // Create test data
@@ -218,7 +218,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -228,7 +228,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -238,12 +238,12 @@ describe('M5: OrderBy - Basic Ordering', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
-    // Query ordered by _creationTime (has default index)
+    // Query ordered by createdAt (has default index)
     const postsAsc = await db.query.posts.findMany({
-      orderBy: { _creationTime: 'asc' },
+      orderBy: { createdAt: 'asc' },
     });
 
     expect(postsAsc).toHaveLength(3);
@@ -251,7 +251,7 @@ describe('M5: OrderBy - Basic Ordering', () => {
     expect(postsAsc[2].title).toBe('Third');
 
     const postsDesc = await db.query.posts.findMany({
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
 
     expect(postsDesc).toHaveLength(3);
@@ -281,7 +281,7 @@ describe('M5: OrderBy - Combined with WHERE', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -291,7 +291,7 @@ describe('M5: OrderBy - Combined with WHERE', () => {
       content: 'Content',
       published: false,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -301,7 +301,7 @@ describe('M5: OrderBy - Combined with WHERE', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -311,13 +311,13 @@ describe('M5: OrderBy - Combined with WHERE', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1500,
+      publishedAt: 1500,
     });
 
-    // Query published posts ordered by createdAt
+    // Query published posts ordered by publishedAt
     const posts = await db.query.posts.findMany({
       where: { published: true },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { publishedAt: 'asc' },
     });
 
     expect(posts).toHaveLength(3);
@@ -348,7 +348,7 @@ describe('M5: OrderBy - Combined with Pagination', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -358,7 +358,7 @@ describe('M5: OrderBy - Combined with Pagination', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -368,7 +368,7 @@ describe('M5: OrderBy - Combined with Pagination', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -378,12 +378,12 @@ describe('M5: OrderBy - Combined with Pagination', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 4000,
+      publishedAt: 4000,
     });
 
     // Get top 2 oldest posts
     const posts = await db.query.posts.findMany({
-      orderBy: { createdAt: 'asc' },
+      orderBy: { publishedAt: 'asc' },
       limit: 2,
     });
 
@@ -408,7 +408,7 @@ describe('M5: OrderBy - Combined with Pagination', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -418,7 +418,7 @@ describe('M5: OrderBy - Combined with Pagination', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -428,7 +428,7 @@ describe('M5: OrderBy - Combined with Pagination', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -438,12 +438,12 @@ describe('M5: OrderBy - Combined with Pagination', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 4000,
+      publishedAt: 4000,
     });
 
     // Get page 2 (skip first 2, take 2)
     const posts = await db.query.posts.findMany({
-      orderBy: { createdAt: 'asc' },
+      orderBy: { publishedAt: 'asc' },
       limit: 2,
       offset: 2,
     });
@@ -475,7 +475,7 @@ describe('M5: OrderBy - Multiple Fields', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -485,7 +485,7 @@ describe('M5: OrderBy - Multiple Fields', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -495,19 +495,19 @@ describe('M5: OrderBy - Multiple Fields', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
 
     const posts = await db.query.posts.findMany({
       orderBy: (posts: any, { asc, desc }: any) => [
-        desc(posts.createdAt),
+        desc(posts.publishedAt),
         asc(posts.title),
       ],
     });
 
     expect(posts).toHaveLength(3);
-    expect(posts[0].title).toBe('C Title'); // createdAt 2000
-    expect(posts[1].title).toBe('A Title'); // createdAt 1000, title asc
+    expect(posts[0].title).toBe('C Title'); // publishedAt 2000
+    expect(posts[1].title).toBe('A Title'); // publishedAt 1000, title asc
     expect(posts[2].title).toBe('B Title');
   });
 
@@ -530,7 +530,7 @@ describe('M5: OrderBy - Multiple Fields', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -540,7 +540,7 @@ describe('M5: OrderBy - Multiple Fields', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -550,7 +550,7 @@ describe('M5: OrderBy - Multiple Fields', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -560,12 +560,12 @@ describe('M5: OrderBy - Multiple Fields', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
 
     const posts = await db.query.posts.findMany({
       orderBy: (posts: any, { desc, asc }: any) => [
-        desc(posts.createdAt),
+        desc(posts.publishedAt),
         asc(posts.title),
       ],
       offset: 1,

@@ -227,4 +227,41 @@ describe('server/http-builder', () => {
     expect(resp.status).toBe(201);
     await expect(resp.text()).resolves.toBe('ok');
   });
+
+  test('procedure uses custom transformer for body decode and json encode', async () => {
+    const http = createHttpProcedureBuilder({
+      base: (handler) => handler as any,
+      createContext: () => ({}) as any,
+      meta: {},
+      transformer: {
+        input: {
+          serialize: (value: unknown) => value,
+          deserialize: (value: unknown) => (value as any)?.$in ?? value,
+        },
+        output: {
+          serialize: (value: unknown) => ({ $out: value }),
+          deserialize: (value: unknown) => value,
+        },
+      },
+    });
+
+    const proc = http
+      .post('/x')
+      .input(z.object({ x: z.number() }))
+      .mutation(async ({ input }) => ({ x: input.x + 1 }));
+
+    const resp = await (proc as any)(
+      {},
+      new Request('https://example.com/x', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ $in: { x: 1 } }),
+      })
+    );
+
+    expect(resp.status).toBe(200);
+    await expect(resp.json()).resolves.toEqual({
+      $out: { x: 2 },
+    });
+  });
 });

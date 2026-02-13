@@ -175,6 +175,30 @@ describe('M7 Mutations', () => {
     expect(deleted).toHaveLength(1);
   });
 
+  it('should no-op id equality with undefined without requiring allowFullScan', async ({
+    ctx,
+  }) => {
+    const db = ctx.orm;
+    const [user] = await db.insert(users).values(baseUser).returning();
+
+    const updated = await db
+      .update(users)
+      .set({ name: 'ShouldNotApply' })
+      .where(eq(users.id, undefined as any))
+      .returning();
+
+    expect(updated).toEqual([]);
+    expect(await ctx.db.get(user.id)).toMatchObject({ name: baseUser.name });
+
+    const deleted = await db
+      .delete(users)
+      .where(eq(users.id, undefined as any))
+      .returning();
+
+    expect(deleted).toEqual([]);
+    expect(await ctx.db.get(user.id)).toBeTruthy();
+  });
+
   it('should allow inArray update/delete with indexed where without allowFullScan', async ({
     ctx,
   }) => {
@@ -1000,10 +1024,7 @@ describe('M7 Mutations', () => {
         name: 'Ada',
       });
 
-      await ctx.orm
-        .delete(softUsers)
-        .where(eq(softUsers.id, userId))
-        .execute();
+      await ctx.orm.delete(softUsers).where(eq(softUsers.id, userId)).execute();
 
       const updated = await ctx.db.get(userId);
       expect(updated).not.toBeNull();

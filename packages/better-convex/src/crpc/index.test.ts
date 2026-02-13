@@ -11,6 +11,7 @@ import {
   convexInfiniteQueryOptions,
   convexQuery,
 } from './query-options';
+import { decodeWire, encodeWire } from './transformer';
 import { FUNC_REF_SYMBOL } from './types';
 
 test('barrel exports runtime members from crpc modules', () => {
@@ -18,6 +19,8 @@ test('barrel exports runtime members from crpc modules', () => {
   expect(crpc.isCRPCClientError).toBe(isCRPCClientError);
   expect(crpc.isCRPCError).toBe(isCRPCError);
   expect(crpc.defaultIsUnauthorized).toBe(defaultIsUnauthorized);
+  expect(crpc.encodeWire).toBe(encodeWire);
+  expect(crpc.decodeWire).toBe(decodeWire);
   expect(crpc.isHttpClientError).toBe(isHttpClientError);
   expect(crpc.convexQuery).toBe(convexQuery);
   expect(crpc.convexAction).toBe(convexAction);

@@ -15,6 +15,8 @@ The "after" snippets are cRPC-first, but the same ORM calls work in vanilla Conv
 If you're new to cRPC, start with [/docs/server/procedures](/docs/server/procedures).
 </Callout>
 
+In ORM APIs, use public system fields `id` and `createdAt`. Convex internal `_id` and `_creationTime` are not part of the public ORM surface.
+
 ## Why migrate now
 
 Native Convex is excellent: explicit index usage, reactive queries, simple transactional writes, and clean JavaScript control flow.
@@ -84,7 +86,7 @@ import type { GenericDatabaseReader, GenericDatabaseWriter } from 'convex/server
 import { createOrm } from 'better-convex/orm';
 import { relations } from '../schema';
 
-const orm = createOrm({ schema: relations });
+const orm = createOrm({ schema: relations, types: { date: true } });
 
 export const withOrm = <Ctx extends {
   db: GenericDatabaseReader<any> | GenericDatabaseWriter<any>;
@@ -104,6 +106,8 @@ const c = initCRPC
 ```
 
 Done once, every handler can read through `ctx.orm`.
+
+Use `types: { date: true }` when your handlers run through cRPC and you want ORM `createdAt` values hydrated as `Date`. Without it, `createdAt` stays `number`.
 
 ## Step 2: Migrate core reads
 
@@ -158,7 +162,7 @@ The migration is direct: `id` equality through `where` is the ORM equivalent of 
     ```ts showLineNumbers {2-5}
     const posts = await ctx.orm.query.posts.findMany({
       where: { userId: input.userId },
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
       limit: 20,
     });
     ```
@@ -181,7 +185,7 @@ Native Convex has no SQL joins, so relation loading means manual multi-query ass
   <CompareItem title="ORM (`with`)">
     ```ts showLineNumbers {2-7}
     const posts = await ctx.orm.query.posts.findMany({
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
       limit: 20,
       with: { author: true },
     });
@@ -213,7 +217,7 @@ The manual pattern works, but `with:` keeps the same outcome with less boilerpla
     const users = await ctx.orm.query.users.findMany({
       limit: 10,
       with: {
-        posts: { limit: 5, orderBy: { _creationTime: 'desc' } },
+        posts: { limit: 5, orderBy: { createdAt: 'desc' } },
       },
     });
     ```
@@ -377,7 +381,7 @@ Next we'll migrate pagination. The mapping is straightforward: native `paginate`
       .input(z.object({ cursor: z.string().nullable() }))
       .query(async ({ ctx, input }) => {
         return ctx.orm.query.posts.findMany({
-          orderBy: { _creationTime: 'desc' },
+          orderBy: { createdAt: 'desc' },
           cursor: input.cursor,
           limit: 20,
         });

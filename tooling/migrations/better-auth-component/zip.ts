@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
-import yazl from 'yazl';
 import yauzl from 'yauzl';
+import yazl from 'yazl';
 
 const addDirectoryToZip = ({
   absoluteDirectoryPath,
@@ -13,7 +13,9 @@ const addDirectoryToZip = ({
   archivePath: string;
   zipFile: yazl.ZipFile;
 }): void => {
-  const entries = fs.readdirSync(absoluteDirectoryPath, { withFileTypes: true });
+  const entries = fs.readdirSync(absoluteDirectoryPath, {
+    withFileTypes: true,
+  });
 
   for (const entry of entries) {
     const entryPath = path.join(absoluteDirectoryPath, entry.name);
@@ -84,8 +86,11 @@ export const unzipArchive = async ({
 
       zipFile.readEntry();
 
-      zipFile.on('entry', entry => {
-        const outputPath = path.resolve(destinationDirectoryPath, entry.fileName);
+      zipFile.on('entry', (entry) => {
+        const outputPath = path.resolve(
+          destinationDirectoryPath,
+          entry.fileName
+        );
 
         if (entry.fileName.endsWith('/')) {
           fsPromises

@@ -14,6 +14,11 @@
 
 import type { ConvexReactClient, WatchQueryOptions } from 'convex/react';
 import type { FunctionReference } from 'convex/server';
+import {
+  type CombinedDataTransformer,
+  type DataTransformerOptions,
+  getTransformer,
+} from '../crpc/transformer';
 import type { VanillaCRPCClient } from '../crpc/types';
 import type { CallerMeta } from '../server/caller';
 import { getFuncRef, getFunctionType } from '../shared/meta-utils';
@@ -29,7 +34,8 @@ function createRecursiveVanillaProxy(
   api: Record<string, unknown>,
   path: string[],
   meta: CallerMeta,
-  convexClient: ConvexReactClient
+  convexClient: ConvexReactClient,
+  transformer: CombinedDataTransformer
 ): unknown {
   return new Proxy(() => {}, {
     get(_target, prop: string | symbol) {
@@ -41,17 +47,22 @@ function createRecursiveVanillaProxy(
         return async (args: Record<string, unknown> = {}) => {
           const funcRef = getFuncRef(api, path);
           const fnType = getFunctionType(path, meta);
+          const wireArgs = transformer.input.serialize(args);
 
           if (fnType === 'action') {
-            return convexClient.action(
-              funcRef as FunctionReference<'action'>,
-              args
+            return transformer.output.deserialize(
+              await convexClient.action(
+                funcRef as FunctionReference<'action'>,
+                wireArgs as any
+              )
             );
           }
 
-          return convexClient.query(
-            funcRef as FunctionReference<'query'>,
-            args
+          return transformer.output.deserialize(
+            await convexClient.query(
+              funcRef as FunctionReference<'query'>,
+              wireArgs as any
+            )
           );
         };
       }
@@ -65,7 +76,7 @@ function createRecursiveVanillaProxy(
           const funcRef = getFuncRef(api, path);
           return convexClient.watchQuery(
             funcRef as FunctionReference<'query'>,
-            args,
+            transformer.input.serialize(args) as any,
             opts
           );
         };
@@ -76,17 +87,22 @@ function createRecursiveVanillaProxy(
         return async (args: Record<string, unknown> = {}) => {
           const funcRef = getFuncRef(api, path);
           const fnType = getFunctionType(path, meta);
+          const wireArgs = transformer.input.serialize(args);
 
           if (fnType === 'action') {
-            return convexClient.action(
-              funcRef as FunctionReference<'action'>,
-              args
+            return transformer.output.deserialize(
+              await convexClient.action(
+                funcRef as FunctionReference<'action'>,
+                wireArgs as any
+              )
             );
           }
 
-          return convexClient.mutation(
-            funcRef as FunctionReference<'mutation'>,
-            args
+          return transformer.output.deserialize(
+            await convexClient.mutation(
+              funcRef as FunctionReference<'mutation'>,
+              wireArgs as any
+            )
           );
         };
       }
@@ -96,7 +112,8 @@ function createRecursiveVanillaProxy(
         api,
         [...path, prop],
         meta,
-        convexClient
+        convexClient,
+        transformer
       );
     },
   });
@@ -124,12 +141,15 @@ function createRecursiveVanillaProxy(
 export function createVanillaCRPCProxy<TApi extends Record<string, unknown>>(
   api: TApi,
   meta: CallerMeta,
-  convexClient: ConvexReactClient
+  convexClient: ConvexReactClient,
+  transformer?: DataTransformerOptions
 ): VanillaCRPCClient<TApi> {
+  const resolvedTransformer = getTransformer(transformer);
   return createRecursiveVanillaProxy(
     api,
     [],
     meta,
-    convexClient
+    convexClient,
+    resolvedTransformer
   ) as VanillaCRPCClient<TApi>;
 }

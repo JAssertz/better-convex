@@ -446,7 +446,7 @@ export const dbAdapter = <
   Schema extends SchemaDefinition<any, any>,
 >(
   ctx: GenericCtx<DataModel>,
-  createAuthOptions: (ctx: any) => BetterAuthOptions,
+  getAuthOptions: (ctx: any) => BetterAuthOptions,
   {
     authFunctions,
     debugLogs,
@@ -459,7 +459,7 @@ export const dbAdapter = <
     triggers?: Triggers<DataModel, Schema>;
   }
 ) => {
-  const betterAuthSchema = getAuthTables(createAuthOptions({} as any));
+  const betterAuthSchema = getAuthTables(getAuthOptions({} as any));
 
   return createAdapterFactory({
     config: {

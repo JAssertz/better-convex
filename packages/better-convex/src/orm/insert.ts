@@ -10,15 +10,17 @@ import {
   evaluateFilter,
   getColumnName,
   getOrmContext,
-  normalizePublicSystemFields,
   getTableColumns,
   getTableName,
   getUniqueIndexes,
-  selectReturningRow,
+  hydrateDateFieldsForRead,
+  normalizeDateFieldsForWrite,
+  selectReturningRowWithHydration,
 } from './mutation-utils';
 import { QueryPromise } from './query-promise';
 import { canInsertRow, evaluateUpdateDecision } from './rls/evaluator';
 import type { ConvexTable } from './table';
+import { shouldHydrateCreatedAtAsDate } from './timestamp-mode';
 import type {
   InsertValue,
   MutationResult,
@@ -140,9 +142,16 @@ export class ConvexInsertBuilder<
       throw new Error('values() must be called before execute()');
     }
 
+    const createdAtAsDate = shouldHydrateCreatedAtAsDate(
+      getOrmContext(this.db)
+    );
     const results: Record<string, unknown>[] = [];
     for (const value of this.valuesList) {
-      const preparedValue = applyDefaults(this.table, value as any);
+      const preparedValue = normalizeDateFieldsForWrite(
+        this.table,
+        applyDefaults(this.table, value as any),
+        { createdAtAsDate }
+      );
       const ormContext = getOrmContext(this.db);
       const rls = ormContext?.rls;
       const tableName = getTableName(this.table);
@@ -167,7 +176,9 @@ export class ConvexInsertBuilder<
 
       if (conflictResult?.status === 'updated') {
         if (conflictResult.row && this.returningFields) {
-          results.push(this.resolveReturningRow(conflictResult.row));
+          results.push(
+            this.resolveReturningRow(conflictResult.row, createdAtAsDate)
+          );
         }
         continue;
       }
@@ -187,7 +198,9 @@ export class ConvexInsertBuilder<
 
       const inserted = await this.db.get(id as any);
       if (inserted) {
-        results.push(this.resolveReturningRow(inserted as any));
+        results.push(
+          this.resolveReturningRow(inserted as any, createdAtAsDate)
+        );
       }
     }
 
@@ -198,12 +211,18 @@ export class ConvexInsertBuilder<
     return results as MutationResult<TTable, TReturning>;
   }
 
-  private resolveReturningRow(row: Record<string, unknown>) {
+  private resolveReturningRow(
+    row: Record<string, unknown>,
+    createdAtAsDate: boolean
+  ) {
     if (this.returningFields === true) {
-      return normalizePublicSystemFields(row);
+      return hydrateDateFieldsForRead(this.table, row, { createdAtAsDate });
     }
-    return normalizePublicSystemFields(
-      selectReturningRow(row, this.returningFields as any)
+    return selectReturningRowWithHydration(
+      this.table,
+      row,
+      this.returningFields as any,
+      { createdAtAsDate }
     );
   }
 
@@ -267,6 +286,7 @@ export class ConvexInsertBuilder<
 
     const tableName = getTableName(this.table);
     const ormContext = getOrmContext(this.db);
+    const createdAtAsDate = shouldHydrateCreatedAtAsDate(ormContext);
     const rls = ormContext?.rls;
 
     // Normalize set(): ignore `undefined` (noop), translate unsetToken -> `undefined` (unset).
@@ -313,11 +333,14 @@ export class ConvexInsertBuilder<
       ...onUpdateSet,
       ...normalizedSet,
     };
+    const writeSet = normalizeDateFieldsForWrite(this.table, effectiveSet, {
+      createdAtAsDate,
+    });
 
     const updateDecision = evaluateUpdateDecision({
       table: this.table,
       existingRow: existing as any,
-      updatedRow: { ...(existing as any), ...(effectiveSet as any) },
+      updatedRow: { ...(existing as any), ...(writeSet as any) },
       rls,
     });
 
@@ -334,24 +357,24 @@ export class ConvexInsertBuilder<
       this.db,
       this.table,
       (() => {
-        const candidate = { ...(existing as any), ...(effectiveSet as any) };
+        const candidate = { ...(existing as any), ...(writeSet as any) };
         enforceCheckConstraints(this.table, candidate);
         return candidate;
       })(),
       {
-        changedFields: new Set(Object.keys(effectiveSet as any)),
+        changedFields: new Set(Object.keys(writeSet as any)),
       }
     );
     await enforceUniqueIndexes(
       this.db,
       this.table,
-      { ...(existing as any), ...(effectiveSet as any) },
+      { ...(existing as any), ...(writeSet as any) },
       {
         currentId: (existing as any)._id,
-        changedFields: new Set(Object.keys(effectiveSet as any)),
+        changedFields: new Set(Object.keys(writeSet as any)),
       }
     );
-    await this.db.patch(tableName, (existing as any)._id, effectiveSet as any);
+    await this.db.patch(tableName, (existing as any)._id, writeSet as any);
     const updated = this.returningFields
       ? await this.db.get((existing as any)._id)
       : null;

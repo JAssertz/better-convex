@@ -21,22 +21,24 @@ export type MigrateSnapshotStats = {
   tablesTouched: string[];
 };
 
-const parseJsonlFile = async (filePath: string): Promise<Record<string, unknown>[]> => {
+const parseJsonlFile = async (
+  filePath: string
+): Promise<Record<string, unknown>[]> => {
   const content = await fsPromises.readFile(filePath, 'utf8');
 
   return content
     .split('\n')
-    .map(line => line.trim())
+    .map((line) => line.trim())
     .filter(Boolean)
-    .map(line => JSON.parse(line) as Record<string, unknown>);
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 };
 
 const writeJsonlFile = async (
   filePath: string,
-  rows: Record<string, unknown>[],
+  rows: Record<string, unknown>[]
 ): Promise<void> => {
   await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-  const content = rows.map(row => JSON.stringify(row)).join('\n');
+  const content = rows.map((row) => JSON.stringify(row)).join('\n');
   await fsPromises.writeFile(filePath, `${content}\n`, 'utf8');
 };
 
@@ -57,7 +59,9 @@ const toTableMap = (rows: Record<string, unknown>[]): Map<string, number> => {
   return tableMap;
 };
 
-const toComponentTables = (rows: Record<string, unknown>[]): SnapshotTable[] => {
+const toComponentTables = (
+  rows: Record<string, unknown>[]
+): SnapshotTable[] => {
   const tables: SnapshotTable[] = [];
 
   for (const row of rows) {
@@ -95,7 +99,10 @@ const countOccurrences = (haystack: string, needle: string): number => {
   return count;
 };
 
-const isInsideDirectory = (candidatePath: string, directoryPath: string): boolean => {
+const isInsideDirectory = (
+  candidatePath: string,
+  directoryPath: string
+): boolean => {
   const relativePath = path.relative(directoryPath, candidatePath);
   if (relativePath === '') {
     return true;
@@ -117,17 +124,27 @@ const replaceInFiles = async ({
   let replacementsApplied = 0;
 
   const walk = async (currentPath: string): Promise<void> => {
-    if (excludedPaths.some(excludedPath => isInsideDirectory(currentPath, excludedPath))) {
+    if (
+      excludedPaths.some((excludedPath) =>
+        isInsideDirectory(currentPath, excludedPath)
+      )
+    ) {
       return;
     }
 
-    const entries = await fsPromises.readdir(currentPath, { withFileTypes: true });
+    const entries = await fsPromises.readdir(currentPath, {
+      withFileTypes: true,
+    });
 
     await Promise.all(
-      entries.map(async entry => {
+      entries.map(async (entry) => {
         const fullPath = path.join(currentPath, entry.name);
 
-        if (excludedPaths.some(excludedPath => isInsideDirectory(fullPath, excludedPath))) {
+        if (
+          excludedPaths.some((excludedPath) =>
+            isInsideDirectory(fullPath, excludedPath)
+          )
+        ) {
           return;
         }
 
@@ -160,7 +177,7 @@ const replaceInFiles = async ({
           replacementsApplied += fileReplacements;
           await fsPromises.writeFile(fullPath, updatedContent, 'utf8');
         }
-      }),
+      })
     );
   };
 
@@ -186,32 +203,36 @@ export const migrateSnapshot = async ({
   const betterAuthComponentDirPath = path.join(
     resolvedSnapshotPath,
     '_components',
-    'betterAuth',
+    'betterAuth'
   );
 
-  const appTablesPath = path.join(resolvedSnapshotPath, '_tables', 'documents.jsonl');
+  const appTablesPath = path.join(
+    resolvedSnapshotPath,
+    '_tables',
+    'documents.jsonl'
+  );
   const componentTablesPath = path.join(
     betterAuthComponentDirPath,
     '_tables',
-    'documents.jsonl',
+    'documents.jsonl'
   );
 
   ensureFileExists(appTablesPath, 'app table metadata file');
   ensureFileExists(componentTablesPath, 'component table metadata file');
 
   const appTablesMap = toTableMap(await parseJsonlFile(appTablesPath));
-  const componentTables = toComponentTables(await parseJsonlFile(componentTablesPath));
+  const componentTables = toComponentTables(
+    await parseJsonlFile(componentTablesPath)
+  );
 
   const filterSet = new Set(
-    filters
-      .map(value => value.trim())
-      .filter(Boolean),
+    filters.map((value) => value.trim()).filter(Boolean)
   );
 
   const selectedTables =
     filterSet.size === 0
       ? componentTables
-      : componentTables.filter(table => filterSet.has(table.name));
+      : componentTables.filter((table) => filterSet.has(table.name));
 
   const replacements = new Map<string, string>();
   const tablesTouched: string[] = [];
@@ -222,21 +243,24 @@ export const migrateSnapshot = async ({
 
     if (destinationTableId === undefined) {
       throw new Error(
-        `Missing destination table id for table "${componentTable.name}". Push your app schema before migration.`,
+        `Missing destination table id for table "${componentTable.name}". Push your app schema before migration.`
       );
     }
 
     const sourceRowsPath = path.join(
       betterAuthComponentDirPath,
       componentTable.name,
-      'documents.jsonl',
+      'documents.jsonl'
     );
 
-    ensureFileExists(sourceRowsPath, `component rows file for table "${componentTable.name}"`);
+    ensureFileExists(
+      sourceRowsPath,
+      `component rows file for table "${componentTable.name}"`
+    );
 
     const sourceRows = await parseJsonlFile(sourceRowsPath);
 
-    const migratedRows = sourceRows.map(row => {
+    const migratedRows = sourceRows.map((row) => {
       const rowId = row._id;
 
       if (typeof rowId !== 'string') {
@@ -256,14 +280,17 @@ export const migrateSnapshot = async ({
     const destinationRowsPath = path.join(
       resolvedSnapshotPath,
       componentTable.name,
-      'documents.jsonl',
+      'documents.jsonl'
     );
 
     const existingRows = fs.existsSync(destinationRowsPath)
       ? await parseJsonlFile(destinationRowsPath)
       : [];
 
-    await writeJsonlFile(destinationRowsPath, [...existingRows, ...migratedRows]);
+    await writeJsonlFile(destinationRowsPath, [
+      ...existingRows,
+      ...migratedRows,
+    ]);
     tablesTouched.push(componentTable.name);
   }
 

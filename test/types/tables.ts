@@ -58,7 +58,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
   Expect<Equal<Result, FromBrand>>;
 }
 
-// Test 3: System fields always present (_id, _creationTime)
+// Test 3: System fields always present (id, _creationTime)
 {
   const users = convexTable('users', {
     name: text().notNull(),
@@ -70,7 +70,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
     Equal<
       Result,
       {
-        _id: GenericId<'users'>;
+        id: GenericId<'users'>;
         _creationTime: number;
         name: string;
       }
@@ -167,7 +167,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
     Equal<
       Result,
       {
-        _id: GenericId<'users'>;
+        id: GenericId<'users'>;
         _creationTime: number;
         name: string; // NOT string | null
         age: number | null; // nullable
@@ -188,7 +188,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
     Equal<
       Result,
       {
-        _id: GenericId<'users'>;
+        id: GenericId<'users'>;
         _creationTime: number;
         cityId: GenericId<'cities'>; // NOT string
       }
@@ -214,7 +214,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
     Equal<
       Result,
       {
-        _id: GenericId<'entities'>;
+        id: GenericId<'entities'>;
         _creationTime: number;
         textField: string;
         intField: number | null;
@@ -252,7 +252,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
     Equal<
       Result,
       {
-        _id: GenericId<'users'>;
+        id: GenericId<'users'>;
         _creationTime: number;
         name: string;
         email: string;
@@ -289,7 +289,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
     Equal<
       Result,
       {
-        _id: GenericId<'posts'>;
+        id: GenericId<'posts'>;
         _creationTime: number;
         text: string;
         type: string;
@@ -320,7 +320,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
     Equal<
       Result,
       {
-        _id: GenericId<'users'>;
+        id: GenericId<'users'>;
         _creationTime: number;
         email: string;
         handle: string | null;
@@ -353,7 +353,7 @@ import { type Equal, Expect, IsAny, IsNever, Not } from './utils';
     Equal<
       Result,
       {
-        _id: GenericId<'memberships'>;
+        id: GenericId<'memberships'>;
         _creationTime: number;
         userSlug: string;
       }
@@ -458,7 +458,7 @@ index('missing_columns').on();
   Expect<Equal<Result, FromBrand>>;
 }
 
-// Test 9: No system fields in insert (_id, _creationTime excluded)
+// Test 9: No system fields in insert (id, _creationTime excluded)
 {
   const users = convexTable('users', {
     name: text().notNull(),
@@ -477,8 +477,8 @@ index('missing_columns').on();
     >
   >;
 
-  // Verify _id and _creationTime are not present
-  type HasId = '_id' extends keyof Result ? true : false;
+  // Verify id and _creationTime are not present
+  type HasId = 'id' extends keyof Result ? true : false;
   type HasCreationTime = '_creationTime' extends keyof Result ? true : false;
 
   Expect<Equal<HasId, false>>;
@@ -646,7 +646,7 @@ index('missing_columns').on();
   type User = InferSelectModel<typeof users>;
 
   const invalidUser: User = {
-    _id: '123' as GenericId<'users'>,
+    id: '123' as GenericId<'users'>,
     _creationTime: 123,
     // @ts-expect-error - Type 'number' is not assignable to type 'string'
     name: 456, // Should be string, not number

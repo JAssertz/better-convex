@@ -33,8 +33,8 @@ export const users = convexTable('users', {
 
 The ORM mirrors Drizzle's core inference rules:
 
-- **Select** (`$inferSelect`, `InferSelectModel`): fields are `T | null` unless `.notNull()` is set
-- **Insert** (`$inferInsert`, `InferInsertModel`): required if `.notNull()` and **no** `.default()`, `$defaultFn()`, or `$onUpdateFn()`, otherwise optional
+- **Select** (`Select<'table'>`, `$inferSelect`, `InferSelectModel`): fields are `T | null` unless `.notNull()` is set
+- **Insert** (`Insert<'table'>`, `$inferInsert`, `InferInsertModel`): required if `.notNull()` and **no** `.default()`, `$defaultFn()`, or `$onUpdateFn()`, otherwise optional
 
 Let's see how these rules work in practice:
 
@@ -47,10 +47,15 @@ const posts = convexTable('posts', {
   viewCount: integer(),
 });
 
-type Post = InferSelectModel<typeof posts>;
-//   ^? { id, _creationTime, title: string, status: string, viewCount: number | null }
+const tables = { posts };
+type TableName = keyof typeof tables;
+type Select<T extends TableName> = InferSelectModel<(typeof tables)[T]>;
+type Insert<T extends TableName> = InferInsertModel<(typeof tables)[T]>;
 
-type NewPost = InferInsertModel<typeof posts>;
+type Post = Select<'posts'>;
+//   ^? { id, createdAt, title: string, status: string, viewCount: number | null }
+
+type NewPost = Insert<'posts'>;
 //   ^? { title: string; status?: string | undefined; viewCount?: number | undefined }
 ```
 

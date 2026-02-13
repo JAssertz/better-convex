@@ -22,8 +22,13 @@ import {
   zCustomAction,
   zCustomMutation,
   zCustomQuery,
+  zodOutputToConvex,
 } from 'convex-helpers/server/zod4';
 import { z } from 'zod';
+import {
+  type DataTransformerOptions,
+  getTransformer,
+} from '../crpc/transformer';
 import { toCRPCError } from './error';
 import {
   createHttpProcedureBuilder,
@@ -98,6 +103,8 @@ type FunctionBuilderConfig = {
 type InternalFunctionConfig = FunctionBuilderConfig & {
   /** Transform raw Convex context to the base context for procedures */
   createContext: (ctx: any) => unknown;
+  /** Wire transformer for request/response serialization. */
+  transformer: ReturnType<typeof getTransformer>;
 };
 
 /** Context creators for each function type - all optional, defaults to passthrough */
@@ -141,6 +148,8 @@ type CreateConfig<
   DataModel extends GenericDataModel = GenericDataModel,
 > = FunctionsConfig & {
   defaultMeta?: TMeta;
+  /** Optional cRPC payload transformer (always composed with built-in Date support). */
+  transformer?: DataTransformerOptions;
   /** Optional DB trigger wrapper applied to mutation/internalMutation contexts */
   triggers?: {
     wrapDB: (
@@ -392,13 +401,26 @@ export class ProcedureBuilder<
       baseFunction,
       customCtx(async (_ctx) => functionConfig.createContext(_ctx))
     );
+    const canUseConvexOutputValidator = (() => {
+      if (!outputSchema) return false;
+      try {
+        zodOutputToConvex(outputSchema);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
 
     const fn = customFunction({
       args: mergedInput ?? {},
-      ...(outputSchema ? { returns: outputSchema } : {}),
+      ...(outputSchema && canUseConvexOutputValidator
+        ? { returns: outputSchema }
+        : {}),
       handler: async (ctx: any, rawInput: any) => {
+        const decodedInput =
+          functionConfig.transformer.input.deserialize(rawInput);
         // Create getRawInput function for middleware
-        const getRawInput: GetRawInputFn = async () => rawInput;
+        const getRawInput: GetRawInputFn = async () => decodedInput;
 
         try {
           // Execute middleware chain with input access
@@ -406,12 +428,26 @@ export class ProcedureBuilder<
             middlewares,
             ctx,
             meta,
-            rawInput,
+            decodedInput,
             getRawInput
           );
 
           // Call handler with middleware-modified context and input
-          return handler({ ctx: result.ctx, input: result.input ?? rawInput });
+          const handlerInput =
+            result.input === decodedInput
+              ? decodedInput
+              : functionConfig.transformer.input.deserialize(
+                  result.input ?? decodedInput
+                );
+          const output = await handler({
+            ctx: result.ctx,
+            input: handlerInput,
+          });
+          const validatedOutput =
+            !outputSchema || canUseConvexOutputValidator
+              ? output
+              : outputSchema.parse(output);
+          return functionConfig.transformer.output.serialize(validatedOutput);
         } catch (cause) {
           const err = toCRPCError(cause);
           if (err) throw err;
@@ -1003,8 +1039,10 @@ class CRPCBuilderWithContext<
       action = actionGeneric,
       internalAction = internalActionGeneric,
       httpAction = httpActionGeneric,
+      transformer: transformerOptions,
       triggers,
     } = config ?? {};
+    const transformer = getTransformer(transformerOptions);
     const mutationCreateContext = this.contextConfig.mutation ?? ((ctx) => ctx);
     const createMutationContext = (ctx: GenericMutationCtx<DataModel>) => {
       const wrappedCtx = triggers?.wrapDB(ctx) ?? ctx;
@@ -1027,6 +1065,7 @@ class CRPCBuilderWithContext<
           base: query,
           internal: internalQuery,
           createContext: this.contextConfig.query ?? ((ctx) => ctx),
+          transformer,
         },
       }),
       mutation: new MutationProcedureBuilder<
@@ -1044,6 +1083,7 @@ class CRPCBuilderWithContext<
           base: mutation,
           internal: internalMutation,
           createContext: createMutationContext,
+          transformer,
         },
       }),
       action: new ActionProcedureBuilder<
@@ -1062,6 +1102,7 @@ class CRPCBuilderWithContext<
           internal: internalAction,
           // Use custom action context or default to identity
           createContext: this.contextConfig.action ?? ((ctx) => ctx),
+          transformer,
         },
       }),
       httpAction: createHttpProcedureBuilder({
@@ -1071,6 +1112,7 @@ class CRPCBuilderWithContext<
           ctx: GenericActionCtx<GenericDataModel>
         ) => THttpActionCtx,
         meta: defaultMeta,
+        transformer: transformerOptions,
       }),
       middleware: createMiddlewareFactory<TQueryCtx, TMeta>(),
       router: createHttpRouterFactory(),

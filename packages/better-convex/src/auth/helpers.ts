@@ -51,6 +51,10 @@ export const getSession = async <DataModel extends GenericDataModel>(
     sessionId = identity.sessionId;
   }
 
+  if (!sessionId) {
+    return null;
+  }
+
   return (await ctx.db.get(sessionId)) as DocumentByName<
     DataModel,
     'session'

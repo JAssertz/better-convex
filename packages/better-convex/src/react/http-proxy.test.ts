@@ -1,4 +1,5 @@
 import { HttpClientError } from '../crpc/http-types';
+import { encodeWire } from '../crpc/transformer';
 import { createHttpProxy } from './http-proxy';
 
 const routes = {
@@ -181,5 +182,60 @@ describe('createHttpProxy', () => {
     expect(() => (proxy as any).unknown.route.mutate).toThrow(
       'Unknown HTTP procedure'
     );
+  });
+
+  test('encodes Date JSON body and decodes Date JSON response', async () => {
+    const when = new Date('2024-01-01T00:00:00.000Z');
+    const fetchStub = (async (_url: string, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body));
+      expect(payload).toEqual(encodeWire({ when }));
+      return new Response(JSON.stringify(encodeWire({ createdAt: when })), {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      });
+    }) as unknown as typeof fetch;
+
+    const proxy: any = createHttpProxy<any>({
+      convexSiteUrl: 'https://example.convex.site',
+      fetch: fetchStub,
+      routes,
+    });
+
+    const mutation = proxy.todos.create.mutationOptions();
+    const result = await mutation.mutationFn({ when } as any);
+    expect(result.createdAt).toBeInstanceOf(Date);
+    expect(result.createdAt.getTime()).toBe(when.getTime());
+  });
+
+  test('supports custom transformer for request/response payloads', async () => {
+    const fetchStub = (async (_url: string, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body));
+      expect(payload).toEqual({ $in: { title: 'x' } });
+      return new Response(JSON.stringify({ $out: { ok: true } }), {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      });
+    }) as unknown as typeof fetch;
+
+    const proxy: any = createHttpProxy<any>({
+      convexSiteUrl: 'https://example.convex.site',
+      fetch: fetchStub,
+      routes,
+      transformer: {
+        input: {
+          serialize: (value: unknown) => ({ $in: value }),
+          deserialize: (value: unknown) => value,
+        },
+        output: {
+          serialize: (value: unknown) => value,
+          deserialize: (value: unknown) => (value as any)?.$out ?? value,
+        },
+      },
+    });
+
+    const mutation = proxy.todos.create.mutationOptions();
+    await expect(mutation.mutationFn({ title: 'x' })).resolves.toEqual({
+      ok: true,
+    });
   });
 });

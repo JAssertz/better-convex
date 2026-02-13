@@ -290,7 +290,7 @@
       "parameters": {
         "field": "Single field or array of fields with asc/desc"
       },
-      "example": "{ orderBy: [desc(users._creationTime), asc(users.name)] }",
+      "example": "{ orderBy: [desc(users.createdAt), asc(users.name)] }",
       "docUrl": "/docs/db/orm/ordering-pagination#basic-ordering",
       "category": "ordering"
     },
@@ -304,7 +304,7 @@
     "desc": {
       "signature": "desc(field: Field): SortOrder",
       "description": "Descending sort order",
-      "example": "desc(users._creationTime)",
+      "example": "desc(users.createdAt)",
       "docUrl": "/docs/db/orm/ordering-pagination#basic-ordering",
       "category": "ordering"
     }

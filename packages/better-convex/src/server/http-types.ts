@@ -1,6 +1,7 @@
 import type { GenericActionCtx, GenericDataModel } from 'convex/server';
 import type { Context } from 'hono';
 import type { z } from 'zod';
+import type { CombinedDataTransformer } from '../crpc/transformer';
 import type { AnyMiddleware, UnsetMarker } from './types';
 
 // Procedure metadata (same as TMeta generic)
@@ -51,6 +52,7 @@ export interface HttpProcedureBuilderDef<
   functionConfig: {
     base: HttpActionConstructor;
     createContext: (ctx: GenericActionCtx<GenericDataModel>) => TCtx;
+    transformer: CombinedDataTransformer;
   };
   /** @internal Phantom types for type inference */
   _types?: {

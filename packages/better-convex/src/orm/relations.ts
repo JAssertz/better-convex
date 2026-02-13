@@ -8,7 +8,10 @@ import type { SchemaDefinition } from 'convex/server';
 import type { Simplify } from '../internal/types';
 import type { ColumnBuilder } from './builders/column-builder';
 import { entityKind } from './builders/column-builder';
-import type { SystemFields } from './builders/system-fields';
+import type {
+  SystemFieldAliases,
+  SystemFields,
+} from './builders/system-fields';
 import type { OrmRuntimeDefaults, OrmRuntimeOptions } from './symbols';
 import { Columns, OrmSchemaDefinition, OrmSchemaOptions } from './symbols';
 
@@ -214,7 +217,9 @@ export type RelationsBuilderColumns<
 
 export type GetTableColumns<TTable extends SchemaEntry> =
   TTable extends ConvexTable<any>
-    ? TTable['_']['columns'] & SystemFields<TTable['_']['name']>
+    ? TTable['_']['columns'] &
+        SystemFields<TTable['_']['name']> &
+        SystemFieldAliases<TTable['_']['name'], TTable['_']['columns']>
     : never;
 
 export type RelationsBuilderTables<TSchema extends Schema> = {
@@ -257,7 +262,7 @@ export function createRelationsHelper<TTables extends Schema>(
     const relationsTable = Object.assign(rTable, columns);
     Object.defineProperty(relationsTable, '_id', {
       get() {
-        throw new Error("`_id` is no longer public in relations. Use `id`.");
+        throw new Error('`_id` is no longer public in relations. Use `id`.');
       },
       enumerable: false,
       configurable: false,
@@ -1032,12 +1037,9 @@ function getTableColumns(
   if ((table as any).id) {
     system.id = (table as any).id as ColumnBuilder<any, any, any>;
   }
-  if ((table as any)._creationTime) {
-    system._creationTime = (table as any)._creationTime as ColumnBuilder<
-      any,
-      any,
-      any
-    >;
+  if ((table as any).createdAt || (table as any)._creationTime) {
+    system.createdAt = ((table as any).createdAt ??
+      (table as any)._creationTime) as ColumnBuilder<any, any, any>;
   }
 
   return { ...columns, ...system };

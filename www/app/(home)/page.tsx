@@ -210,7 +210,7 @@ function Step1Code() {
       {' }'},{'\n'}
       {'      '}
       {pr('orderBy')}: {'{ '}
-      {pr('_creationTime')}: {str("'desc'")}
+      {pr('createdAt')}: {str("'desc'")}
       {' }'},{'\n'}
       {'      '}
       {pr('limit')}: {pr('input')}.{pr('limit')} {op('??')} {_num('10')},{'\n'}

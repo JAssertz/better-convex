@@ -1,4 +1,5 @@
 import type { GenericCtx } from '@convex-dev/better-auth';
+import { isQueryCtx } from '@convex-dev/better-auth/utils';
 import type { BetterAuthOptions } from 'better-auth';
 
 import {
@@ -104,9 +105,11 @@ export const createClient = <
   triggers: config.triggers,
   adapter: (
     ctx: GenericCtx<DataModel>,
-    createAuthOptions: (ctx: any) => BetterAuthOptions
-  ) => dbAdapter(ctx, createAuthOptions, config),
-  httpAdapter: (ctx: GenericCtx<DataModel>) => httpAdapter(ctx, config),
+    getAuthOptions: (ctx: any) => BetterAuthOptions
+  ) =>
+    isQueryCtx(ctx)
+      ? dbAdapter(ctx, getAuthOptions, config)
+      : httpAdapter(ctx, config),
   triggersApi: () => {
     const mutationBuilderBase =
       config.internalMutation ?? internalMutationGeneric;

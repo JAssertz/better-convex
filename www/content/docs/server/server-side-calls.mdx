@@ -83,10 +83,12 @@ import { createCallerFactory } from 'better-convex/server';
 export const { createContext, createCaller } = createCallerFactory({
   api,
   convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!,
-  getToken: async (siteUrl, headers) => {
-    // Extract token from headers (implement your auth logic)
-    const token = headers.get('authorization')?.replace('Bearer ', '');
-    return { token };
+  auth: {
+    getToken: async (siteUrl, headers) => {
+      // Extract token from headers (implement your auth logic)
+      const token = headers.get('authorization')?.replace('Bearer ', '');
+      return { token };
+    },
   },
   meta,
 });
@@ -95,6 +97,14 @@ export const { createContext, createCaller } = createCallerFactory({
 <Callout icon={<InfoIcon />}>
   **Note:** The `meta` parameter is generated via CLI. See [Metadata](/docs/server/metadata) for setup.
 </Callout>
+
+If you customize `transformer`, use the same transformer in:
+- `initCRPC.create({ transformer })`
+- `createCRPCContext({ transformer })`
+- `createCallerFactory({ transformer })`
+- `getServerQueryClientOptions({ transformer })`
+
+`Date` support stays always on; custom transformer is additive only.
 
 ## Usage
 
@@ -194,6 +204,8 @@ type CreateCallerFactoryOptions<TApi> = {
     isUnauthorized?: (error: unknown) => boolean;
   };
   meta: CallerMeta;
+  // Additive only. Built-in Date transformer remains enabled.
+  transformer?: DataTransformer | { input: DataTransformer; output: DataTransformer };
 };
 ```
 

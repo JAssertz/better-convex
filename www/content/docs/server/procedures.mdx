@@ -188,7 +188,7 @@ export const list = publicQuery
   .query(async ({ ctx, input }) => {
 	    return ctx.orm.query.session.findMany({
 	      where: input.userId ? { userId: input.userId } : {},
-	      orderBy: { _creationTime: 'desc' },
+	      orderBy: { createdAt: 'desc' },
 	      cursor: input.cursor,
 	      limit: input.limit,
 	    });

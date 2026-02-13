@@ -39,13 +39,13 @@ describe('registerRoutes', () => {
     try {
       const http = httpRouter();
 
-      const createAuth = () => ({
+      const getAuth = () => ({
         handler: async () => new Response('ok'),
         options: { basePath: '/api/auth' },
         $context: Promise.resolve({ options: { trustedOrigins: [] } }),
       });
 
-      registerRoutes(http as any, createAuth as any, { cors: false });
+      registerRoutes(http as any, getAuth as any, { cors: false });
 
       expect(http.lookup('/.well-known/openid-configuration', 'GET')).not.toBe(
         null
@@ -92,13 +92,13 @@ describe('registerRoutes', () => {
       path: '/.well-known/openid-configuration',
     });
 
-    const createAuth = () => ({
+    const getAuth = () => ({
       handler: async () => new Response('ok'),
       options: { basePath: '/auth' },
       $context: Promise.resolve({ options: { trustedOrigins: [] } }),
     });
 
-    registerRoutes(http as any, createAuth as any, { cors: false });
+    registerRoutes(http as any, getAuth as any, { cors: false });
 
     const lookedUp = http.lookup('/.well-known/openid-configuration', 'GET')!;
     expect(lookedUp[0]).toBe(wellKnownHandler as any);
@@ -112,7 +112,7 @@ describe('registerRoutes', () => {
     const authHandler = mock(async () => new Response('ok'));
     const logSpy = spyOn(console, 'log').mockImplementation(() => {});
 
-    const createAuth = () => ({
+    const getAuth = () => ({
       handler: authHandler,
       options: { basePath: '/api/auth' },
       $context: Promise.resolve({
@@ -123,7 +123,7 @@ describe('registerRoutes', () => {
     });
 
     try {
-      registerRoutes(http as any, createAuth as any, {
+      registerRoutes(http as any, getAuth as any, {
         cors: {
           allowedHeaders: ['X-Test'],
           allowedOrigins: ['https://extra.example'],

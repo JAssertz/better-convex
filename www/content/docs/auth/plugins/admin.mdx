@@ -36,7 +36,7 @@ Add the admin plugin to your auth options:
 import { admin } from 'better-auth/plugins';
 import type { GenericCtx } from '../lib/crpc';
 
-const createAuthOptions = (ctx: GenericCtx) =>
+const getAuthOptions = (ctx: GenericCtx) =>
   ({
     // ... existing config
     plugins: [
@@ -326,7 +326,7 @@ export const grantAdminByEmail = authMutation
 ```ts title="convex/functions/admin.ts" showLineNumbers {1-11,13-14,17-25}
 const UserListItemSchema = z.object({
   id: zid('user'),
-  _creationTime: z.number(),
+  createdAt: z.number(),
   name: z.string().optional(),
   email: z.string(),
   image: z.string().nullish(),
@@ -346,7 +346,7 @@ export const getAllUsers = authQuery
 	    const result = await ctx.orm.query.user.findMany({
 	      cursor: input.cursor,
 	      limit: input.limit,
-	      orderBy: { _creationTime: 'desc' },
+	      orderBy: { createdAt: 'desc' },
 	    });
 
     const enrichedPage = result.page.map((user) => ({
@@ -370,7 +370,7 @@ export const getDashboardStats = authQuery
   .output(z.object({
     recentUsers: z.array(z.object({
       id: zid('user'),
-      _creationTime: z.number(),
+      createdAt: z.number(),
       image: z.string().nullish(),
       name: z.string().optional(),
     })),
@@ -383,7 +383,7 @@ export const getDashboardStats = authQuery
   }))
   .query(async ({ ctx }) => {
     const recentUsers = await ctx.orm.query.user.findMany({
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
       limit: 5,
     });
 

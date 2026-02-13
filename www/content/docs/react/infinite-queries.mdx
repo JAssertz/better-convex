@@ -201,7 +201,7 @@ export const list = publicQuery
     // output is auto-wrapped as { continueCursor, isDone, page }
     return ctx.orm.query.session.findMany({
       where: input.userId ? { userId: input.userId } : undefined,
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
       cursor: input.cursor,
       limit: input.limit,
     });

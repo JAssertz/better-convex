@@ -9,16 +9,18 @@ import { migrateSnapshot } from './migrate-snapshot';
 
 const writeJsonl = async (filePath: string, rows: unknown[]): Promise<void> => {
   await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-  const content = rows.map(row => JSON.stringify(row)).join('\n');
+  const content = rows.map((row) => JSON.stringify(row)).join('\n');
   await fsPromises.writeFile(filePath, `${content}\n`, 'utf8');
 };
 
-const readJsonl = async (filePath: string): Promise<Array<Record<string, unknown>>> => {
+const readJsonl = async (
+  filePath: string
+): Promise<Array<Record<string, unknown>>> => {
   const content = await fsPromises.readFile(filePath, 'utf8');
   return content
     .split('\n')
     .filter(Boolean)
-    .map(line => JSON.parse(line) as Record<string, unknown>);
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 };
 
 const buildInternalId = (seed: number): Uint8Array => {
@@ -36,7 +38,7 @@ describe('migrateSnapshot', () => {
 
   beforeEach(async () => {
     tmpDir = await fsPromises.mkdtemp(
-      path.join(os.tmpdir(), 'better-auth-migration-test-'),
+      path.join(os.tmpdir(), 'better-auth-migration-test-')
     );
   });
 
@@ -64,9 +66,9 @@ describe('migrateSnapshot', () => {
         '_components',
         'betterAuth',
         '_tables',
-        'documents.jsonl',
+        'documents.jsonl'
       ),
-      [{ name: 'user', id: 400 }],
+      [{ name: 'user', id: 400 }]
     );
 
     await writeJsonl(
@@ -75,9 +77,9 @@ describe('migrateSnapshot', () => {
         '_components',
         'betterAuth',
         'user',
-        'documents.jsonl',
+        'documents.jsonl'
       ),
-      [{ _id: oldUserId, ownerId: oldUserId }],
+      [{ _id: oldUserId, ownerId: oldUserId }]
     );
 
     await writeJsonl(path.join(snapshotDirPath, 'audit', 'documents.jsonl'), [
@@ -90,15 +92,15 @@ describe('migrateSnapshot', () => {
         '_components',
         'betterAuth',
         'audit',
-        'documents.jsonl',
+        'documents.jsonl'
       ),
-      [{ _id: 'component_audit_1', userId: oldUserId }],
+      [{ _id: 'component_audit_1', userId: oldUserId }]
     );
 
     const stats = await migrateSnapshot({ snapshotDirPath });
 
     const appRows = await readJsonl(
-      path.join(snapshotDirPath, 'user', 'documents.jsonl'),
+      path.join(snapshotDirPath, 'user', 'documents.jsonl')
     );
     const appUserId = String(appRows[0]?._id);
 
@@ -107,7 +109,7 @@ describe('migrateSnapshot', () => {
     expect(stats.tablesTouched).toEqual(['user']);
 
     const rootAuditRows = await readJsonl(
-      path.join(snapshotDirPath, 'audit', 'documents.jsonl'),
+      path.join(snapshotDirPath, 'audit', 'documents.jsonl')
     );
     expect(rootAuditRows[0]?.userId).toBe(appUserId);
 
@@ -117,8 +119,8 @@ describe('migrateSnapshot', () => {
         '_components',
         'betterAuth',
         'audit',
-        'documents.jsonl',
-      ),
+        'documents.jsonl'
+      )
     );
     expect(componentAuditRows[0]?.userId).toBe(oldUserId);
   });
@@ -140,9 +142,9 @@ describe('migrateSnapshot', () => {
         '_components',
         'betterAuth',
         '_tables',
-        'documents.jsonl',
+        'documents.jsonl'
       ),
-      [{ name: 'session', id: 900 }],
+      [{ name: 'session', id: 900 }]
     );
 
     await writeJsonl(
@@ -151,14 +153,14 @@ describe('migrateSnapshot', () => {
         '_components',
         'betterAuth',
         'session',
-        'documents.jsonl',
+        'documents.jsonl'
       ),
-      [{ _id: oldSessionId }],
+      [{ _id: oldSessionId }]
     );
 
-    await expect(
-      migrateSnapshot({ snapshotDirPath }),
-    ).rejects.toThrowError(/Missing destination table id for table "session"/i);
+    await expect(migrateSnapshot({ snapshotDirPath })).rejects.toThrowError(
+      /Missing destination table id for table "session"/i
+    );
   });
 
   test('filters migrate only selected tables', async () => {
@@ -184,12 +186,12 @@ describe('migrateSnapshot', () => {
         '_components',
         'betterAuth',
         '_tables',
-        'documents.jsonl',
+        'documents.jsonl'
       ),
       [
         { name: 'user', id: 400 },
         { name: 'jwks', id: 401 },
-      ],
+      ]
     );
 
     await writeJsonl(
@@ -198,9 +200,9 @@ describe('migrateSnapshot', () => {
         '_components',
         'betterAuth',
         'user',
-        'documents.jsonl',
+        'documents.jsonl'
       ),
-      [{ _id: oldUserId }],
+      [{ _id: oldUserId }]
     );
 
     await writeJsonl(
@@ -209,9 +211,9 @@ describe('migrateSnapshot', () => {
         '_components',
         'betterAuth',
         'jwks',
-        'documents.jsonl',
+        'documents.jsonl'
       ),
-      [{ _id: oldJwksId }],
+      [{ _id: oldJwksId }]
     );
 
     const stats = await migrateSnapshot({
@@ -222,11 +224,15 @@ describe('migrateSnapshot', () => {
     expect(stats.tablesTouched).toEqual(['jwks']);
 
     const jwksRows = await readJsonl(
-      path.join(snapshotDirPath, 'jwks', 'documents.jsonl'),
+      path.join(snapshotDirPath, 'jwks', 'documents.jsonl')
     );
     expect(String(jwksRows[0]?._id)).not.toBe(oldJwksId);
 
-    const userDestination = path.join(snapshotDirPath, 'user', 'documents.jsonl');
+    const userDestination = path.join(
+      snapshotDirPath,
+      'user',
+      'documents.jsonl'
+    );
     expect(fs.existsSync(userDestination)).toBe(false);
   });
 });

@@ -127,6 +127,24 @@ describe('getSession', () => {
       token: 'token-1',
     });
   });
+
+  test('returns null when identity exists but sessionId is missing', async () => {
+    const dbGet = mock(async (_sessionId: string) => ({ _id: 'unexpected' }));
+    const ctx = {
+      auth: {
+        getUserIdentity: async () => ({
+          subject: 'user-1',
+          tokenIdentifier: 'ti',
+        }),
+      },
+      db: {
+        get: dbGet,
+      },
+    };
+
+    expect(await getSession(ctx as any)).toBeNull();
+    expect(dbGet).not.toHaveBeenCalled();
+  });
 });
 
 describe('getHeaders', () => {

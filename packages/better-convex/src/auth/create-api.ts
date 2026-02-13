@@ -23,7 +23,7 @@ import {
   paginate,
   selectFields,
 } from './adapter-utils';
-import type { CreateAuth } from './types';
+import type { GetAuth } from './types';
 
 type Schema = SchemaDefinition<any, any>;
 
@@ -139,11 +139,28 @@ const ormUpdate = async (
     await ctx.orm
       .update(table)
       .set(normalizeUpdateForOrm(update))
+      .returning()
       .where(eq(table._id, id))
   )[0];
 
 const ormDelete = async (ctx: any, table: any, id: GenericId<string>) => {
   await ctx.orm.delete(table).where(eq(table._id, id));
+};
+
+const withBothIdFields = <T extends Record<string, unknown>>(doc: T): T => {
+  const existingUnderscoreId = doc._id as GenericId<string> | undefined;
+  const existingId = doc.id as GenericId<string> | undefined;
+  const id = existingUnderscoreId ?? existingId;
+
+  if (!id) {
+    return doc;
+  }
+
+  return {
+    ...doc,
+    _id: existingUnderscoreId ?? id,
+    id: existingId ?? id,
+  } as T;
 };
 
 // Extracted handler functions
@@ -202,11 +219,13 @@ export const createHandler = async (
     throw new Error(`Failed to create ${args.input.model}`);
   }
 
-  const result = selectFields(doc, args.select);
+  const normalizedDoc = ormTable ? withBothIdFields(doc) : doc;
+  const result = selectFields(normalizedDoc, args.select);
 
   if (args.onCreateHandle) {
+    const hookDoc = normalizedDoc;
     await ctx.runMutation(args.onCreateHandle as FunctionHandle<'mutation'>, {
-      doc,
+      doc: hookDoc,
       model: args.input.model,
     });
   }
@@ -308,15 +327,20 @@ export const updateOneHandler = async (
   if (!updatedDoc) {
     throw new Error(`Failed to update ${args.input.model}`);
   }
+  const normalizedUpdatedDoc = ormTable
+    ? withBothIdFields(updatedDoc)
+    : updatedDoc;
+
   if (args.onUpdateHandle) {
+    const hookNewDoc = normalizedUpdatedDoc;
     await ctx.runMutation(args.onUpdateHandle as FunctionHandle<'mutation'>, {
       model: args.input.model,
-      newDoc: updatedDoc,
+      newDoc: hookNewDoc,
       oldDoc: doc,
     });
   }
 
-  return updatedDoc;
+  return normalizedUpdatedDoc;
 };
 
 export const updateManyHandler = async (
@@ -398,11 +422,12 @@ export const updateManyHandler = async (
           })();
 
       if (args.onUpdateHandle) {
+        const hookNewDoc = ormTable ? withBothIdFields(newDoc) : newDoc;
         await ctx.runMutation(
           args.onUpdateHandle as FunctionHandle<'mutation'>,
           {
             model: args.input.model,
-            newDoc,
+            newDoc: hookNewDoc,
             oldDoc: doc,
           }
         );
@@ -540,7 +565,7 @@ export const deleteManyHandler = async (
 
 export const createApi = <Schema extends SchemaDefinition<any, any>>(
   schema: Schema,
-  createAuth: CreateAuth,
+  getAuth: GetAuth,
   options?: {
     internalMutation?: typeof internalMutationGeneric;
     dbTriggers?: {
@@ -551,7 +576,7 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
     skipValidation?: boolean;
   }
 ) => {
-  const betterAuthSchema = getAuthTables(createAuth({} as any).options);
+  const betterAuthSchema = getAuthTables(getAuth({} as any).options);
   const { internalMutation, skipValidation, dbTriggers, context } =
     options ?? {};
   const mutationBuilderBase = internalMutation ?? internalMutationGeneric;
@@ -714,7 +739,7 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
     getLatestJwks: internalActionGeneric({
       args: {},
       handler: async (ctx) => {
-        const auth = createAuth(ctx);
+        const auth = getAuth(ctx);
 
         return (auth.api as any).getLatestJwks();
       },
@@ -722,7 +747,7 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
     rotateKeys: internalActionGeneric({
       args: {},
       handler: async (ctx) => {
-        const auth = createAuth(ctx);
+        const auth = getAuth(ctx);
 
         return (auth.api as any).rotateKeys();
       },

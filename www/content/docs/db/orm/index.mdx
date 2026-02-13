@@ -21,7 +21,8 @@ The ORM mirrors Drizzle's relational query builder while adapting to Convex's do
 
 Here's a quick summary of the key differences you'll encounter coming from a SQL-based ORM:
 
-- `id` and `_creationTime` are auto-created by Convex
+- `id` and `createdAt` are auto-created by Convex
+- `createdAt` is `number` by default, or `Date` with `createOrm({ types: { date: true } })` + cRPC
 - Fields are nullable by default (`text()` -> `string | null`)
 - `columns` projection and string operators run post-fetch
 - `with` is relation loading (no SQL joins)
@@ -64,7 +65,7 @@ import { publicQuery } from '../lib/crpc';
 export const getRecentPosts = publicQuery.query(async ({ ctx }) => {
   return ctx.orm.query.posts.findMany({
     where: { published: true },
-    orderBy: { _creationTime: 'desc' },
+    orderBy: { createdAt: 'desc' },
     limit: 10,
     with: { author: true },
   });

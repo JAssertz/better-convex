@@ -8,7 +8,9 @@ import {
 } from 'convex/server';
 import { z } from 'zod';
 
+import { encodeWire } from '../crpc/transformer';
 import { initCRPC } from './builder';
+import { CRPCError } from './error';
 
 describe('server/builder', () => {
   test('create() with no args exposes full procedure surface', () => {
@@ -384,5 +386,117 @@ describe('server/builder', () => {
 
     const fn = c.query.query(async ({ ctx }) => (ctx as any).ok);
     expect((fn as any)._crpcMeta).toMatchObject({ auth: 'required' });
+  });
+
+  test('encodes Date outputs to wire-safe payloads', async () => {
+    const c = initCRPC.create({
+      query: queryGeneric,
+      mutation: mutationGeneric,
+    } as any);
+
+    const now = new Date(1_700_000_000_000);
+    const fn = c.query.output(z.date()).query(async () => now);
+
+    await expect((fn as any)._handler({}, {})).resolves.toEqual(
+      encodeWire(now)
+    );
+  });
+
+  test('decodes wire Date inputs before handler execution', async () => {
+    const c = initCRPC.create({
+      query: queryGeneric,
+      mutation: mutationGeneric,
+    } as any);
+
+    const fn = c.query
+      .input(z.object({ at: z.any() }))
+      .query(async ({ input }) => input.at instanceof Date);
+
+    await expect(
+      (fn as any)._handler({}, encodeWire({ at: new Date(1_700_000_000_000) }))
+    ).resolves.toBe(true);
+  });
+
+  test('respects custom transformer for input decode and output serialize', async () => {
+    const c = initCRPC.create({
+      query: queryGeneric,
+      mutation: mutationGeneric,
+      transformer: {
+        input: {
+          serialize: (value: unknown) => value,
+          deserialize: (value: unknown) => {
+            if (
+              value &&
+              typeof value === 'object' &&
+              !Array.isArray(value) &&
+              'x' in value &&
+              (value as any).x &&
+              typeof (value as any).x === 'object' &&
+              '$in' in (value as any).x
+            ) {
+              return { ...(value as any), x: (value as any).x.$in };
+            }
+            return value;
+          },
+        },
+        output: {
+          serialize: (value: unknown) => ({ $out: value }),
+          deserialize: (value: unknown) => value,
+        },
+      },
+    } as any);
+
+    const fn = c.query
+      .input(z.object({ x: z.any() }))
+      .query(async ({ input }) => ({ x: input.x + 1 }));
+
+    await expect((fn as any)._handler({}, { x: { $in: 1 } })).resolves.toEqual({
+      $out: { x: 2 },
+    });
+  });
+
+  test('handler try/catch maps APIError-like errors to CRPCError', async () => {
+    class FakeAPIError extends Error {
+      statusCode = 404;
+      status = 'NOT_FOUND';
+      body = { message: 'not found from api' };
+
+      constructor() {
+        super('api failed');
+        this.name = 'APIError';
+      }
+    }
+
+    const c = initCRPC.create({
+      query: queryGeneric,
+      mutation: mutationGeneric,
+    } as any);
+
+    const fn = c.query.query(async () => {
+      throw new FakeAPIError();
+    });
+
+    await expect((fn as any)._handler({}, {})).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'not found from api',
+      name: 'CRPCError',
+    });
+  });
+
+  test('handler try/catch rethrows unknown errors unchanged', async () => {
+    const c = initCRPC.create({
+      query: queryGeneric,
+      mutation: mutationGeneric,
+    } as any);
+
+    const cause = new Error('unexpected boom');
+    const fn = c.query.query(async () => {
+      throw cause;
+    });
+
+    await expect((fn as any)._handler({}, {})).rejects.toBe(cause);
+    await expect((fn as any)._handler({}, {})).rejects.not.toBeInstanceOf(
+      CRPCError
+    );
   });
 });

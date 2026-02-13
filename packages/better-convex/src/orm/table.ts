@@ -15,6 +15,7 @@ import type {
 import { entityKind } from './builders/column-builder';
 import {
   createSystemFields,
+  type SystemFieldAliases,
   type SystemFields,
 } from './builders/system-fields';
 import type {
@@ -448,7 +449,10 @@ function getColumnDimensions(column: ColumnBuilderBase): number | undefined {
 }
 
 function getColumnTableName(column: ColumnBuilderBase): string | undefined {
-  return (column as { config?: { tableName?: string } }).config?.tableName;
+  const config = (
+    column as { config?: { tableName?: string; referenceTable?: string } }
+  ).config;
+  return config?.tableName ?? config?.referenceTable;
 }
 
 function getColumnTable(column: ColumnBuilderBase): unknown | undefined {
@@ -1199,7 +1203,7 @@ export interface ConvexTable<
  * ConvexTable with columns as properties
  * Following Drizzle's PgTableWithColumns pattern
  * Mapped type makes columns accessible: table.columnName
- * Includes system fields (id, _creationTime) available on all Convex documents
+ * Includes public system fields (id, createdAt) available on all Convex documents
  */
 export type ConvexTableWithColumns<
   T extends TableConfig,
@@ -1208,7 +1212,8 @@ export type ConvexTableWithColumns<
   VectorIndexes extends GenericTableVectorIndexes = {},
 > = ConvexTable<T, Indexes, SearchIndexes, VectorIndexes> & {
   [Key in keyof T['columns']]: T['columns'][Key];
-} & SystemFields<T['name']>;
+} & SystemFields<T['name']> &
+  SystemFieldAliases<T['name'], T['columns']>;
 
 /**
  * Create a type-safe Convex table definition
@@ -1277,14 +1282,27 @@ const convexTableInternal: ConvexTableFnInternal = (
   // Create raw table instance
   const rawTable = new ConvexTableImpl(name, columns as any);
 
-  // Create system fields (id, _creationTime)
+  // Create system fields (public id/createdAt + internal _creationTime)
   const systemFields = createSystemFields(name);
   for (const builder of Object.values(systemFields)) {
     (builder as any).config.table = rawTable;
   }
 
-  // Following Drizzle pattern: Object.assign to attach columns AND system fields as properties
-  const table = Object.assign(rawTable, rawTable[Columns], systemFields) as any;
+  // Attach system fields first, then user columns so user `createdAt` wins.
+  const table = Object.assign(rawTable, systemFields, rawTable[Columns]) as any;
+
+  // Internal alias for runtime internals; intentionally not in public types.
+  const internalCreationTime = systemFields._creationTime;
+  if (Object.hasOwn(table, '_creationTime')) {
+    table._creationTime = undefined;
+  }
+  Object.defineProperty(table, '_creationTime', {
+    value: internalCreationTime,
+    enumerable: false,
+    configurable: true,
+    writable: false,
+  });
+
   // Internal alias for runtime internals; intentionally not in public types.
   Object.defineProperty(table, '_id', {
     value: systemFields.id,

@@ -979,28 +979,36 @@ export const internalMutationWithTriggers = customMutation(
 
 ```ts title="convex/shared/types.ts"
 import type {
+  InferInsertModel,
+  InferSelectModel,
+} from "better-convex/orm";
+import type {
   inferApiInputs,
   inferApiOutputs,
   WithHttpRouter,
 } from "better-convex/server";
-import type { WithoutSystemFields } from "convex/server";
 
 import type { api } from "../functions/_generated/api";
-import type { Doc, TableNames } from "../functions/_generated/dataModel";
 // biome-ignore lint/style/noRestrictedImports: type
 import type { appRouter } from "../functions/http";
+import type { tables } from "../functions/schema";
 
-export type DocWithId<TableName extends TableNames> = WithoutSystemFields<
-  Doc<TableName>
-> & {
-  id: Doc<TableName>["_id"];
-};
+type TableName = keyof typeof tables;
+export type Select<T extends TableName> = InferSelectModel<(typeof tables)[T]>;
+export type Insert<T extends TableName> = InferInsertModel<(typeof tables)[T]>;
+
+// Example
+export type SelectUser = Select<"user">;
+export type InsertUser = Insert<"user">;
 
 // API type with HTTP router (http is optional for type inference)
 export type Api = WithHttpRouter<typeof api, typeof appRouter>;
 export type ApiInputs = inferApiInputs<Api>;
 export type ApiOutputs = inferApiOutputs<Api>;
 ```
+
+ORM default (with cRPC): use `createOrm({ schema, types: { date: true } })` so system `createdAt` is `Date`.
+Native path: keep `createdAt` as `number`.
 
 ### meta.ts
 
@@ -1307,11 +1315,12 @@ export const getSessionUser = optionalAuthQuery
 ### auth-shared.ts
 
 ```ts title="convex/shared/auth-shared.ts"
-import type { Doc, Id } from "../functions/_generated/dataModel";
+import type { Select } from "./types";
+import type { Doc } from "../functions/_generated/dataModel";
 
-export type SessionUser = Omit<Doc<"user">, "_creationTime" | "_id"> & {
-  id: Id<"user">;
+export type SessionUser = Select<"user"> & {
   isAdmin: boolean;
+  // Native Better Auth session document for auth header/session plumbing.
   session: Doc<"session">;
   impersonatedBy?: string;
   plan?: "premium" | "team";

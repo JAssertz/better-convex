@@ -23,9 +23,16 @@ import type {
   OrmDeleteMode,
   OrmRuntimeDefaults,
   OrmTableDeleteConfig,
+  ResolvedOrmTypeOptions,
 } from './symbols';
 import { Columns, OrmContext, TableDeleteConfig, TableName } from './symbols';
 import type { ConvexTable } from './table';
+import {
+  CREATED_AT_MIGRATION_MESSAGE,
+  INTERNAL_CREATION_TIME_FIELD,
+  PUBLIC_CREATED_AT_FIELD,
+  usesSystemCreatedAtAlias,
+} from './timestamp-mode';
 
 type UniqueIndexDefinition = {
   name: string;
@@ -57,6 +64,7 @@ export type OrmContextValue = {
   scheduler?: Scheduler;
   scheduledDelete?: SchedulableFunctionReference;
   scheduledMutationBatch?: SchedulableFunctionReference;
+  types?: ResolvedOrmTypeOptions;
   rls?: RlsContext;
   strict?: boolean;
   defaults?: OrmRuntimeDefaults;
@@ -65,6 +73,9 @@ export type OrmContextValue = {
 export type MutationRunMode = 'sync' | 'async';
 
 const UNDEFINED_SENTINEL_KEY = '__betterConvexUndefined';
+const INTERNAL_ID_FIELD = '_id';
+const PUBLIC_ID_FIELD = 'id';
+const DATE_COLUMN_TYPE = 'ConvexDate';
 
 type SerializedFieldReference = {
   fieldName: string;
@@ -97,19 +108,150 @@ export type SerializedFilterExpression =
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
-export const normalizePublicSystemFields = <T>(value: T): T => {
+const toMillisIfDate = (value: unknown): unknown =>
+  value instanceof Date ? value.getTime() : value;
+
+const isDateColumn = (column: ColumnBuilder<any, any, any>): boolean =>
+  (column as any)?.config?.columnType === DATE_COLUMN_TYPE;
+
+const getDateColumnNames = (table: ConvexTable<any>): Set<string> =>
+  new Set(
+    Object.entries(getTableColumns(table))
+      .filter(([, column]) => isDateColumn(column))
+      .map(([name]) => name)
+  );
+
+export const normalizePublicSystemFields = <T>(
+  value: T,
+  options?: {
+    createdAtAsDate?: boolean;
+    useSystemCreatedAtAlias?: boolean;
+  }
+): T => {
   if (!isPlainObject(value)) {
     return value;
   }
-  if (!Object.prototype.hasOwnProperty.call(value, '_id')) {
+  const hasId = Object.hasOwn(value, INTERNAL_ID_FIELD);
+  const hasCreationTime = Object.hasOwn(value, INTERNAL_CREATION_TIME_FIELD);
+
+  if (!hasId && !hasCreationTime) {
     return value;
   }
+
   const obj = value as Record<string, unknown>;
-  const { _id, ...rest } = obj;
-  return {
+  const { [INTERNAL_ID_FIELD]: internalId, ...rest } = obj;
+  const publicRow: Record<string, unknown> = {
     ...rest,
-    id: _id,
-  } as T;
+  };
+
+  if (hasId) {
+    publicRow[PUBLIC_ID_FIELD] = internalId;
+  }
+
+  if (hasCreationTime) {
+    const raw = obj[INTERNAL_CREATION_TIME_FIELD];
+    if (
+      options?.useSystemCreatedAtAlias &&
+      raw !== undefined &&
+      !Object.hasOwn(publicRow, PUBLIC_CREATED_AT_FIELD)
+    ) {
+      publicRow[PUBLIC_CREATED_AT_FIELD] =
+        options.createdAtAsDate && typeof raw === 'number'
+          ? new Date(raw)
+          : raw;
+    }
+    delete publicRow[INTERNAL_CREATION_TIME_FIELD];
+  }
+
+  delete publicRow[INTERNAL_ID_FIELD];
+
+  return publicRow as T;
+};
+
+export const normalizeDateFieldsForWrite = <T extends Record<string, unknown>>(
+  table: ConvexTable<any>,
+  value: T,
+  _options?: { createdAtAsDate?: boolean }
+): T => {
+  const useSystemCreatedAt = usesSystemCreatedAtAlias(table);
+  const result = { ...value } as Record<string, unknown>;
+
+  if (Object.hasOwn(result, INTERNAL_CREATION_TIME_FIELD)) {
+    throw new Error(CREATED_AT_MIGRATION_MESSAGE);
+  }
+  if (useSystemCreatedAt && Object.hasOwn(result, PUBLIC_CREATED_AT_FIELD)) {
+    result[INTERNAL_CREATION_TIME_FIELD] = toMillisIfDate(
+      result[PUBLIC_CREATED_AT_FIELD]
+    );
+    delete result[PUBLIC_CREATED_AT_FIELD];
+  }
+
+  for (const name of getDateColumnNames(table)) {
+    if (!Object.hasOwn(result, name)) {
+      continue;
+    }
+    result[name] = toMillisIfDate(result[name]);
+  }
+
+  return result as T;
+};
+
+export const hydrateDateFieldsForRead = <T>(
+  table: ConvexTable<any>,
+  value: T,
+  options?: { createdAtAsDate?: boolean }
+): T => {
+  const useSystemCreatedAt = usesSystemCreatedAtAlias(table);
+  const createdAtAsDate = options?.createdAtAsDate === true;
+  const base = normalizePublicSystemFields(value, {
+    createdAtAsDate,
+    useSystemCreatedAtAlias: useSystemCreatedAt,
+  });
+  if (!isPlainObject(base)) {
+    return base;
+  }
+  const result = { ...(base as Record<string, unknown>) };
+  const dateColumns = getDateColumnNames(table);
+
+  for (const name of dateColumns) {
+    const fieldValue = result[name];
+    if (typeof fieldValue === 'number') {
+      result[name] = new Date(fieldValue);
+    }
+  }
+
+  return result as T;
+};
+
+export const selectReturningRowWithHydration = (
+  table: ConvexTable<any>,
+  row: Record<string, unknown>,
+  fields: Record<string, unknown>,
+  options?: { createdAtAsDate?: boolean }
+): Record<string, unknown> => {
+  const useSystemCreatedAt = usesSystemCreatedAtAlias(table);
+  const dateColumns = getDateColumnNames(table);
+  const selected: Record<string, unknown> = {};
+
+  for (const [selectedKey, column] of Object.entries(fields)) {
+    const columnName = getSelectionColumnName(column);
+    let value = row[columnName];
+
+    if (columnName === INTERNAL_CREATION_TIME_FIELD && useSystemCreatedAt) {
+      value =
+        options?.createdAtAsDate && typeof value === 'number'
+          ? new Date(value)
+          : value;
+    } else if (dateColumns.has(columnName) && typeof value === 'number') {
+      value = new Date(value);
+    }
+
+    selected[selectedKey] = value;
+  }
+
+  return {
+    ...selected,
+  };
 };
 
 export const encodeUndefinedDeep = (value: unknown): unknown => {

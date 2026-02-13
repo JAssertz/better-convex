@@ -1,6 +1,6 @@
-/** biome-ignore-all lint/suspicious/noConsole: verbose mode */
+/** biome-ignore-all lint/suspicious/noConsole: auth debug logs */
 import type { Context, MiddlewareHandler } from 'hono';
-import type { CreateAuth } from './types';
+import type { GetAuth } from './types';
 
 export interface AuthMiddlewareOptions {
   /** Base path for auth routes (default: '/api/auth') */
@@ -21,13 +21,13 @@ export interface AuthMiddlewareOptions {
  *
  * const app = new Hono();
  * app.use('/api/*', cors({ origin: process.env.SITE_URL, credentials: true }));
- * app.use(authMiddleware(createAuth));
+ * app.use(authMiddleware(getAuth));
  *
  * export default createHttpRouter(app, appRouter);
  * ```
  */
 export function authMiddleware(
-  createAuth: CreateAuth,
+  getAuth: GetAuth,
   opts: AuthMiddlewareOptions = {}
 ): MiddlewareHandler {
   const basePath = opts.basePath ?? '/api/auth';
@@ -46,7 +46,7 @@ export function authMiddleware(
         console.log('request headers', c.req.raw.headers);
       }
 
-      const auth = createAuth(c.env as any);
+      const auth = getAuth(c.env as any);
       const response = await auth.handler(c.req.raw);
 
       if (opts.verbose) {

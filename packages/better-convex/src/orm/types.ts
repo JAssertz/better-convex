@@ -13,7 +13,10 @@ import type {
   Simplify,
 } from '../internal/types';
 import type { ColumnBuilder } from './builders/column-builder';
-import type { SystemFields } from './builders/system-fields';
+import type {
+  SystemFieldAliases,
+  SystemFields,
+} from './builders/system-fields';
 import type { Column, FilterExpression } from './filter-expression';
 import type {
   One,
@@ -184,17 +187,17 @@ export type KeyPageResult<T> = {
  * @example
  * const users = convexTable('users', { name: text().notNull() });
  * type User = InferSelectModel<typeof users>;
- * // → { id: Id<'users'>, _creationTime: number, name: string }
+ * // → { id: Id<'users'>, createdAt: number | Date, name: string }
  *
  * const posts = convexTable('posts', { title: text() }); // nullable
  * type Post = InferSelectModel<typeof posts>;
- * // → { id: Id<'posts'>, _creationTime: number, title: string | null }
+ * // → { id: Id<'posts'>, createdAt: number | Date, title: string | null }
  */
 export type InferSelectModel<TTable extends ConvexTable<any>> = Simplify<
   Merge<
     {
       id: GenericId<TTable['_']['name']>;
-      _creationTime: number;
+      createdAt: number | Date;
     },
     {
       [K in keyof TTable['_']['columns']]: GetColumnData<
@@ -949,7 +952,11 @@ type InferRelationalQueryTableResult<
 
 type TableColumns<TTableConfig extends TableRelationalConfig> =
   TTableConfig['table']['_']['columns'] &
-    SystemFields<TTableConfig['table']['_']['name']>;
+    SystemFields<TTableConfig['table']['_']['name']> &
+    SystemFieldAliases<
+      TTableConfig['table']['_']['name'],
+      TTableConfig['table']['_']['columns']
+    >;
 
 export type PaginatedResult<T> = {
   page: T[];
@@ -1201,7 +1208,9 @@ export type NonUndefinedKeysOnly<T> = ExtractObjectValues<{
 // ============================================================================
 
 type TableColumnsForTable<TTable extends ConvexTable<any>> =
-  TTable['_']['columns'] & SystemFields<TTable['_']['name']>;
+  TTable['_']['columns'] &
+    SystemFields<TTable['_']['name']> &
+    SystemFieldAliases<TTable['_']['name'], TTable['_']['columns']>;
 
 export type ReturningSelection<TTable extends ConvexTable<any>> = Record<
   string,

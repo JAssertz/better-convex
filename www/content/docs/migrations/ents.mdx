@@ -7,6 +7,8 @@ import { InfoIcon, AlertTriangle } from "lucide-react"
 
 Convex Ents is in maintenance mode. The ORM is the successor: a Drizzle‑style query builder with runtime constraints and RLS on top of Convex. This guide maps Ents patterns to ORM equivalents.
 
+In ORM APIs, system fields are public as `id` and `createdAt`. Internal Convex fields (`_id`, `_creationTime`) are hidden from the ORM surface.
+
 ## Migration Checklist
 
 - Replace `defineEntSchema` / `defineEnt` with `convexTable()` + `defineSchema()`
@@ -96,7 +98,7 @@ Ents auto‑creates edge indexes. In ORM you must add indexes for relation field
     import { createOrm } from 'better-convex/orm';
     import { relations } from '../schema';
 
-    const orm = createOrm({ schema: relations });
+    const orm = createOrm({ schema: relations, types: { date: true } });
 
     export function makeCtx(ctx: any) {
       return { ...ctx, orm: orm.db(ctx) };
@@ -107,6 +109,8 @@ Ents auto‑creates edge indexes. In ORM you must add indexes for relation field
 
 If you need RLS, build the DB with `orm.db(ctx, { rls: { ctx } })`.
 
+`types: { date: true }` is recommended with cRPC so ORM `createdAt` values are `Date`. Keep it off if you want `createdAt` as `number`.
+
 ## Query Mapping
 
 | Ents | ORM |
@@ -115,7 +119,7 @@ If you need RLS, build the DB with `orm.db(ctx, { rls: { ctx } })`.
 | `ctx.orm('users').getX(id)` | `ctx.orm.query.users.findFirstOrThrow({ where: { id: id } })` |
 | `ctx.orm('users').get('email', v)` | `ctx.orm.query.users.findFirst({ where: { email: v } })` |
 | `ctx.orm('users').getMany(ids)` | `ctx.orm.query.users.findMany({ where: { id: { in: ids } }, limit: ids.length })` |
-| `ctx.orm('users').order('desc').take(5)` | `ctx.orm.query.users.findMany({ orderBy: { _creationTime: 'desc' }, limit: 5 })` |
+| `ctx.orm('users').order('desc').take(5)` | `ctx.orm.query.users.findMany({ orderBy: { createdAt: 'desc' }, limit: 5 })` |
 | `ctx.orm('users').paginate(opts)` | `ctx.orm.query.users.findMany({ cursor: opts.cursor, limit: opts.numItems })` |
 | `ctx.orm('users').map(...)` | Prefer `columns` / `extras` (example below). Fall back to `rows.map(...)` when you need custom reshaping. |
 | `ctx.orm('users').search(...)` | `ctx.orm.query.users.findMany({ search: { index, query, filters? } })` |
@@ -155,7 +159,7 @@ If you need RLS, build the DB with `orm.db(ctx, { rls: { ctx } })`.
   <CompareItem title="After (ORM `columns`)">
     ```ts showLineNumbers {2-6}
     const recent = await ctx.orm.query.users.findMany({
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
       limit: 5,
       columns: { id: true, name: true },
     });

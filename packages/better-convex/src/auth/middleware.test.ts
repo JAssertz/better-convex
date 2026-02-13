@@ -32,11 +32,11 @@ describe('authMiddleware', () => {
     }
   });
 
-  test('handles auth routes with createAuth handler', async () => {
+  test('handles auth routes with getAuth handler', async () => {
     const handler = async (_request: Request) => new Response('auth-ok');
-    const createAuth = ((_ctx: unknown) => ({ handler })) as any;
+    const getAuth = ((_ctx: unknown) => ({ handler })) as any;
 
-    const middleware = authMiddleware(createAuth as any, {
+    const middleware = authMiddleware(getAuth as any, {
       basePath: '/auth',
     });
     const c = {

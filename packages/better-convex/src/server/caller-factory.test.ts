@@ -1,5 +1,6 @@
 import * as convexNextjs from 'convex/nextjs';
 import { makeFunctionReference } from 'convex/server';
+import { encodeWire } from '../crpc/transformer';
 
 import { createCallerFactory } from './caller-factory';
 
@@ -131,5 +132,76 @@ describe('server/caller-factory', () => {
     expect(fetchQuerySpy.mock.calls.length).toBe(2);
     expect(getToken.mock.calls.length).toBe(2);
     expect(getToken.mock.calls[1]?.[2]?.forceRefresh).toBe(true);
+  });
+
+  test('encodes Date args before fetch and decodes Date responses', async () => {
+    const encoded = encodeWire({ at: new Date(1_700_000_000_000) });
+    const fetchQuerySpy = spyOn(convexNextjs, 'fetchQuery').mockImplementation(
+      async (_fn: any, args: any) => {
+        expect(args).toEqual(encoded);
+        return encoded as any;
+      }
+    );
+
+    const api = {
+      posts: { list: makeFunctionReference<'query'>('posts:list') },
+    };
+    const meta = { posts: { list: { type: 'query' } } } as any;
+
+    const getToken = mock(async () => ({ token: 't0', isFresh: true }));
+
+    const { createContext } = createCallerFactory({
+      api,
+      convexSiteUrl: 'https://example.convex.site',
+      auth: { getToken, isUnauthorized: () => false },
+      meta,
+    });
+
+    const ctx = await createContext({ headers: new Headers() });
+    const result = await ctx.caller.posts.list({
+      at: new Date(1_700_000_000_000),
+    } as any);
+
+    expect((result as any).at).toBeInstanceOf(Date);
+    expect(fetchQuerySpy).toHaveBeenCalled();
+  });
+
+  test('passes custom transformer through caller factory', async () => {
+    const fetchQuerySpy = spyOn(convexNextjs, 'fetchQuery').mockImplementation(
+      async (_fn: any, args: any) => {
+        expect(args).toEqual({ $in: { scope: 'all' } });
+        return { $out: 7 } as any;
+      }
+    );
+
+    const api = {
+      posts: { list: makeFunctionReference<'query'>('posts:list') },
+    };
+    const meta = { posts: { list: { type: 'query' } } } as any;
+
+    const getToken = mock(async () => ({ token: 't0', isFresh: true }));
+
+    const { createContext } = createCallerFactory({
+      api,
+      convexSiteUrl: 'https://example.convex.site',
+      auth: { getToken, isUnauthorized: () => false },
+      meta,
+      transformer: {
+        input: {
+          serialize: (value: unknown) => ({ $in: value }),
+          deserialize: (value: unknown) => value,
+        },
+        output: {
+          serialize: (value: unknown) => value,
+          deserialize: (value: unknown) => (value as any)?.$out ?? value,
+        },
+      },
+    });
+
+    const ctx = await createContext({ headers: new Headers() });
+    await expect(ctx.caller.posts.list({ scope: 'all' } as any)).resolves.toBe(
+      7
+    );
+    expect(fetchQuerySpy).toHaveBeenCalled();
   });
 });

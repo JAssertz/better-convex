@@ -6,8 +6,12 @@
  */
 
 import type { QueryOptions } from '@tanstack/react-query';
-
 import type { HttpRouteInfo } from '../crpc/http-types';
+import type {
+  CombinedDataTransformer,
+  DataTransformerOptions,
+} from '../crpc/transformer';
+import { decodeWire } from '../crpc/transformer';
 
 /** Metadata attached to HTTP query options for execution by QueryClient */
 export interface HttpQueryMeta {
@@ -43,7 +47,8 @@ export async function fetchHttpRoute(
   convexSiteUrl: string,
   routeMeta: HttpQueryMeta,
   args: unknown,
-  token?: string
+  token?: string,
+  transformer?: DataTransformerOptions | CombinedDataTransformer
 ): Promise<unknown> {
   const url = buildUrl(
     convexSiteUrl,
@@ -69,7 +74,7 @@ export async function fetchHttpRoute(
     return null;
   }
 
-  return response.json();
+  return decodeWire(await response.json(), transformer);
 }
 
 /**

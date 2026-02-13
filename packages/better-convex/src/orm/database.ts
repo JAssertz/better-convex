@@ -30,8 +30,10 @@ import {
   OrmContext,
   type OrmRuntimeOptions,
   OrmSchemaOptions,
+  type OrmTypeOptions,
 } from './symbols';
 import type { ConvexTable } from './table';
+import { resolveTypeOptions } from './timestamp-mode';
 import type { VectorSearchProvider } from './types';
 import { ConvexUpdateBuilder } from './update';
 
@@ -84,6 +86,7 @@ export type CreateDatabaseOptions = {
   scheduledDelete?: SchedulableFunctionReference;
   scheduledMutationBatch?: SchedulableFunctionReference;
   vectorSearch?: VectorSearchProvider;
+  types?: OrmTypeOptions;
   rls?: RlsContext;
   relationLoading?: {
     concurrency?: number;
@@ -142,6 +145,23 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
   const strict = schemaOptions?.strict ?? true;
   const defaults = schemaOptions?.defaults;
   const buildDatabase = (rls: RlsContext | undefined) => {
+    const ormContext: OrmContextValue = {
+      foreignKeyGraph: buildForeignKeyGraph(schema),
+      scheduler: options?.scheduler,
+      scheduledDelete: options?.scheduledDelete,
+      scheduledMutationBatch: options?.scheduledMutationBatch,
+      types: resolveTypeOptions(options?.types),
+      rls,
+      strict,
+      defaults,
+    };
+
+    // Preserve the original `ctx.db` behavior without mutating it.
+    // We only need to attach internal ORM runtime context via a symbol.
+    const baseDb = Object.assign(Object.create(db), {
+      [OrmContext]: ormContext,
+    }) as unknown as GenericDatabaseWriter<any>;
+
     const query: any = {};
 
     // Create query builder for each table in schema
@@ -155,29 +175,13 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
         schema,
         tableConfig,
         tableEdges,
-        db,
+        baseDb,
         edgeMetadata, // M6.5 Phase 2: Pass all edges for nested relation loading
         rls,
         options?.relationLoading,
         options?.vectorSearch
       );
     }
-
-    const ormContext: OrmContextValue = {
-      foreignKeyGraph: buildForeignKeyGraph(schema),
-      scheduler: options?.scheduler,
-      scheduledDelete: options?.scheduledDelete,
-      scheduledMutationBatch: options?.scheduledMutationBatch,
-      rls,
-      strict,
-      defaults,
-    };
-
-    // Preserve the original `ctx.db` behavior without mutating it.
-    // We only need to attach internal ORM runtime context via a symbol.
-    const baseDb = Object.assign(Object.create(db), {
-      [OrmContext]: ormContext,
-    }) as unknown as GenericDatabaseWriter<any>;
 
     const isWriter =
       typeof (db as any).insert === 'function' &&

@@ -39,7 +39,7 @@ Offset pagination is the most straightforward option:
 
 ```ts showLineNumbers
 const rows = await db.query.users.findMany({
-  orderBy: { _creationTime: 'desc' },
+  orderBy: { createdAt: 'desc' },
   offset: 20,
   limit: 10,
 });
@@ -57,7 +57,7 @@ First page:
 ```ts showLineNumbers
 const page1 = await db.query.posts.findMany({
   where: { published: true },
-  orderBy: { _creationTime: 'desc' },
+  orderBy: { createdAt: 'desc' },
   cursor: null,
   limit: 20,
 });
@@ -68,7 +68,7 @@ Next page:
 ```ts showLineNumbers
 const page2 = await db.query.posts.findMany({
   where: { published: true },
-  orderBy: { _creationTime: 'desc' },
+  orderBy: { createdAt: 'desc' },
   cursor: page1.continueCursor,
   limit: 20,
 });
@@ -93,7 +93,7 @@ When data changes between requests, use `endCursor` to pin a page boundary:
 ```ts showLineNumbers
 const refreshed = await db.query.posts.findMany({
   where: { published: true },
-  orderBy: { _creationTime: 'desc' },
+  orderBy: { createdAt: 'desc' },
   cursor: null,
   endCursor: page1.continueCursor,
   limit: 20,
@@ -148,7 +148,7 @@ const page = await db.query.messages
       },
     },
   ])
-  .interleaveBy(['_creationTime', 'id'])
+  .interleaveBy(['createdAt', 'id'])
   .paginate({ cursor: null, limit: 20 });
 ```
 
@@ -227,7 +227,7 @@ These combinations are rejected:
 
 - `endCursor` without cursor mode (`cursor + limit`).
 - `maxScan` without cursor mode.
-- `pageByKey` with `cursor`, `offset`, `search`, `vectorSearch`, or `pipeline`.
+- `pageByKey` with `cursor`, `offset`, `search`, `vectorSearch`, or `select()` composition.
 
 ## Migration from `db.stream()`
 

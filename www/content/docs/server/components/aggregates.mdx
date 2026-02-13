@@ -417,7 +417,7 @@ export const backfillAggregate = privateMutation
   }))
   .mutation(async ({ ctx, input }) => {
 	    const results = await ctx.orm.query.scores.findMany({
-	      orderBy: { _creationTime: 'asc' },
+	      orderBy: { createdAt: 'asc' },
 	      cursor: input.cursor,
 	      limit: input.batchSize,
 	    });
@@ -448,7 +448,7 @@ export const repairAggregate = privateMutation
 
     const docs = await ctx.orm.query.scores.findMany({
       limit: 10_000,
-      orderBy: { _creationTime: 'asc' },
+      orderBy: { createdAt: 'asc' },
     });
     for (const doc of docs) {
       await aggregate.insert(ctx, doc);

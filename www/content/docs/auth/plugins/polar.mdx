@@ -71,7 +71,7 @@ import { Polar } from '@polar-sh/sdk';
 import type { ActionCtx } from './_generated/server';
 import { internal } from './_generated/api';
 
-const createAuthOptions = (ctx: GenericCtx) =>
+const getAuthOptions = (ctx: GenericCtx) =>
   ({
     // ... existing config
     plugins: [
@@ -612,7 +612,7 @@ export const getActiveSubscription = privateQuery
   .query(async ({ ctx, input: args }) => {
     const subscription = await ctx.orm.query.subscriptions.findFirst({
       where: { userId: args.userId, status: 'active' },
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
 
     if (!subscription) return null;
@@ -678,7 +678,7 @@ export const resumeSubscription = authAction
 Sync user deletion with Polar:
 
 ```ts title="convex/functions/auth.ts" showLineNumbers {3-10}
-const createAuthOptions = (ctx: GenericCtx) =>
+const getAuthOptions = (ctx: GenericCtx) =>
   ({
     user: {
       deleteUser: {

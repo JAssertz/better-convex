@@ -1,6 +1,6 @@
 /** biome-ignore-all lint/performance/useTopLevelRegex: inline regex assertions are intentional in tests. */
 import { and, eq, gt, isNull, not, or } from './filter-expression';
-import { convexTable, integer, text } from './index';
+import { convexTable, date, integer, text } from './index';
 import {
   decodeUndefinedDeep,
   deserializeFilterExpression,
@@ -10,7 +10,10 @@ import {
   evaluateFilter,
   getMutationCollectionLimits,
   getSelectionColumnName,
+  hydrateDateFieldsForRead,
+  normalizeDateFieldsForWrite,
   selectReturningRow,
+  selectReturningRowWithHydration,
   serializeFilterExpression,
   takeRowsWithinByteBudget,
   toConvexFilter,
@@ -21,6 +24,12 @@ const users = convexTable('users', {
   age: integer(),
   deletedAt: integer(),
   status: text(),
+  birthday: date(),
+});
+
+const usersWithCreatedAt = convexTable('users_with_created_at', {
+  name: text().notNull(),
+  createdAt: integer().notNull(),
 });
 
 describe('mutation-utils', () => {
@@ -182,5 +191,134 @@ describe('mutation-utils', () => {
         },
       } as any)
     ).toThrow(/mutationBatchSize/i);
+  });
+
+  test('normalizeDateFieldsForWrite converts Date fields and createdAt alias', () => {
+    const birthday = new Date('2024-01-01T00:00:00.000Z');
+    const createdAt = new Date('2024-02-01T00:00:00.000Z');
+
+    const normalized = normalizeDateFieldsForWrite(
+      users,
+      {
+        name: 'Alice',
+        birthday,
+        createdAt,
+      },
+      { createdAtAsDate: true }
+    );
+
+    expect(normalized).toMatchObject({
+      name: 'Alice',
+      birthday: birthday.getTime(),
+      _creationTime: createdAt.getTime(),
+    });
+    expect(normalized).not.toHaveProperty('createdAt');
+  });
+
+  test('normalizeDateFieldsForWrite rejects _creationTime', () => {
+    expect(() =>
+      normalizeDateFieldsForWrite(
+        users,
+        {
+          _creationTime: 1_700_000_000_000,
+        } as any,
+        { createdAtAsDate: true }
+      )
+    ).toThrow(/use `createdAt`/i);
+  });
+
+  test('normalizeDateFieldsForWrite keeps user createdAt column', () => {
+    const normalized = normalizeDateFieldsForWrite(
+      usersWithCreatedAt,
+      {
+        name: 'Alice',
+        createdAt: 123,
+      },
+      { createdAtAsDate: true }
+    ) as any;
+
+    expect(normalized).toMatchObject({
+      name: 'Alice',
+      createdAt: 123,
+    });
+    expect(normalized).not.toHaveProperty('_creationTime');
+  });
+
+  test('hydrateDateFieldsForRead maps id and createdAt when date=true', () => {
+    const hydrated = hydrateDateFieldsForRead(
+      users,
+      {
+        _id: 'u1',
+        _creationTime: 1_700_000_000_000,
+        birthday: 1_600_000_000_000,
+      },
+      { createdAtAsDate: true }
+    ) as any;
+
+    expect(hydrated).toMatchObject({
+      id: 'u1',
+    });
+    expect(hydrated).not.toHaveProperty('_id');
+    expect(hydrated).not.toHaveProperty('_creationTime');
+    expect(hydrated.createdAt).toBeInstanceOf(Date);
+    expect(hydrated.birthday).toBeInstanceOf(Date);
+  });
+
+  test('hydrateDateFieldsForRead keeps user createdAt and hides _creationTime', () => {
+    const hydrated = hydrateDateFieldsForRead(
+      usersWithCreatedAt,
+      {
+        _id: 'u1',
+        _creationTime: 1_700_000_000_000,
+        name: 'Alice',
+        createdAt: 123,
+      },
+      { createdAtAsDate: true }
+    ) as any;
+
+    expect(hydrated).toMatchObject({
+      id: 'u1',
+      name: 'Alice',
+      createdAt: 123,
+    });
+    expect(hydrated).not.toHaveProperty('_creationTime');
+  });
+
+  test('selectReturningRowWithHydration hydrates date-like selections', () => {
+    const selected = selectReturningRowWithHydration(
+      users,
+      {
+        _id: 'u1',
+        _creationTime: 1_700_000_000_000,
+        birthday: 1_600_000_000_000,
+      },
+      {
+        id: { columnName: '_id' },
+        createdAt: { columnName: '_creationTime' },
+        birthday: users.birthday,
+      },
+      { createdAtAsDate: true }
+    ) as any;
+
+    expect(selected.id).toBe('u1');
+    expect(selected.createdAt).toBeInstanceOf(Date);
+    expect(selected.birthday).toBeInstanceOf(Date);
+  });
+
+  test('hydrateDateFieldsForRead maps createdAt to number when date=false', () => {
+    const hydrated = hydrateDateFieldsForRead(
+      users,
+      {
+        _id: 'u1',
+        _creationTime: 1_700_000_000_000,
+      },
+      { createdAtAsDate: false }
+    ) as any;
+
+    expect(hydrated).toMatchObject({
+      id: 'u1',
+      createdAt: 1_700_000_000_000,
+    });
+    expect(hydrated).not.toHaveProperty('_creationTime');
   });
 });

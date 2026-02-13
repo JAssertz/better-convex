@@ -78,7 +78,7 @@ const db = orm.db(mockDb);
   });
 
   type Expected = Array<{
-    _id: UserId;
+    id: UserId;
     _creationTime: number;
     name: string;
     email: string;
@@ -90,7 +90,7 @@ const db = orm.db(mockDb);
     cityId: CityId | null;
     homeCityId: CityId | null;
     posts: Array<{
-      _id: PostId;
+      id: PostId;
       _creationTime: number;
       text: string;
       numLikes: number;
@@ -98,10 +98,10 @@ const db = orm.db(mockDb);
       embedding: number[] | null;
       title: string | null;
       authorId: UserId | null;
-      createdAt: number | null;
+      publishedAt: number | null;
       published: boolean | null;
       author: {
-        _id: UserId;
+        id: UserId;
         _creationTime: number;
         name: string;
         email: string;
@@ -117,11 +117,11 @@ const db = orm.db(mockDb);
         text: string;
         author: {
           city: {
-            _id: CityId;
+            id: CityId;
             _creationTime: number;
             name: string;
             users: Array<{
-              _id: UserId;
+              id: UserId;
               _creationTime: number;
               name: string;
               email: string;
@@ -151,7 +151,7 @@ const db = orm.db(mockDb);
   });
 
   type Expected = Array<{
-    _id: UserId;
+    id: UserId;
     _creationTime: number;
     name: string;
     email: string;
@@ -163,7 +163,7 @@ const db = orm.db(mockDb);
     cityId: CityId | null;
     homeCityId: CityId | null;
     posts: Array<{
-      _id: PostId;
+      id: PostId;
       _creationTime: number;
       text: string;
       numLikes: number;
@@ -172,7 +172,7 @@ const db = orm.db(mockDb);
       title: string | null;
       content: string | null;
       authorId: UserId | null;
-      createdAt: number | null;
+      publishedAt: number | null;
       published: boolean | null;
     }>;
   }>;
@@ -193,7 +193,7 @@ const db = orm.db(mockDb);
   });
 
   type Expected = Array<{
-    _id: UserId;
+    id: UserId;
     _creationTime: number;
     name: string;
     email: string;
@@ -205,7 +205,7 @@ const db = orm.db(mockDb);
     cityId: CityId | null;
     homeCityId: CityId | null;
     posts: Array<{
-      _id: PostId;
+      id: PostId;
       _creationTime: number;
       text: string;
       numLikes: number;
@@ -214,10 +214,10 @@ const db = orm.db(mockDb);
       title: string | null;
       content: string | null;
       authorId: UserId | null;
-      createdAt: number | null;
+      publishedAt: number | null;
       published: boolean | null;
       comments: Array<{
-        _id: CommentId;
+        id: CommentId;
         _creationTime: number;
         postId: PostId;
         authorId: UserId | null;
@@ -265,7 +265,7 @@ const db = orm.db(mockDb);
   });
 
   type Expected = Array<{
-    _id: PostId;
+    id: PostId;
     _creationTime: number;
     text: string;
     numLikes: number;
@@ -274,10 +274,10 @@ const db = orm.db(mockDb);
     title: string | null;
     content: string | null;
     authorId: UserId | null;
-    createdAt: number | null;
+    publishedAt: number | null;
     published: boolean | null;
     author: {
-      _id: UserId;
+      id: UserId;
       _creationTime: number;
       name: string;
       email: string;
@@ -300,17 +300,17 @@ const db = orm.db(mockDb);
     node: {
       parent: r.one.node({
         from: r.node.parentId,
-        to: r.node._id,
+        to: r.node.id,
         alias: 'NodeParentTypeTest',
       }),
       left: r.one.node({
         from: r.node.leftId,
-        to: r.node._id,
+        to: r.node.id,
         alias: 'NodeLeftTypeTest',
       }),
       right: r.one.node({
         from: r.node.rightId,
-        to: r.node._id,
+        to: r.node.id,
         alias: 'NodeRightTypeTest',
       }),
     },
@@ -327,7 +327,7 @@ const db = orm.db(mockDb);
   });
 
   type NodeType = {
-    _id: NodeId;
+    id: NodeId;
     _creationTime: number;
     parentId: NodeId | null;
     leftId: NodeId | null;
@@ -343,7 +343,7 @@ const db = orm.db(mockDb);
   >;
 
   type Row = (typeof result)[number];
-  Expect<Equal<Row['_id'], NodeId>>;
+  Expect<Equal<Row['id'], NodeId>>;
   Expect<Equal<Row['parentId'], NodeId | null>>;
   Expect<Equal<Row['leftId'], NodeId | null>>;
   Expect<Equal<Row['rightId'], NodeId | null>>;
@@ -361,11 +361,11 @@ const db = orm.db(mockDb);
   });
 
   type Expected = Array<{
-    _id: BookId;
+    id: BookId;
     _creationTime: number;
     name: string;
     authors: Array<{
-      _id: UserId;
+      id: UserId;
       _creationTime: number;
       name: string;
       email: string;
@@ -392,7 +392,7 @@ const db = orm.db(mockDb);
 
   type Expected =
     | {
-        _id: UserId;
+        id: UserId;
         _creationTime: number;
         name: string;
         email: string;
@@ -404,7 +404,7 @@ const db = orm.db(mockDb);
         cityId: CityId | null;
         homeCityId: CityId | null;
         posts: Array<{
-          _id: PostId;
+          id: PostId;
           _creationTime: number;
           text: string;
           numLikes: number;
@@ -413,7 +413,7 @@ const db = orm.db(mockDb);
           title: string | null;
           content: string | null;
           authorId: UserId | null;
-          createdAt: number | null;
+          publishedAt: number | null;
           published: boolean | null;
         }>;
       }

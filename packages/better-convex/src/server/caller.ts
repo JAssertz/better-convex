@@ -7,6 +7,8 @@
 
 import type { FunctionReference, FunctionReturnType } from 'convex/server';
 import type { EmptyObject } from 'convex-helpers';
+import type { DataTransformerOptions } from '../crpc/transformer';
+import { getTransformer } from '../crpc/transformer';
 import { getFuncRef, getFunctionType } from '../shared/meta-utils';
 
 /** Metadata for a single function */
@@ -47,6 +49,11 @@ type CreateCallerOptions = {
   fetchMutation: FetchFn<'mutation'>;
   fetchAction: FetchFn<'action'>;
   meta: CallerMeta;
+  transformer?: DataTransformerOptions;
+};
+
+type ResolvedCreateCallerOptions = Omit<CreateCallerOptions, 'transformer'> & {
+  transformer: ReturnType<typeof getTransformer>;
 };
 
 // Helper type for optional args when empty
@@ -83,7 +90,7 @@ export type ServerCaller<TApi> = {
 function createRecursiveProxy(
   api: Record<string, unknown>,
   path: string[],
-  createOpts: CreateCallerOptions
+  createOpts: ResolvedCreateCallerOptions
 ): unknown {
   return new Proxy(() => {}, {
     get(_target, prop: string | symbol) {
@@ -94,30 +101,36 @@ function createRecursiveProxy(
     },
     apply(_target, _thisArg, argsList) {
       const funcRef = getFuncRef(api, path);
-      const args = argsList[0] ?? {};
+      const args = createOpts.transformer.input.serialize(argsList[0] ?? {});
       const callerOpts = argsList[1] as CallerOpts | undefined;
       const fnType = getFunctionType(path, createOpts.meta);
 
       if (fnType === 'query') {
-        return createOpts.fetchQuery(
-          funcRef as FunctionReference<'query'>,
-          args,
-          callerOpts
-        );
+        return createOpts
+          .fetchQuery(
+            funcRef as FunctionReference<'query'>,
+            args as any,
+            callerOpts
+          )
+          .then((result) => createOpts.transformer.output.deserialize(result));
       }
       if (fnType === 'mutation') {
-        return createOpts.fetchMutation(
-          funcRef as FunctionReference<'mutation'>,
-          args,
-          callerOpts
-        );
+        return createOpts
+          .fetchMutation(
+            funcRef as FunctionReference<'mutation'>,
+            args as any,
+            callerOpts
+          )
+          .then((result) => createOpts.transformer.output.deserialize(result));
       }
       // action
-      return createOpts.fetchAction(
-        funcRef as FunctionReference<'action'>,
-        args,
-        callerOpts
-      );
+      return createOpts
+        .fetchAction(
+          funcRef as FunctionReference<'action'>,
+          args as any,
+          callerOpts
+        )
+        .then((result) => createOpts.transformer.output.deserialize(result));
     },
   });
 }
@@ -145,5 +158,8 @@ export function createServerCaller<TApi extends Record<string, unknown>>(
   api: TApi,
   opts: CreateCallerOptions
 ): ServerCaller<TApi> {
-  return createRecursiveProxy(api, [], opts) as ServerCaller<TApi>;
+  return createRecursiveProxy(api, [], {
+    ...opts,
+    transformer: getTransformer(opts.transformer),
+  }) as ServerCaller<TApi>;
 }

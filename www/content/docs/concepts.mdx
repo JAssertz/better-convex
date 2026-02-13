@@ -134,7 +134,7 @@ Define relations with `defineRelations()` and load them with `with:`:
 ```ts showLineNumbers
 const user = await ctx.orm.query.user.findFirst({
   where: { id: userId },
-  with: { posts: { limit: 10, orderBy: { _creationTime: 'desc' } } },
+  with: { posts: { limit: 10, orderBy: { createdAt: 'desc' } } },
 });
 ```
 

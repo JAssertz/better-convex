@@ -2,11 +2,11 @@
 import { type HttpRouter, httpActionGeneric } from 'convex/server';
 import { corsRouter } from 'convex-helpers/server/cors';
 
-import type { CreateAuth } from './types';
+import type { GetAuth } from './types';
 
 export const registerRoutes = (
   http: HttpRouter,
-  createAuth: CreateAuth,
+  getAuth: GetAuth,
   opts: {
     cors?:
       | {
@@ -19,7 +19,7 @@ export const registerRoutes = (
     verbose?: boolean;
   } = {}
 ) => {
-  const staticAuth = createAuth({} as any);
+  const staticAuth = getAuth({} as any);
   const path = staticAuth.options.basePath ?? '/api/auth';
   const authRequestHandler = httpActionGeneric(async (ctx, request) => {
     if (opts?.verbose) {
@@ -27,7 +27,7 @@ export const registerRoutes = (
       console.log('request headers', request.headers);
     }
 
-    const auth = createAuth(ctx as any);
+    const auth = getAuth(ctx as any);
     const response = await auth.handler(request);
 
     if (opts?.verbose) {

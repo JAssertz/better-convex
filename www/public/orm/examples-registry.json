@@ -82,7 +82,7 @@
       "infer_select_type": {
         "title": "Infer select type from table",
         "tags": ["types", "inference", "$inferSelect"],
-        "code": "type User = typeof users.$inferSelect;\n// { id: Id<'users'>, name: string, email: string, _creationTime: number }",
+        "code": "type User = typeof users.$inferSelect;\n// { id: Id<'users'>, name: string, email: string, createdAt: number }",
         "docUrl": "/docs/db/orm/type-safety#type-extraction"
       },
       "infer_insert_type": {

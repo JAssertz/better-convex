@@ -197,7 +197,7 @@ Control the sort order of your results with `orderBy`. You can use object syntax
 
 ```ts showLineNumbers {2}
 const posts = await db.query.posts.findMany({
-  orderBy: { _creationTime: 'desc', title: 'asc' },
+  orderBy: { createdAt: 'desc', title: 'asc' },
 });
 ```
 
@@ -206,7 +206,7 @@ You can also use callback syntax (Drizzle-style) with `asc`/`desc` helpers:
 ```ts showLineNumbers {2-5}
 const posts2 = await db.query.posts.findMany({
   orderBy: (posts, { desc, asc }) => [
-    desc(posts._creationTime),
+    desc(posts.createdAt),
     asc(posts.title),
   ],
 });
@@ -238,7 +238,7 @@ For efficient pagination over large datasets, use cursor-based pagination:
 ```ts showLineNumbers {3-4}
 return db.query.posts.findMany({
   where: { published: true },
-  orderBy: { _creationTime: 'desc' },
+  orderBy: { createdAt: 'desc' },
   cursor: args.cursor ?? null,
   limit: 20,
 });
@@ -347,7 +347,7 @@ const users = await db.query.users.findMany({
     posts: {
       limit: 5,
       offset: 2,
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
     },
   },
 });

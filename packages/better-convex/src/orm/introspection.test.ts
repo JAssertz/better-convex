@@ -23,7 +23,20 @@ test('getTableColumns includes system fields', () => {
   expect(columns).toHaveProperty('name');
   expect(columns).toHaveProperty('email');
   expect(columns).toHaveProperty('id');
-  expect(columns).toHaveProperty('_creationTime');
+  expect(columns).toHaveProperty('createdAt');
+  expect(columns).not.toHaveProperty('_creationTime');
+});
+
+test('getTableColumns keeps user createdAt column when present', () => {
+  const users = convexTable('users_with_created_at_introspection', {
+    name: text().notNull(),
+    createdAt: text().notNull(),
+  });
+
+  const columns = getTableColumns(users) as any;
+  expect(columns).toHaveProperty('createdAt');
+  expect(columns.createdAt.config.name).toBe('createdAt');
+  expect(columns).not.toHaveProperty('_creationTime');
 });
 
 test('getTableConfig includes indexes/unique/fk/rls/checks', () => {
@@ -71,8 +84,9 @@ test('getTableColumns synthesizes system fields when table metadata is partial',
   const columns = getTableColumns(table);
   expect(columns).toHaveProperty('name');
   expect(columns).toHaveProperty('id');
-  expect(columns).toHaveProperty('_creationTime');
+  expect(columns).toHaveProperty('createdAt');
+  expect(columns).not.toHaveProperty('_creationTime');
 
   expect((columns.id as any).config.table).toBe(table);
-  expect((columns._creationTime as any).config.table).toBe(table);
+  expect((columns.createdAt as any).config.table).toBe(table);
 });

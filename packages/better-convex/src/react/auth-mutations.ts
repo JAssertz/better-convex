@@ -67,12 +67,32 @@ const waitForTokenClear = async (
 };
 
 /** Poll until JWT token exists (auth complete) (max 5s) */
-const waitForAuth = async (store: AuthStore, timeout = 5000): Promise<void> => {
+const waitForAuth = async (
+  store: AuthStore,
+  timeout = 5000
+): Promise<boolean> => {
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    if (store.get('token')) return;
+    if (store.get('token')) return true;
     await new Promise((r) => setTimeout(r, 50));
   }
+  return false;
+};
+
+const authStateTimeoutError = () =>
+  new AuthMutationError({
+    code: 'AUTH_STATE_TIMEOUT',
+    message: 'Authentication did not complete. Try again.',
+    status: 401,
+    statusText: 'UNAUTHORIZED',
+  });
+
+const ensureAuth = async (store: AuthStore) => {
+  if (await waitForAuth(store)) {
+    return;
+  }
+
+  throw authStateTimeoutError();
 };
 
 type AnyFn = (...args: any[]) => Promise<any>;
@@ -165,7 +185,7 @@ export function createAuthMutations<T extends AuthClient>(
         if (res?.error) {
           throw new AuthMutationError(res.error);
         }
-        await waitForAuth(authStoreApi);
+        await ensureAuth(authStoreApi);
         return res;
       },
     };
@@ -181,7 +201,7 @@ export function createAuthMutations<T extends AuthClient>(
         if (res?.error) {
           throw new AuthMutationError(res.error);
         }
-        await waitForAuth(authStoreApi);
+        await ensureAuth(authStoreApi);
         return res;
       },
     };
@@ -197,7 +217,7 @@ export function createAuthMutations<T extends AuthClient>(
         if (res?.error) {
           throw new AuthMutationError(res.error);
         }
-        await waitForAuth(authStoreApi);
+        await ensureAuth(authStoreApi);
         return res;
       },
     };

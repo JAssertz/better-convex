@@ -37,7 +37,9 @@ export const users = convexTable('users', {
 
 Convex auto-generates two fields on every document:
 - `id: Id<'table'>`
-- `_creationTime: number`
+- `createdAt: number` (default)
+
+If you use cRPC, you can enable Date hydration for system timestamps with `createOrm({ types: { date: true } })`. In that mode, ORM rows expose `createdAt: Date`.
 
 ### Nullability
 
@@ -172,7 +174,7 @@ Strict guardrails cover relation indexes, relation fan-out cardinality, predicat
 |---|---|---|---|
 | Relation loading missing index | throws unless `allowFullScan` | throws unless `allowFullScan`; warns when scanning | throws unless `allowFullScan`; no strict warning |
 | Predicate `where` | requires explicit `index: { name, range? }` (no `allowFullScan` fallback) | same | same |
-| Pagination orderBy missing index | strict `true` throws; strict `false` warns + falls back to `_creationTime` | throws (add index or disable strict) | warns + falls back to `_creationTime` |
+| Pagination orderBy missing index | strict `true` throws; strict `false` warns + falls back to `createdAt` | throws (add index or disable strict) | warns + falls back to `createdAt` |
 | Unsized non-paginated `findMany()` | throws unless `limit`/cursor pagination (`cursor` + `limit`)/`defaultLimit`/`allowFullScan` | same | same |
 | `many()` relation without per-parent limit | throws unless relation `limit`/`defaultLimit`/`allowFullScan` | same | same |
 | Relation lookup fan-out keys exceed cap | throws unless `allowFullScan` (`defaults.relationFanOutMaxKeys`, default `1000`) | throws unless `allowFullScan`; warns when scanning | throws unless `allowFullScan`; no strict warning |

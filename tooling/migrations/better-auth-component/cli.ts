@@ -41,7 +41,7 @@ const parseCliOptions = (): CliOptions => {
   return {
     filters: parsed.values.filters
       .split(',')
-      .map(value => value.trim())
+      .map((value) => value.trim())
       .filter(Boolean),
     outputZipPath: path.resolve(parsed.values.outputZip),
     snapshotZipPath: path.resolve(parsed.values.snapshotZip),
@@ -54,14 +54,20 @@ const main = async (): Promise<void> => {
 
   if (!fs.existsSync(options.snapshotZipPath)) {
     throw new Error(
-      `Snapshot zip not found: ${options.snapshotZipPath}. Export your backup first.`,
+      `Snapshot zip not found: ${options.snapshotZipPath}. Export your backup first.`
     );
   }
 
-  await fsPromises.rm(options.workDirectoryPath, { force: true, recursive: true });
+  await fsPromises.rm(options.workDirectoryPath, {
+    force: true,
+    recursive: true,
+  });
   await fsPromises.mkdir(options.workDirectoryPath, { recursive: true });
 
-  const snapshotDirectoryPath = path.join(options.workDirectoryPath, 'snapshot');
+  const snapshotDirectoryPath = path.join(
+    options.workDirectoryPath,
+    'snapshot'
+  );
 
   await unzipArchive({
     destinationDirectoryPath: snapshotDirectoryPath,
@@ -78,7 +84,8 @@ const main = async (): Promise<void> => {
     sourceDirectoryPath: snapshotDirectoryPath,
   });
 
-  const filterText = options.filters.length === 0 ? '(all tables)' : options.filters.join(', ');
+  const filterText =
+    options.filters.length === 0 ? '(all tables)' : options.filters.join(', ');
 
   console.info('Better Auth component migration complete.');
   console.info(`Tables migrated: ${filterText}`);
@@ -86,11 +93,15 @@ const main = async (): Promise<void> => {
   console.info(`Files updated: ${stats.filesUpdated}`);
   console.info(`String replacements applied: ${stats.replacementsApplied}`);
   console.info(`Output zip: ${options.outputZipPath}`);
-  console.warn('IMPORTANT: this will replace all your data with updated Better Auth IDs.');
-  console.info(`Run manually: npx convex import "${options.outputZipPath}" --replace -y`);
+  console.warn(
+    'IMPORTANT: this will replace all your data with updated Better Auth IDs.'
+  );
+  console.info(
+    `Run manually: npx convex import "${options.outputZipPath}" --replace -y`
+  );
 };
 
-main().catch(error => {
+main().catch((error) => {
   console.error('Migration failed.');
   console.error(error);
   process.exitCode = 1;

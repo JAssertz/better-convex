@@ -14,7 +14,7 @@ import { type Equal, Expect, IsAny, Not } from './utils';
 {
   const users = convexTable('hook_users', {
     name: text().notNull(),
-    createdAt: text()
+    createdAtText: text()
       .notNull()
       .$defaultFn(() => 'now'),
     updatedAt: text()
@@ -29,7 +29,7 @@ import { type Equal, Expect, IsAny, Not } from './utils';
       Insert,
       {
         name: string;
-        createdAt?: string | undefined;
+        createdAtText?: string | undefined;
         updatedAt?: string | undefined;
       }
     >

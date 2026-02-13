@@ -46,7 +46,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -56,7 +56,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -66,7 +66,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
     // Find posts with 'JavaScript' in title
@@ -96,7 +96,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -106,7 +106,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -116,7 +116,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
     // Find posts starting with 'Java'
@@ -145,7 +145,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -155,7 +155,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -165,7 +165,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
     // Find posts ending with 'Guide'
@@ -195,7 +195,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -205,7 +205,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
 
     // Find exact match
@@ -234,7 +234,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -244,7 +244,7 @@ describe('M5: like() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
 
     const posts = await db.query.posts.findMany({
@@ -278,7 +278,7 @@ describe('M5: ilike() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -288,7 +288,7 @@ describe('M5: ilike() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -298,7 +298,7 @@ describe('M5: ilike() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
     // Find posts with 'javascript' (any case)
@@ -328,7 +328,7 @@ describe('M5: ilike() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -338,7 +338,7 @@ describe('M5: ilike() operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
 
     const posts = await db.query.posts.findMany({
@@ -372,7 +372,7 @@ describe('M5: like() prefix pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -382,7 +382,7 @@ describe('M5: like() prefix pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -392,7 +392,7 @@ describe('M5: like() prefix pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
     // Find posts with prefix 'Java'
@@ -422,7 +422,7 @@ describe('M5: like() prefix pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -432,7 +432,7 @@ describe('M5: like() prefix pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
 
     // Find posts with prefix 'Java' (case-sensitive)
@@ -467,7 +467,7 @@ describe('M5: like() suffix pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -477,7 +477,7 @@ describe('M5: like() suffix pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -487,7 +487,7 @@ describe('M5: like() suffix pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
     // Find posts ending with 'Guide'
@@ -517,7 +517,7 @@ describe('M5: like() suffix pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -527,7 +527,7 @@ describe('M5: like() suffix pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
 
     // Find posts ending with 'Guide' (case-sensitive)
@@ -562,7 +562,7 @@ describe('M5: like() substring pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -572,7 +572,7 @@ describe('M5: like() substring pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -582,7 +582,7 @@ describe('M5: like() substring pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
     // Find posts containing 'JavaScript'
@@ -612,7 +612,7 @@ describe('M5: like() substring pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -622,7 +622,7 @@ describe('M5: like() substring pattern', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
 
     // Find posts containing 'JavaScript' (case-sensitive)
@@ -657,7 +657,7 @@ describe('M5: startsWith operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -667,7 +667,7 @@ describe('M5: startsWith operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -677,7 +677,7 @@ describe('M5: startsWith operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
     const posts = await db.query.posts.findMany({
@@ -707,7 +707,7 @@ describe('M5: endsWith operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -717,7 +717,7 @@ describe('M5: endsWith operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -727,7 +727,7 @@ describe('M5: endsWith operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
     const posts = await db.query.posts.findMany({
@@ -758,7 +758,7 @@ describe('M5: contains operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 1000,
+      publishedAt: 1000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -768,7 +768,7 @@ describe('M5: contains operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 2000,
+      publishedAt: 2000,
     });
     await ctx.db.insert('posts', {
       text: 'test',
@@ -778,7 +778,7 @@ describe('M5: contains operator', () => {
       content: 'Content',
       published: true,
       authorId: user,
-      createdAt: 3000,
+      publishedAt: 3000,
     });
 
     const posts = await db.query.posts.findMany({

@@ -14,16 +14,18 @@ import {
   getMutationCollectionLimits,
   getMutationExecutionMode,
   getOrmContext,
-  normalizePublicSystemFields,
   getTableColumns,
   getTableName,
-  selectReturningRow,
+  hydrateDateFieldsForRead,
+  normalizeDateFieldsForWrite,
+  selectReturningRowWithHydration,
   serializeFilterExpression,
   toConvexFilter,
 } from './mutation-utils';
 import { QueryPromise } from './query-promise';
 import { evaluateUpdateDecision } from './rls/evaluator';
 import type { ConvexTable } from './table';
+import { shouldHydrateCreatedAtAsDate } from './timestamp-mode';
 import type {
   MutationAsyncConfig,
   MutationExecuteConfig,
@@ -166,22 +168,30 @@ export class ConvexUpdateBuilder<
     return this;
   }
 
-  private getIdEquality(): unknown | undefined {
+  private getIdEquality():
+    | { matched: true; value: unknown }
+    | { matched: false } {
     const expression = this.whereExpression;
     if (!expression || expression.type !== 'binary') {
-      return;
+      return { matched: false };
     }
     if (expression.operator !== 'eq') {
-      return;
+      return { matched: false };
     }
     const [left, right] = expression.operands;
     if (isFieldReference(left) && left.fieldName === '_id') {
-      return isFieldReference(right) ? undefined : right;
+      if (isFieldReference(right)) {
+        return { matched: false };
+      }
+      return { matched: true, value: right };
     }
     if (isFieldReference(right) && right.fieldName === '_id') {
-      return isFieldReference(left) ? undefined : left;
+      if (isFieldReference(left)) {
+        return { matched: false };
+      }
+      return { matched: true, value: left };
     }
-    return;
+    return { matched: false };
   }
 
   async executeAsync(
@@ -236,6 +246,7 @@ export class ConvexUpdateBuilder<
 
     const config = args[0] as MutationExecuteConfig | undefined;
     const ormContext = getOrmContext(this.db);
+    const createdAtAsDate = shouldHydrateCreatedAtAsDate(ormContext);
     const strict = ormContext?.strict ?? true;
     const allowFullScan = this.allowFullScanFlag;
     const pagination = this.paginateConfig;
@@ -255,6 +266,11 @@ export class ConvexUpdateBuilder<
       config?.mode ?? this.executionModeOverride
     );
     const delayMs = getMutationAsyncDelayMs(ormContext, config?.delayMs);
+    const normalizedSetValues = normalizeDateFieldsForWrite(
+      this.table,
+      this.setValues as any,
+      { createdAtAsDate }
+    ) as UpdateSet<TTable>;
 
     if (!isPaginated && resolvedMode === 'async') {
       if (!ormContext?.scheduler || !ormContext.scheduledMutationBatch) {
@@ -296,7 +312,7 @@ export class ConvexUpdateBuilder<
               table: getTableName(this.table),
               where: serializeFilterExpression(this.whereExpression),
               allowFullScan: this.allowFullScanFlag,
-              update: encodeUndefinedDeep(this.setValues ?? {}),
+              update: encodeUndefinedDeep(normalizedSetValues ?? {}),
               cursor: firstBatch.continueCursor,
               batchSize: asyncBatchSize,
               maxBytesPerBatch,
@@ -332,7 +348,7 @@ export class ConvexUpdateBuilder<
     for (const [columnName, builder] of Object.entries(
       getTableColumns(this.table)
     )) {
-      if (columnName in (this.setValues as any)) {
+      if (columnName in (normalizedSetValues as any)) {
         continue;
       }
       const onUpdateFn = (builder as any).config?.onUpdateFn;
@@ -343,7 +359,7 @@ export class ConvexUpdateBuilder<
 
     const effectiveSet = {
       ...onUpdateSet,
-      ...(this.setValues as any),
+      ...(normalizedSetValues as any),
     } as UpdateSet<TTable>;
 
     const tableName = getTableName(this.table);
@@ -351,9 +367,12 @@ export class ConvexUpdateBuilder<
     let rows: Record<string, unknown>[];
     let continueCursor: string | null = null;
     let isDone = true;
-    const idValue = this.getIdEquality();
-    if (idValue !== undefined) {
+    const idEquality = this.getIdEquality();
+    if (idEquality.matched) {
+      const idValue = idEquality.value;
       if (isPaginated && pagination.cursor !== null) {
+        rows = [];
+      } else if (idValue === null || idValue === undefined) {
         rows = [];
       } else {
         const row = await this.db.get(idValue as any);
@@ -586,11 +605,20 @@ export class ConvexUpdateBuilder<
       }
 
       if (this.returningFields === true) {
-        results.push(normalizePublicSystemFields(updated as any));
+        results.push(
+          hydrateDateFieldsForRead(this.table, updated as any, {
+            createdAtAsDate,
+          })
+        );
       } else {
         results.push(
-          normalizePublicSystemFields(
-            selectReturningRow(updated as any, this.returningFields as any)
+          selectReturningRowWithHydration(
+            this.table,
+            updated as any,
+            this.returningFields as any,
+            {
+              createdAtAsDate,
+            }
           )
         );
       }

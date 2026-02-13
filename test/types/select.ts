@@ -434,7 +434,7 @@ const db = orm.db(mockDb);
     books: {
       author: r.one.authors({
         from: r.books.authorId,
-        to: r.authors._id,
+        to: r.authors.id,
         optional: false,
       }),
     },
@@ -990,7 +990,7 @@ db.query.posts.findMany({
   type Post = InferSelectModel<typeof posts>;
 
   const invalidPost: Post = {
-    _id: '123' as GenericId<'posts'>,
+    id: '123' as GenericId<'posts'>,
     _creationTime: 123,
     // @ts-expect-error - Type 'GenericId<"posts">' is not assignable to type 'GenericId<"users">'
     authorId: '456' as GenericId<'posts'>, // Wrong table reference
@@ -1085,7 +1085,7 @@ db.query.users.findMany({
   Expect<Equal<Row['age'], number | null>>;
 }
 
-// Edge Case 3: System field ordering (_id, _creationTime)
+// Edge Case 3: System field ordering (id, _creationTime)
 {
   const result = await db.query.users.findMany({
     orderBy: { _creationTime: 'asc' },

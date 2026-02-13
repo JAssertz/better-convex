@@ -53,6 +53,7 @@ import {
   findVectorIndexByName,
   getIndexes,
 } from './index-utils';
+import { hydrateDateFieldsForRead } from './mutation-utils';
 import { asc, desc } from './order-by';
 import { getPage } from './pagination';
 import { QueryPromise } from './query-promise';
@@ -66,7 +67,14 @@ import {
   QueryStream,
   stream,
 } from './stream';
-import { Columns, OrmSchemaDefinition } from './symbols';
+import { Columns, OrmContext, OrmSchemaDefinition } from './symbols';
+import {
+  CREATED_AT_MIGRATION_MESSAGE,
+  INTERNAL_CREATION_TIME_FIELD,
+  PUBLIC_CREATED_AT_FIELD,
+  shouldHydrateCreatedAtAsDate,
+  usesSystemCreatedAtAlias,
+} from './timestamp-mode';
 import type {
   DBQueryConfig,
   FindManyPipelineConfig,
@@ -89,8 +97,7 @@ import {
 const DEFAULT_RELATION_FAN_OUT_MAX_KEYS = 1000;
 const PUBLIC_ID_FIELD = 'id';
 const INTERNAL_ID_FIELD = '_id';
-const ID_MIGRATION_MESSAGE =
-  "`_id` is no longer public. Use `id` instead.";
+const ID_MIGRATION_MESSAGE = '`_id` is no longer public. Use `id` instead.';
 
 class LimitedQueryStream<
   T extends NonNullable<unknown>,
@@ -168,6 +175,7 @@ export class GelRelationalQuery<
     readonly result: TResult;
   };
   private allowFullScan: boolean;
+  private readonly createdAtAsDate: boolean;
 
   constructor(
     private schema: TSchema,
@@ -188,28 +196,100 @@ export class GelRelationalQuery<
   ) {
     super();
     this.allowFullScan = (config as any).allowFullScan === true;
+    this.createdAtAsDate = shouldHydrateCreatedAtAsDate(
+      (db as any)[OrmContext]
+    );
   }
 
-  private _normalizePublicFieldName(fieldName: string): string {
+  private _usesSystemCreatedAtAlias(
+    tableConfig: TableRelationalConfig = this.tableConfig
+  ): boolean {
+    return usesSystemCreatedAtAlias(tableConfig.table);
+  }
+
+  private _assertNoLegacyPublicFieldName(fieldName: string): void {
     if (fieldName === INTERNAL_ID_FIELD) {
       throw new Error(ID_MIGRATION_MESSAGE);
     }
-    return fieldName === PUBLIC_ID_FIELD ? INTERNAL_ID_FIELD : fieldName;
+    if (fieldName === INTERNAL_CREATION_TIME_FIELD) {
+      throw new Error(CREATED_AT_MIGRATION_MESSAGE);
+    }
   }
 
-  private _toPublicRow<T>(row: T): T {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) {
-      return row;
+  private _normalizePublicFieldName(
+    fieldName: string,
+    tableConfig: TableRelationalConfig = this.tableConfig
+  ): string {
+    this._assertNoLegacyPublicFieldName(fieldName);
+    if (fieldName === PUBLIC_ID_FIELD) {
+      return INTERNAL_ID_FIELD;
     }
-    if (!Object.prototype.hasOwnProperty.call(row, INTERNAL_ID_FIELD)) {
-      return row;
+    if (
+      fieldName === PUBLIC_CREATED_AT_FIELD &&
+      this._usesSystemCreatedAtAlias(tableConfig)
+    ) {
+      return INTERNAL_CREATION_TIME_FIELD;
     }
-    const obj = row as Record<string, unknown>;
-    const { _id, ...rest } = obj;
-    return {
-      ...rest,
-      id: _id,
-    } as T;
+    return fieldName;
+  }
+
+  private _isDateField(
+    fieldName: string,
+    tableConfig: TableRelationalConfig = this.tableConfig
+  ): boolean {
+    if (
+      fieldName === INTERNAL_CREATION_TIME_FIELD &&
+      this._usesSystemCreatedAtAlias(tableConfig)
+    ) {
+      return true;
+    }
+
+    const columns = this._getColumns(tableConfig);
+    const directColumn = columns[fieldName];
+    if (
+      directColumn &&
+      (directColumn as any)?.config?.columnType === 'ConvexDate'
+    ) {
+      return true;
+    }
+
+    for (const column of Object.values(columns)) {
+      if ((column as any)?.config?.name !== fieldName) {
+        continue;
+      }
+      return (column as any)?.config?.columnType === 'ConvexDate';
+    }
+
+    return false;
+  }
+
+  private _normalizeComparableValue(
+    fieldName: string,
+    value: unknown,
+    tableConfig: TableRelationalConfig = this.tableConfig
+  ): unknown {
+    if (!this._isDateField(fieldName, tableConfig)) {
+      return value;
+    }
+
+    if (value instanceof Date) {
+      return value.getTime();
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) =>
+        item instanceof Date ? item.getTime() : item
+      );
+    }
+    return value;
+  }
+
+  private _toPublicRow<T>(
+    row: T,
+    tableConfig: TableRelationalConfig = this.tableConfig
+  ): T {
+    return hydrateDateFieldsForRead(tableConfig.table as any, row, {
+      createdAtAsDate: this.createdAtAsDate,
+    });
   }
 
   private _extractIdOnlyWhere(
@@ -219,8 +299,8 @@ export class GelRelationalQuery<
       return null;
     }
     const keys = Object.keys(where as Record<string, unknown>);
-    if (keys.includes(INTERNAL_ID_FIELD)) {
-      throw new Error(ID_MIGRATION_MESSAGE);
+    for (const key of keys) {
+      this._assertNoLegacyPublicFieldName(key);
     }
     if (keys.length !== 1 || keys[0] !== PUBLIC_ID_FIELD) {
       return null;
@@ -328,7 +408,8 @@ export class GelRelationalQuery<
     orderBy:
       | ValueOrArray<OrderByValue>
       | Record<string, 'asc' | 'desc' | undefined>
-      | undefined
+      | undefined,
+    tableConfig: TableRelationalConfig = this.tableConfig
   ): { field: string; direction: 'asc' | 'desc' }[] {
     if (
       orderBy &&
@@ -339,7 +420,7 @@ export class GelRelationalQuery<
     ) {
       return Object.entries(orderBy)
         .map(([field, direction]) => ({
-          field: this._normalizePublicFieldName(field),
+          field: this._normalizePublicFieldName(field, tableConfig),
           direction,
         }))
         .filter(
@@ -462,74 +543,76 @@ export class GelRelationalQuery<
 
       const fieldName = field.fieldName;
       const fieldValue = row[fieldName];
+      const normalizedValue = this._normalizeComparableValue(fieldName, value);
+      const comparableValue = normalizedValue as any;
 
       switch (filter.operator) {
         case 'like': {
-          const pattern = value as string;
+          const pattern = normalizedValue as string;
           if (typeof fieldValue !== 'string') return false;
           return this._matchLike(fieldValue, pattern, false);
         }
         case 'ilike': {
-          const pattern = value as string;
+          const pattern = normalizedValue as string;
           if (typeof fieldValue !== 'string') return false;
           return this._matchLike(fieldValue, pattern, true);
         }
         case 'notLike': {
-          const pattern = value as string;
+          const pattern = normalizedValue as string;
           if (typeof fieldValue !== 'string') return false;
           return !this._matchLike(fieldValue, pattern, false);
         }
         case 'notIlike': {
-          const pattern = value as string;
+          const pattern = normalizedValue as string;
           if (typeof fieldValue !== 'string') return false;
           return !this._matchLike(fieldValue, pattern, true);
         }
         case 'startsWith': {
           if (typeof fieldValue !== 'string') return false;
-          return fieldValue.startsWith(value as string);
+          return fieldValue.startsWith(normalizedValue as string);
         }
         case 'endsWith': {
           if (typeof fieldValue !== 'string') return false;
-          return fieldValue.endsWith(value as string);
+          return fieldValue.endsWith(normalizedValue as string);
         }
         case 'contains': {
           if (typeof fieldValue !== 'string') return false;
-          return fieldValue.includes(value as string);
+          return fieldValue.includes(normalizedValue as string);
         }
         // Basic operators fallback (shouldn't reach here normally)
         case 'eq':
-          return fieldValue === value;
+          return fieldValue === normalizedValue;
         case 'ne':
-          return fieldValue !== value;
+          return fieldValue !== normalizedValue;
         case 'gt':
-          return fieldValue > value;
+          return fieldValue > comparableValue;
         case 'gte':
-          return fieldValue >= value;
+          return fieldValue >= comparableValue;
         case 'lt':
-          return fieldValue < value;
+          return fieldValue < comparableValue;
         case 'lte':
-          return fieldValue <= value;
+          return fieldValue <= comparableValue;
         case 'inArray': {
-          const arr = value as any[];
+          const arr = normalizedValue as any[];
           return arr.includes(fieldValue);
         }
         case 'notInArray': {
-          const arr = value as any[];
+          const arr = normalizedValue as any[];
           return !arr.includes(fieldValue);
         }
         case 'arrayContains': {
           if (!Array.isArray(fieldValue)) return false;
-          const arr = value as any[];
+          const arr = normalizedValue as any[];
           return arr.every((item) => fieldValue.includes(item));
         }
         case 'arrayContained': {
           if (!Array.isArray(fieldValue)) return false;
-          const arr = value as any[];
+          const arr = normalizedValue as any[];
           return fieldValue.every((item) => arr.includes(item));
         }
         case 'arrayOverlaps': {
           if (!Array.isArray(fieldValue)) return false;
-          const arr = value as any[];
+          const arr = normalizedValue as any[];
           return arr.some((item) => fieldValue.includes(item));
         }
         default:
@@ -600,7 +683,8 @@ export class GelRelationalQuery<
 
   private _evaluateFieldFilter(
     fieldValue: any,
-    filter: RelationsFieldFilter
+    filter: RelationsFieldFilter,
+    fieldName?: string
   ): boolean {
     if (filter === undefined) return true;
 
@@ -608,11 +692,18 @@ export class GelRelationalQuery<
       throw new Error('SQL placeholders are not supported in Convex filters.');
     }
 
+    if (filter instanceof Date) {
+      return fieldValue === filter.getTime();
+    }
+
     if (
       filter === null ||
       typeof filter !== 'object' ||
       Array.isArray(filter)
     ) {
+      if (fieldName) {
+        return fieldValue === this._normalizeComparableValue(fieldName, filter);
+      }
       return fieldValue === filter;
     }
 
@@ -626,20 +717,26 @@ export class GelRelationalQuery<
 
       switch (op) {
         case 'NOT': {
-          results.push(!this._evaluateFieldFilter(fieldValue, value));
+          results.push(
+            !this._evaluateFieldFilter(fieldValue, value, fieldName)
+          );
           continue;
         }
         case 'OR': {
           if (!Array.isArray(value) || value.length === 0) continue;
           results.push(
-            value.some((sub) => this._evaluateFieldFilter(fieldValue, sub))
+            value.some((sub) =>
+              this._evaluateFieldFilter(fieldValue, sub, fieldName)
+            )
           );
           continue;
         }
         case 'AND': {
           if (!Array.isArray(value) || value.length === 0) continue;
           results.push(
-            value.every((sub) => this._evaluateFieldFilter(fieldValue, sub))
+            value.every((sub) =>
+              this._evaluateFieldFilter(fieldValue, sub, fieldName)
+            )
           );
           continue;
         }
@@ -658,7 +755,10 @@ export class GelRelationalQuery<
             results.push(false);
             continue;
           }
-          results.push(value.includes(fieldValue));
+          const normalized = fieldName
+            ? this._normalizeComparableValue(fieldName, value)
+            : value;
+          results.push((normalized as any[]).includes(fieldValue));
           continue;
         }
         case 'notIn': {
@@ -666,7 +766,10 @@ export class GelRelationalQuery<
             results.push(false);
             continue;
           }
-          results.push(!value.includes(fieldValue));
+          const normalized = fieldName
+            ? this._normalizeComparableValue(fieldName, value)
+            : value;
+          results.push(!(normalized as any[]).includes(fieldValue));
           continue;
         }
         case 'arrayContains': {
@@ -750,29 +853,61 @@ export class GelRelationalQuery<
           continue;
         }
         case 'eq':
-          results.push(fieldValue === value);
+          results.push(
+            fieldValue ===
+              (fieldName
+                ? this._normalizeComparableValue(fieldName, value)
+                : value)
+          );
           continue;
         case 'ne':
-          results.push(fieldValue !== value);
+          results.push(
+            fieldValue !==
+              (fieldName
+                ? this._normalizeComparableValue(fieldName, value)
+                : value)
+          );
           continue;
         case 'gt':
-          results.push(fieldValue > value);
+          results.push(
+            fieldValue >
+              (fieldName
+                ? this._normalizeComparableValue(fieldName, value)
+                : value)
+          );
           continue;
         case 'gte':
-          results.push(fieldValue >= value);
+          results.push(
+            fieldValue >=
+              (fieldName
+                ? this._normalizeComparableValue(fieldName, value)
+                : value)
+          );
           continue;
         case 'lt':
-          results.push(fieldValue < value);
+          results.push(
+            fieldValue <
+              (fieldName
+                ? this._normalizeComparableValue(fieldName, value)
+                : value)
+          );
           continue;
         case 'lte':
-          results.push(fieldValue <= value);
+          results.push(
+            fieldValue <=
+              (fieldName
+                ? this._normalizeComparableValue(fieldName, value)
+                : value)
+          );
           continue;
         case 'between': {
           if (!Array.isArray(value) || value.length !== 2) {
             results.push(false);
             continue;
           }
-          const [min, max] = value;
+          const [min, max] = (
+            fieldName ? this._normalizeComparableValue(fieldName, value) : value
+          ) as [any, any];
           results.push(fieldValue >= min && fieldValue <= max);
           continue;
         }
@@ -781,7 +916,9 @@ export class GelRelationalQuery<
             results.push(false);
             continue;
           }
-          const [min, max] = value;
+          const [min, max] = (
+            fieldName ? this._normalizeComparableValue(fieldName, value) : value
+          ) as [any, any];
           results.push(fieldValue < min || fieldValue > max);
           continue;
         }
@@ -841,19 +978,23 @@ export class GelRelationalQuery<
             !this._evaluateTableFilter(row, tableConfig, value as any)
           );
           continue;
-        default:
-          if (key === INTERNAL_ID_FIELD) {
-            throw new Error(ID_MIGRATION_MESSAGE);
-          }
+        default: {
+          this._assertNoLegacyPublicFieldName(key);
           if (!(key in columns)) {
             throw new Error(`Unknown filter column: "${key}"`);
           }
+          const normalizedFieldName = this._normalizePublicFieldName(
+            key,
+            tableConfig
+          );
           results.push(
             this._evaluateFieldFilter(
-              row[this._normalizePublicFieldName(key)],
-              value as any
+              row[normalizedFieldName],
+              value as any,
+              normalizedFieldName
             )
           );
+        }
       }
     }
 
@@ -909,14 +1050,17 @@ export class GelRelationalQuery<
           );
           continue;
         default: {
-          if (key === INTERNAL_ID_FIELD) {
-            throw new Error(ID_MIGRATION_MESSAGE);
-          }
+          this._assertNoLegacyPublicFieldName(key);
           if (key in columns) {
+            const normalizedFieldName = this._normalizePublicFieldName(
+              key,
+              tableConfig
+            );
             results.push(
               this._evaluateFieldFilter(
-                row[this._normalizePublicFieldName(key)],
-                value as any
+                row[normalizedFieldName],
+                value as any,
+                normalizedFieldName
               )
             );
             continue;
@@ -996,9 +1140,7 @@ export class GelRelationalQuery<
     if (this._isPlaceholder(filter) || this._isSQLWrapper(filter)) {
       throw new Error('SQL placeholders are not supported in Convex filters.');
     }
-    if (fieldName === INTERNAL_ID_FIELD) {
-      throw new Error(ID_MIGRATION_MESSAGE);
-    }
+    this._assertNoLegacyPublicFieldName(fieldName);
 
     const columns = this._getColumns(tableConfig);
     const columnBuilder = columns[fieldName];
@@ -1006,17 +1148,22 @@ export class GelRelationalQuery<
       throw new Error(`Unknown filter column: "${fieldName}"`);
     }
 
-    const columnRef = column(
-      columnBuilder,
-      this._normalizePublicFieldName(fieldName)
+    const normalizedFieldName = this._normalizePublicFieldName(
+      fieldName,
+      tableConfig
     );
+    const normalizeValue = (value: unknown): unknown =>
+      this._normalizeComparableValue(normalizedFieldName, value, tableConfig);
+
+    const columnRef = column(columnBuilder, normalizedFieldName);
 
     if (
+      filter instanceof Date ||
       filter === null ||
       typeof filter !== 'object' ||
       Array.isArray(filter)
     ) {
-      return eq(columnRef, filter);
+      return eq(columnRef, normalizeValue(filter));
     }
 
     const entries = Object.entries(filter as Record<string, any>);
@@ -1069,12 +1216,12 @@ export class GelRelationalQuery<
           continue;
         case 'in':
           if (Array.isArray(value)) {
-            parts.push(inArray(columnRef, value));
+            parts.push(inArray(columnRef, normalizeValue(value) as any));
           }
           continue;
         case 'notIn':
           if (Array.isArray(value)) {
-            parts.push(notInArray(columnRef, value));
+            parts.push(notInArray(columnRef, normalizeValue(value) as any));
           }
           continue;
         case 'arrayContains':
@@ -1108,31 +1255,33 @@ export class GelRelationalQuery<
           parts.push(contains(columnRef, value));
           continue;
         case 'eq':
-          parts.push(eq(columnRef, value));
+          parts.push(eq(columnRef, normalizeValue(value)));
           continue;
         case 'ne':
-          parts.push(ne(columnRef, value));
+          parts.push(ne(columnRef, normalizeValue(value)));
           continue;
         case 'gt':
-          parts.push(gt(columnRef, value));
+          parts.push(gt(columnRef, normalizeValue(value)));
           continue;
         case 'gte':
-          parts.push(gte(columnRef, value));
+          parts.push(gte(columnRef, normalizeValue(value)));
           continue;
         case 'lt':
-          parts.push(lt(columnRef, value));
+          parts.push(lt(columnRef, normalizeValue(value)));
           continue;
         case 'lte':
-          parts.push(lte(columnRef, value));
+          parts.push(lte(columnRef, normalizeValue(value)));
           continue;
         case 'between':
           if (Array.isArray(value) && value.length === 2) {
-            parts.push(between(columnRef, value[0], value[1]));
+            const normalized = normalizeValue(value) as [unknown, unknown];
+            parts.push(between(columnRef, normalized[0], normalized[1]));
           }
           continue;
         case 'notBetween':
           if (Array.isArray(value) && value.length === 2) {
-            parts.push(notBetween(columnRef, value[0], value[1]));
+            const normalized = normalizeValue(value) as [unknown, unknown];
+            parts.push(notBetween(columnRef, normalized[0], normalized[1]));
           }
           continue;
         default:
@@ -1188,9 +1337,7 @@ export class GelRelationalQuery<
           continue;
         }
         default: {
-          if (key === INTERNAL_ID_FIELD) {
-            throw new Error(ID_MIGRATION_MESSAGE);
-          }
+          this._assertNoLegacyPublicFieldName(key);
           if (!(key in columns)) {
             // Relation filter - skip in expression compilation
             continue;
@@ -1273,9 +1420,7 @@ export class GelRelationalQuery<
         this._mergeWithConfig(result, nested);
         continue;
       }
-      if (key === INTERNAL_ID_FIELD) {
-        throw new Error(ID_MIGRATION_MESSAGE);
-      }
+      this._assertNoLegacyPublicFieldName(key);
 
       const relation = tableConfig.relations[key];
       if (!relation) continue;
@@ -1368,9 +1513,7 @@ export class GelRelationalQuery<
       if (key === 'RAW') {
         continue;
       }
-      if (key === INTERNAL_ID_FIELD) {
-        throw new Error(ID_MIGRATION_MESSAGE);
-      }
+      this._assertNoLegacyPublicFieldName(key);
 
       if (key in columns) {
         continue;
@@ -1402,6 +1545,10 @@ export class GelRelationalQuery<
       return;
     }
 
+    if (value instanceof Date) {
+      return value;
+    }
+
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
       return value;
     }
@@ -1431,16 +1578,21 @@ export class GelRelationalQuery<
   ): Record<string, unknown> {
     const merged: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(searchFilters ?? {})) {
-      const normalizedKey = this._normalizePublicFieldName(key);
+      const normalizedKey = this._normalizePublicFieldName(key, tableConfig);
+      const normalizedValue = this._normalizeComparableValue(
+        normalizedKey,
+        value,
+        tableConfig
+      );
       if (
         normalizedKey in merged &&
-        !this._searchFilterValuesEqual(merged[normalizedKey], value)
+        !this._searchFilterValuesEqual(merged[normalizedKey], normalizedValue)
       ) {
         throw new Error(
           `Conflict between search.filters.${normalizedKey} entries.`
         );
       }
-      merged[normalizedKey] = value;
+      merged[normalizedKey] = normalizedValue;
     }
 
     if (!this._isRecord(whereFilter)) {
@@ -1455,7 +1607,7 @@ export class GelRelationalQuery<
       if (key === 'OR' || key === 'AND' || key === 'NOT' || key === 'RAW') {
         continue;
       }
-      const normalizedKey = this._normalizePublicFieldName(key);
+      const normalizedKey = this._normalizePublicFieldName(key, tableConfig);
       if (!(key in columns)) {
         continue;
       }
@@ -1477,7 +1629,11 @@ export class GelRelationalQuery<
         );
       }
 
-      merged[normalizedKey] = eqValue;
+      merged[normalizedKey] = this._normalizeComparableValue(
+        normalizedKey,
+        eqValue,
+        tableConfig
+      );
     }
 
     return merged;
@@ -1539,14 +1695,16 @@ export class GelRelationalQuery<
         (this.config as any).extras,
         this._getColumns(this.tableConfig),
         this.config.with as Record<string, unknown> | undefined,
-        this.tableConfig.name
+        this.tableConfig.name,
+        this.tableConfig
       );
     }
 
     return this._selectColumns(
       rowsWithRelations,
       (this.config as any).columns,
-      this._getColumns(this.tableConfig)
+      this._getColumns(this.tableConfig),
+      this.tableConfig
     );
   }
 
@@ -2392,8 +2550,12 @@ export class GelRelationalQuery<
         const indexFields = queryConfig.index.filters.map(
           (f: any) => (f as any).operands[0].fieldName
         );
-        // If ordering by same field as index, apply .order()
-        if (indexFields.includes(orderField)) {
+        // _creationTime is always available as index ordering suffix in Convex.
+        // If ordering by same field as index (or _creationTime), apply .order().
+        if (
+          indexFields.includes(orderField) ||
+          orderField === '_creationTime'
+        ) {
           query = query.order(primaryOrder.direction);
         } else {
           // Different field - need post-fetch sort
@@ -2554,14 +2716,16 @@ export class GelRelationalQuery<
             (this.config as any).extras,
             this._getColumns(this.tableConfig),
             this.config.with as Record<string, unknown> | undefined,
-            this.tableConfig.name
+            this.tableConfig.name,
+            this.tableConfig
           );
         }
 
         const selectedPage = this._selectColumns(
           pageWithRelations,
           (this.config as any).columns,
-          this._getColumns(this.tableConfig)
+          this._getColumns(this.tableConfig),
+          this.tableConfig
         );
 
         return {
@@ -2638,14 +2802,16 @@ export class GelRelationalQuery<
           (this.config as any).extras,
           this._getColumns(this.tableConfig),
           this.config.with as Record<string, unknown> | undefined,
-          this.tableConfig.name
+          this.tableConfig.name,
+          this.tableConfig
         );
       }
 
       const selectedRows = this._selectColumns(
         rowsWithRelations,
         (this.config as any).columns,
-        this._getColumns(this.tableConfig)
+        this._getColumns(this.tableConfig),
+        this.tableConfig
       );
       return this._returnSelectedRows(selectedRows);
     }
@@ -2749,14 +2915,16 @@ export class GelRelationalQuery<
           (this.config as any).extras,
           this._getColumns(this.tableConfig),
           this.config.with as Record<string, unknown> | undefined,
-          this.tableConfig.name
+          this.tableConfig.name,
+          this.tableConfig
         );
       }
 
       const selectedRows = this._selectColumns(
         rowsWithRelations,
         (this.config as any).columns,
-        this._getColumns(this.tableConfig)
+        this._getColumns(this.tableConfig),
+        this.tableConfig
       );
       return this._returnSelectedRows(selectedRows);
     }
@@ -2857,14 +3025,16 @@ export class GelRelationalQuery<
               (this.config as any).extras,
               this._getColumns(this.tableConfig),
               this.config.with as Record<string, unknown> | undefined,
-              this.tableConfig.name
+              this.tableConfig.name,
+              this.tableConfig
             );
           }
 
           const selectedPage = this._selectColumns(
             pageWithRelations,
             (this.config as any).columns,
-            this._getColumns(this.tableConfig)
+            this._getColumns(this.tableConfig),
+            this.tableConfig
           );
 
           return {
@@ -2966,14 +3136,16 @@ export class GelRelationalQuery<
               (this.config as any).extras,
               this._getColumns(this.tableConfig),
               this.config.with as Record<string, unknown> | undefined,
-              this.tableConfig.name
+              this.tableConfig.name,
+              this.tableConfig
             );
           }
 
           const selectedPage = this._selectColumns(
             pageWithRelations,
             (this.config as any).columns,
-            this._getColumns(this.tableConfig)
+            this._getColumns(this.tableConfig),
+            this.tableConfig
           );
 
           return {
@@ -3073,7 +3245,8 @@ export class GelRelationalQuery<
           (this.config as any).extras,
           this._getColumns(this.tableConfig),
           this.config.with as Record<string, unknown> | undefined,
-          this.tableConfig.name
+          this.tableConfig.name,
+          this.tableConfig
         );
       }
 
@@ -3081,7 +3254,8 @@ export class GelRelationalQuery<
       const selectedPage = this._selectColumns(
         pageWithRelations,
         (this.config as any).columns,
-        this._getColumns(this.tableConfig)
+        this._getColumns(this.tableConfig),
+        this.tableConfig
       );
 
       return {
@@ -3184,7 +3358,8 @@ export class GelRelationalQuery<
         (this.config as any).extras,
         this._getColumns(this.tableConfig),
         this.config.with as Record<string, unknown> | undefined,
-        this.tableConfig.name
+        this.tableConfig.name,
+        this.tableConfig
       );
     }
 
@@ -3192,7 +3367,8 @@ export class GelRelationalQuery<
     const selectedRows = this._selectColumns(
       rowsWithRelations,
       (this.config as any).columns,
-      this._getColumns(this.tableConfig)
+      this._getColumns(this.tableConfig),
+      this.tableConfig
     );
 
     return this._returnSelectedRows(selectedRows);
@@ -3336,15 +3512,23 @@ export class GelRelationalQuery<
     const system: Record<string, ColumnBuilder<any, any, any>> = {};
 
     if ((tableConfig.table as any).id) {
-      system.id = (tableConfig.table as any).id as ColumnBuilder<
-        any,
-        any,
-        any
-      >;
+      system.id = (tableConfig.table as any).id as ColumnBuilder<any, any, any>;
     }
-    if ((tableConfig.table as any)._creationTime) {
-      system._creationTime = (tableConfig.table as any)
-        ._creationTime as ColumnBuilder<any, any, any>;
+    if (this._usesSystemCreatedAtAlias(tableConfig)) {
+      const createdAtBuilder =
+        ((tableConfig.table as any).createdAt as ColumnBuilder<
+          any,
+          any,
+          any
+        >) ??
+        ((tableConfig.table as any)._creationTime as ColumnBuilder<
+          any,
+          any,
+          any
+        >);
+      if (createdAtBuilder) {
+        system[PUBLIC_CREATED_AT_FIELD] = createdAtBuilder;
+      }
     }
 
     return { ...columns, ...system };
@@ -3363,17 +3547,21 @@ export class GelRelationalQuery<
       if (!isFieldReference(field)) {
         return query;
       }
+      const normalizedValue = this._normalizeComparableValue(
+        field.fieldName,
+        value
+      );
       switch (filter.operator) {
         case 'eq':
-          return query.eq(field.fieldName, value);
+          return query.eq(field.fieldName, normalizedValue);
         case 'gt':
-          return query.gt(field.fieldName, value);
+          return query.gt(field.fieldName, normalizedValue);
         case 'gte':
-          return query.gte(field.fieldName, value);
+          return query.gte(field.fieldName, normalizedValue);
         case 'lt':
-          return query.lt(field.fieldName, value);
+          return query.lt(field.fieldName, normalizedValue);
         case 'lte':
-          return query.lte(field.fieldName, value);
+          return query.lte(field.fieldName, normalizedValue);
         default:
           return query;
       }
@@ -3398,24 +3586,28 @@ export class GelRelationalQuery<
         }
 
         const fieldName = field.fieldName;
+        const normalizedValue = this._normalizeComparableValue(
+          fieldName,
+          value
+        );
 
         // Map our operators to Convex operators
         switch (expr.operator) {
           case 'eq':
-            return (q: any) => q.eq(q.field(fieldName), value);
+            return (q: any) => q.eq(q.field(fieldName), normalizedValue);
           case 'ne':
-            return (q: any) => q.neq(q.field(fieldName), value);
+            return (q: any) => q.neq(q.field(fieldName), normalizedValue);
           case 'gt':
-            return (q: any) => q.gt(q.field(fieldName), value);
+            return (q: any) => q.gt(q.field(fieldName), normalizedValue);
           case 'gte':
-            return (q: any) => q.gte(q.field(fieldName), value);
+            return (q: any) => q.gte(q.field(fieldName), normalizedValue);
           case 'lt':
-            return (q: any) => q.lt(q.field(fieldName), value);
+            return (q: any) => q.lt(q.field(fieldName), normalizedValue);
           case 'lte':
-            return (q: any) => q.lte(q.field(fieldName), value);
+            return (q: any) => q.lte(q.field(fieldName), normalizedValue);
           case 'inArray': {
             // inArray: field must be in the provided array
-            const values = value as any[];
+            const values = normalizedValue as any[];
             return (q: any) => {
               // Convert to OR of eq operations
               const conditions = values.map((v) => q.eq(q.field(fieldName), v));
@@ -3424,7 +3616,7 @@ export class GelRelationalQuery<
           }
           case 'notInArray': {
             // notInArray: field must NOT be in the provided array
-            const values = value as any[];
+            const values = normalizedValue as any[];
             return (q: any) => {
               // Convert to AND of neq operations
               const conditions = values.map((v) =>
@@ -3862,7 +4054,8 @@ export class GelRelationalQuery<
         (relationConfig as any).extras,
         this._getColumns(targetTableConfig),
         (relationConfig as any).with,
-        targetTableConfig.name
+        targetTableConfig.name,
+        targetTableConfig
       );
     }
 
@@ -3873,7 +4066,8 @@ export class GelRelationalQuery<
         'columns' in relationConfig
         ? (relationConfig as any).columns
         : undefined,
-      this._getColumns(targetTableConfig)
+      this._getColumns(targetTableConfig),
+      targetTableConfig
     );
 
     const selectedTargetsByKey = new Map<string, any>();
@@ -3959,7 +4153,7 @@ export class GelRelationalQuery<
           desc,
         });
       }
-      orderSpecs = this._orderBySpecs(orderByValue);
+      orderSpecs = this._orderBySpecs(orderByValue, targetTableConfig);
     }
 
     const perParentLimit =
@@ -4207,7 +4401,8 @@ export class GelRelationalQuery<
         (relationConfig as any).extras,
         this._getColumns(targetTableConfig),
         (relationConfig as any).with,
-        targetTableConfig.name
+        targetTableConfig.name,
+        targetTableConfig
       );
     }
 
@@ -4218,7 +4413,8 @@ export class GelRelationalQuery<
         'columns' in relationConfig
         ? (relationConfig as any).columns
         : undefined,
-      this._getColumns(targetTableConfig)
+      this._getColumns(targetTableConfig),
+      targetTableConfig
     );
     const selectedTargetsByKey = new Map<string, any>();
     for (let i = 0; i < targets.length; i += 1) {
@@ -4298,7 +4494,8 @@ export class GelRelationalQuery<
     extrasConfig: unknown,
     tableColumns: Record<string, ColumnBuilder<any, any, any>>,
     withConfig: Record<string, unknown> | undefined,
-    tableName: string
+    tableName: string,
+    tableConfig: TableRelationalConfig = this.tableConfig
   ): any[] {
     if (!extrasConfig || rows.length === 0) {
       return rows;
@@ -4334,7 +4531,9 @@ export class GelRelationalQuery<
     for (const row of rows) {
       for (const [key, definition] of entries) {
         row[key] =
-          typeof definition === 'function' ? definition(row) : definition;
+          typeof definition === 'function'
+            ? definition(this._toPublicRow(row, tableConfig))
+            : definition;
       }
     }
 
@@ -4348,17 +4547,18 @@ export class GelRelationalQuery<
   private _selectColumns(
     rows: any[],
     columnsConfig?: Record<string, boolean>,
-    tableColumns?: Record<string, ColumnBuilder<any, any, any>>
+    tableColumns?: Record<string, ColumnBuilder<any, any, any>>,
+    tableConfig: TableRelationalConfig = this.tableConfig
   ): any[] {
     if (!columnsConfig) {
       // No column selection - return all columns
-      return rows.map((row) => this._toPublicRow(row));
+      return rows.map((row) => this._toPublicRow(row, tableConfig));
     }
 
     const columnKeys = tableColumns
       ? new Set(
           Object.keys(tableColumns).map((key) =>
-            key === PUBLIC_ID_FIELD ? INTERNAL_ID_FIELD : key
+            this._normalizePublicFieldName(key, tableConfig)
           )
         )
       : undefined;
@@ -4376,19 +4576,14 @@ export class GelRelationalQuery<
             selected[key] = row[key];
           }
         }
-        return this._toPublicRow(selected);
+        return this._toPublicRow(selected, tableConfig);
       });
     }
 
     if (hasTrue) {
       const includeKeys = entries
         .filter(([, value]) => value === true)
-        .map(([key]) => {
-          if (key === INTERNAL_ID_FIELD) {
-            throw new Error(ID_MIGRATION_MESSAGE);
-          }
-          return key === PUBLIC_ID_FIELD ? INTERNAL_ID_FIELD : key;
-        });
+        .map(([key]) => this._normalizePublicFieldName(key, tableConfig));
       return rows.map((row) => {
         const selected: any = {};
         for (const key of includeKeys) {
@@ -4403,18 +4598,13 @@ export class GelRelationalQuery<
             }
           }
         }
-        return this._toPublicRow(selected);
+        return this._toPublicRow(selected, tableConfig);
       });
     }
 
     const excludeKeys = entries
       .filter(([, value]) => value === false)
-      .map(([key]) => {
-        if (key === INTERNAL_ID_FIELD) {
-          throw new Error(ID_MIGRATION_MESSAGE);
-        }
-        return key === PUBLIC_ID_FIELD ? INTERNAL_ID_FIELD : key;
-      });
+      .map(([key]) => this._normalizePublicFieldName(key, tableConfig));
     return rows.map((row) => {
       const selected = { ...row };
       for (const key of excludeKeys) {
@@ -4422,7 +4612,7 @@ export class GelRelationalQuery<
           delete selected[key];
         }
       }
-      return this._toPublicRow(selected);
+      return this._toPublicRow(selected, tableConfig);
     });
   }
 }

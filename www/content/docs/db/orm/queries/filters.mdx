@@ -34,7 +34,7 @@ We'll start with a decision table, then walk through each mode with examples.
 | `findMany({ where: (row) => ..., index })` | Required explicit `index: { name, range? }` | `limit/offset`, `cursor + limit`, optional `maxScan` (cursor mode) | No (predicate replaces object relation filter path) | Index/stream-backed; first order field matters for cursor mode |
 | `findMany({ search })` | Required `searchIndex` | `limit/offset`, `cursor + limit` | No relation filters (base-table object `where` only) | Relevance order only (`orderBy` unsupported) |
 | `findMany({ vectorSearch })` | Required `vectorIndex` + configured provider | `vectorSearch.limit` only (no `cursor`, `offset`, top-level `limit`) | No | Similarity order only |
-| `findMany({ pipeline })` | Schema + index/range path per union source (or inferred base path) | `cursor + limit` (+ optional `endCursor`, `maxScan`) or non-cursor | Manual via pipeline stages (`filterWith`, `map`, `flatMap`, `distinct`) | Stream-backed index order |
+| `select().<composition>.paginate({ cursor, limit })` | Schema + index/range path per union source (or inferred base path) | `cursor + limit` (+ optional `endCursor`, `maxScan`) or non-cursor | Manual via composition chain (`filter`, `map`, `flatMap`, `distinct`, `union`, `interleaveBy`) | Stream-backed index order |
 
 ### How to choose
 
@@ -44,19 +44,19 @@ Use this sequence:
 2. Need vector similarity? Use `vectorSearch`.
 3. Need relation-aware filtering? Use object `where`.
 4. Need custom JS predicate logic? Use predicate `where` with explicit `index`.
-5. Need advanced pre-pagination composition (union/interleave/map/filterWith/flatMap/distinct)? Use `findMany({ pipeline })`.
+5. Need advanced pre-pagination composition (union/interleave/map/filter/flatMap/distinct)? Use the `select()` composition chain.
 
 <Callout icon={<InfoIcon />}>
 **Note:** The ORM supports search via `findMany({ search: { index, query, filters? } })`. Predicate `where` still runs post‑fetch and cannot be combined with search mode.
 </Callout>
 
-## Pipeline Filtering (Advanced)
+## Select Composition Filtering (Advanced)
 
-Most filtering should stay in plain `findMany`. Use pipeline mode when you need stream-style transforms before pagination.
+Most filtering should stay in plain `findMany`. Use `select()` composition when you need stream-style transforms before pagination.
 
-This example uses a union + interleave (internal merged-stream semantics), then applies `filterWith` and `map` before returning the page:
+This example uses a union + interleave (internal merged-stream semantics), then applies `filter` and `map` before returning the page:
 
-```ts title="convex/functions/messages.ts" showLineNumbers {13-32}
+```ts title="convex/functions/messages.ts" showLineNumbers {17-37}
 import { z } from 'zod';
 import { zid } from 'convex-helpers/server/zod4';
 import { publicQuery } from '../lib/crpc';
@@ -73,22 +73,26 @@ export const listConversation = publicQuery
   .input(z.object({ me: zid('users'), them: zid('users') }))
   .paginated({ limit: 20, item: MessageSchema })
   .query(async ({ ctx, input }) => {
-    return await ctx.orm.query.messages.findMany({
-      cursor: input.cursor,
-      limit: input.limit,
-      maxScan: 500,
-      pipeline: {
-        union: [
-          { index: { name: 'by_from_to', range: (q) => q.eq('from', input.me).eq('to', input.them) } },
-          { index: { name: 'by_from_to', range: (q) => q.eq('from', input.them).eq('to', input.me) } },
-        ],
-        interleaveBy: ['_creationTime', 'id'],
-        stages: [
-          { filterWith: async (m) => !m.deletedAt },
-          { map: async (m) => ({ ...m, body: m.body.slice(0, 240) }) },
-        ],
-      },
-    });
+    return await ctx.orm.query.messages
+      .select()
+      .union([
+        {
+          index: { name: 'by_from_to' },
+          where: { from: input.me, to: input.them },
+        },
+        {
+          index: { name: 'by_from_to' },
+          where: { from: input.them, to: input.me },
+        },
+      ])
+      .interleaveBy(['createdAt', 'id'])
+      .filter(async (m) => !m.deletedAt)
+      .map(async (m) => ({ ...m, body: m.body.slice(0, 240) }))
+      .paginate({
+        cursor: input.cursor,
+        limit: input.limit,
+        maxScan: 500,
+      });
   });
 ```
 
@@ -400,7 +404,7 @@ Cursor pagination is only stable when you reuse the same `where` predicate and `
 const page1 = await db.query.messages.findMany({
   where: (m) => m.read,
   index: { name: 'by_creation_time' },
-  orderBy: { _creationTime: 'desc' },
+  orderBy: { createdAt: 'desc' },
   cursor: null,
   limit: 20,
 });

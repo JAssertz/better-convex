@@ -517,7 +517,7 @@ const usersWithPosts = await ctx.orm.query.users.findMany({
   with: {
     posts: {
       limit: 5,
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
     },
   },
 });

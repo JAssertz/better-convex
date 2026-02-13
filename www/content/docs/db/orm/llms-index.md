@@ -61,7 +61,7 @@ extractRelationsConfig(schema)
 ```ts
 await ctx.orm.query.table.findMany({
   where: { field: value },
-  orderBy: { _creationTime: 'desc' },
+  orderBy: { createdAt: 'desc' },
   limit: 10,
   offset: 0,
 })

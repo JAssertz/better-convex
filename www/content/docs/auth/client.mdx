@@ -92,7 +92,7 @@ function LoginForm() {
 First enable email/password in your Convex auth config:
 
 ```ts title="convex/functions/auth.ts" showLineNumbers {3-5}
-const createAuthOptions = (ctx: GenericCtx) =>
+const getAuthOptions = (ctx: GenericCtx) =>
   ({
     emailAndPassword: {
       enabled: true,

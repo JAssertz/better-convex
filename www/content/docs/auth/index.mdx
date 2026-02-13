@@ -36,20 +36,17 @@ better-convex uses the **local approach**:
 - Triggers can directly access and modify your app tables
 - Single transaction for complex operations
 
-### Two Adapters
+### Context-Aware Adapter
 
-| Adapter | Used In | Access |
-|---------|---------|--------|
-| `adapter` via `getAuth(ctx)` | Queries, mutations | ORM access (`ctx.orm`) |
-| `httpAdapter` via `createAuth(ctx)` | HTTP routes, actions | HTTP context |
+Use one entrypoint everywhere:
 
-```ts showLineNumbers {2,5}
-// Queries/mutations: direct DB access
+```ts showLineNumbers {2}
 const auth = getAuth(ctx);
-
-// HTTP routes/actions: HTTP adapter
-const auth = createAuth(ctx);
 ```
+
+`authClient.adapter(ctx, getAuthOptions)` automatically chooses:
+- direct DB adapter for queries/mutations (`ctx.db` available)
+- HTTP adapter for actions/HTTP contexts (`ctx.runQuery`/`ctx.runMutation`)
 
 ## Authentication Flow
 

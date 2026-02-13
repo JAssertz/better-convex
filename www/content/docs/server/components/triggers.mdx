@@ -386,7 +386,7 @@ export const authClient = createClient({
   context: getOrmCtx,
 });
 
-export const { create, findOne, ... } = createApi(schema, createAuth, {
+export const { create, findOne, ... } = createApi(schema, getAuth, {
   dbTriggers,
   context: getOrmCtx,
 });

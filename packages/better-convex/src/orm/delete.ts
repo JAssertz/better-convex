@@ -11,12 +11,12 @@ import {
   getMutationAsyncDelayMs,
   getMutationCollectionLimits,
   getMutationExecutionMode,
-  normalizePublicSystemFields,
   getOrmContext,
   getTableDeleteConfig,
   getTableName,
   hardDeleteRow,
-  selectReturningRow,
+  hydrateDateFieldsForRead,
+  selectReturningRowWithHydration,
   serializeFilterExpression,
   softDeleteRow,
   toConvexFilter,
@@ -24,6 +24,7 @@ import {
 import { QueryPromise } from './query-promise';
 import { canDeleteRow } from './rls/evaluator';
 import type { ConvexTable } from './table';
+import { shouldHydrateCreatedAtAsDate } from './timestamp-mode';
 import type {
   MutationAsyncConfig,
   MutationExecuteConfig,
@@ -136,22 +137,30 @@ export class ConvexDeleteBuilder<
     return this;
   }
 
-  private getIdEquality(): unknown | undefined {
+  private getIdEquality():
+    | { matched: true; value: unknown }
+    | { matched: false } {
     const expression = this.whereExpression;
     if (!expression || expression.type !== 'binary') {
-      return;
+      return { matched: false };
     }
     if (expression.operator !== 'eq') {
-      return;
+      return { matched: false };
     }
     const [left, right] = expression.operands;
     if (isFieldReference(left) && left.fieldName === '_id') {
-      return isFieldReference(right) ? undefined : right;
+      if (isFieldReference(right)) {
+        return { matched: false };
+      }
+      return { matched: true, value: right };
     }
     if (isFieldReference(right) && right.fieldName === '_id') {
-      return isFieldReference(left) ? undefined : left;
+      if (isFieldReference(left)) {
+        return { matched: false };
+      }
+      return { matched: true, value: left };
     }
-    return;
+    return { matched: false };
   }
 
   soft(): this {
@@ -220,6 +229,7 @@ export class ConvexDeleteBuilder<
     const config = args[0] as MutationExecuteConfig | undefined;
     const tableName = getTableName(this.table);
     const ormContext = getOrmContext(this.db);
+    const createdAtAsDate = shouldHydrateCreatedAtAsDate(ormContext);
     const strict = ormContext?.strict ?? true;
     const allowFullScan = this.allowFullScanFlag;
     const pagination = this.paginateConfig;
@@ -322,9 +332,12 @@ export class ConvexDeleteBuilder<
     let rows: Record<string, unknown>[];
     let continueCursor: string | null = null;
     let isDone = true;
-    const idValue = this.getIdEquality();
-    if (idValue !== undefined) {
+    const idEquality = this.getIdEquality();
+    if (idEquality.matched) {
+      const idValue = idEquality.value;
       if (isPaginated && pagination.cursor !== null) {
+        rows = [];
+      } else if (idValue === null || idValue === undefined) {
         rows = [];
       } else {
         const row = await this.db.get(idValue as any);
@@ -512,11 +525,20 @@ export class ConvexDeleteBuilder<
       visited.add(`${tableName}:${(row as any)._id}`);
       if (this.returningFields) {
         if (this.returningFields === true) {
-          results.push(normalizePublicSystemFields(row as any));
+          results.push(
+            hydrateDateFieldsForRead(this.table, row as any, {
+              createdAtAsDate,
+            })
+          );
         } else {
           results.push(
-            normalizePublicSystemFields(
-              selectReturningRow(row as any, this.returningFields as any)
+            selectReturningRowWithHydration(
+              this.table,
+              row as any,
+              this.returningFields as any,
+              {
+                createdAtAsDate,
+              }
             )
           );
         }

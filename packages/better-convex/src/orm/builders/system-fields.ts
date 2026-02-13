@@ -2,7 +2,7 @@
  * System Fields - Convex-provided fields available on all documents
  *
  * id: Document ID (string, backed by internal Convex _id)
- * _creationTime: Creation timestamp (number, milliseconds since epoch)
+ * createdAt: Creation timestamp alias (backed by internal Convex _creationTime)
  *
  * These are automatically added to every Convex table.
  */
@@ -100,32 +100,91 @@ export class ConvexSystemCreationTimeBuilder extends ColumnBuilder<
   }
 }
 
+type ConvexSystemCreatedAtConfig = ColumnBuilderBaseConfig<
+  'number',
+  'ConvexSystemCreatedAt'
+> & {
+  data: number | Date;
+  driverParam: number;
+  enumValues: undefined;
+};
+
+export class ConvexSystemCreatedAtBuilder extends ColumnBuilder<
+  ConvexSystemCreatedAtConfig,
+  {},
+  { notNull: true }
+> {
+  static readonly [entityKind]: string = 'ConvexSystemCreatedAtBuilder';
+  readonly [entityKind]: string = 'ConvexSystemCreatedAtBuilder';
+
+  constructor() {
+    super('_creationTime', 'number', 'ConvexSystemCreatedAt');
+    this.config.notNull = true;
+  }
+
+  build() {
+    return v.number();
+  }
+
+  get convexValidator() {
+    return this.build();
+  }
+}
+
 /**
  * Create system field builders for a table
  * These are automatically added to every ConvexTable
  */
 export type SystemFields<TName extends string> = {
   id: ColumnBuilderWithTableName<ConvexSystemIdBuilder<TName>, TName>;
+};
+
+export type InternalSystemFields<TName extends string> = {
   _creationTime: ColumnBuilderWithTableName<
     ConvexSystemCreationTimeBuilder,
     TName
   >;
 };
 
+export type SystemFieldAliases<
+  TName extends string,
+  TColumns extends Record<string, unknown> = {},
+> = 'createdAt' extends keyof TColumns
+  ? {}
+  : {
+      createdAt: ColumnBuilderWithTableName<
+        ConvexSystemCreatedAtBuilder,
+        TName
+      >;
+    };
+
+export type SystemFieldsWithAliases<
+  TName extends string,
+  TColumns extends Record<string, unknown> = {},
+> = SystemFields<TName> &
+  InternalSystemFields<TName> &
+  SystemFieldAliases<TName, TColumns>;
+
 export function createSystemFields<TName extends string>(
   tableName: TName
-): SystemFields<TName> {
+): SystemFieldsWithAliases<TName> {
   const id = new ConvexSystemIdBuilder<TName>();
   const creationTime = new ConvexSystemCreationTimeBuilder();
+  const createdAt = new ConvexSystemCreatedAtBuilder();
 
   // Store table name for runtime introspection
   (id as any).config.tableName = tableName;
   (creationTime as any).config.tableName = tableName;
+  (createdAt as any).config.tableName = tableName;
 
   return {
     id: id as ColumnBuilderWithTableName<ConvexSystemIdBuilder<TName>, TName>,
     _creationTime: creationTime as ColumnBuilderWithTableName<
       ConvexSystemCreationTimeBuilder,
+      TName
+    >,
+    createdAt: createdAt as ColumnBuilderWithTableName<
+      ConvexSystemCreatedAtBuilder,
       TName
     >,
   };

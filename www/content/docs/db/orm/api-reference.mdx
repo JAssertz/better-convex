@@ -36,7 +36,8 @@ const users = convexTable('users', {
 
 **Auto‑generated fields**
 - `id: Id<TName>`
-- `_creationTime: number`
+- `createdAt: number` (default)
+- `createdAt: Date` when `createOrm({ types: { date: true } })` and you call through cRPC
 
 ### `convexTable.withRLS()`
 
@@ -246,11 +247,15 @@ defineRelations(schema, (r) => ({
 ### `createOrm()`
 
 ```ts
-const orm = createOrm({ schema: relations });
+const orm = createOrm({ schema: relations, types: { date: true } });
 const db = orm.db(ctx);
 ```
 
 Creates a unified ORM setup object. Use `orm.db(ctx)` to build a typed query/mutation client.
+
+`createdAt` is always public in ORM rows. Its type is:
+- `number` by default
+- `Date` when `types: { date: true }` (recommended when using cRPC)
 
 For async mutation batching, pass scheduler function refs and export generated handlers:
 
@@ -261,6 +266,7 @@ import { internalMutation } from './functions';
 
 const orm = createOrm({
   schema: relations,
+  types: { date: true },
   ormFunctions: internal.orm,
   internalMutation,
 });
@@ -309,7 +315,7 @@ await db.system.query('_storage').take(20);
 ```ts showLineNumbers
 await db.query.users.findMany({
   where: { role: 'admin' },
-  orderBy: { _creationTime: 'desc' },
+  orderBy: { createdAt: 'desc' },
   limit: 10,
   offset: 0,
   with: { posts: true },
@@ -413,7 +419,7 @@ await db.query.posts.findFirstOrThrow({
 ```ts showLineNumbers
 await db.query.posts.findMany({
   where: { published: true },
-  orderBy: { _creationTime: 'desc' },
+  orderBy: { createdAt: 'desc' },
   cursor: null,
   limit: 20,
 });
@@ -428,7 +434,7 @@ const page = await db.query.messages
     { index: { name: 'by_from_to', range: (q) => q.eq('from', me).eq('to', them) } },
     { index: { name: 'by_from_to', range: (q) => q.eq('from', them).eq('to', me) } },
   ])
-  .interleaveBy(['_creationTime', 'id'])
+  .interleaveBy(['createdAt', 'id'])
   .filter(async (m) => !m.deletedAt)
   .map(async (m) => ({ ...m, preview: m.body.slice(0, 120) }))
   .paginate({ cursor: null, limit: 20 });
@@ -681,7 +687,7 @@ users.$inferInsert
 ## Introspection Helpers
 
 ```ts
-getTableColumns(users) // includes id/_creationTime
+getTableColumns(users) // includes id/createdAt
 getTableConfig(users)  // indexes/unique/fks/rls/checks
 ```
 

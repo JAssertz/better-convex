@@ -32,7 +32,7 @@ const assertValidTableNumber = (tableNumber: number): void => {
     throw new IdDecodeError('Unable to encode ID: Invalid table number');
   }
 
-  if (tableNumber > 0xffffffff) {
+  if (tableNumber > 0xff_ff_ff_ff) {
     throw new IdDecodeError('Unable to encode ID: Invalid table number');
   }
 };
@@ -40,7 +40,7 @@ const assertValidTableNumber = (tableNumber: number): void => {
 const assertValidInternalId = (internalId: Uint8Array): void => {
   if (internalId.length !== INTERNAL_ID_LEN) {
     throw new IdDecodeError(
-      `Unable to encode ID: Invalid internal ID length ${internalId.length}`,
+      `Unable to encode ID: Invalid internal ID length ${internalId.length}`
     );
   }
 };
@@ -62,7 +62,9 @@ const vintEncode = (value: number): Uint8Array => {
   return Uint8Array.from(bytes);
 };
 
-const vintDecode = (buffer: Uint8Array): { bytesRead: number; value: number } => {
+const vintDecode = (
+  buffer: Uint8Array
+): { bytesRead: number; value: number } => {
   let position = 0;
   let value = 0;
 
@@ -173,11 +175,11 @@ export const encodeDeveloperDocumentId = ({
 };
 
 export const decodeDeveloperDocumentId = (
-  encodedId: string,
+  encodedId: string
 ): DecodedDeveloperDocumentId => {
   if (encodedId.length < MIN_BASE32_LEN || encodedId.length > MAX_BASE32_LEN) {
     throw new IdDecodeError(
-      `Unable to decode ID: Invalid ID length ${encodedId.length}`,
+      `Unable to decode ID: Invalid ID length ${encodedId.length}`
     );
   }
 
@@ -194,7 +196,7 @@ export const decodeDeveloperDocumentId = (
   const internalId = buffer.slice(position, position + INTERNAL_ID_LEN);
   if (internalId.length !== INTERNAL_ID_LEN) {
     throw new IdDecodeError(
-      `Unable to decode ID: Invalid ID length ${encodedId.length}`,
+      `Unable to decode ID: Invalid ID length ${encodedId.length}`
     );
   }
   position += INTERNAL_ID_LEN;
@@ -202,7 +204,7 @@ export const decodeDeveloperDocumentId = (
   const footerBytes = buffer.slice(position, position + FOOTER_LEN);
   if (footerBytes.length !== FOOTER_LEN) {
     throw new IdDecodeError(
-      `Unable to decode ID: Invalid ID length ${encodedId.length}`,
+      `Unable to decode ID: Invalid ID length ${encodedId.length}`
     );
   }
 
@@ -212,13 +214,13 @@ export const decodeDeveloperDocumentId = (
 
   if (actualFooter !== expectedFooter) {
     throw new IdDecodeError(
-      `Unable to decode ID: Invalid ID version ${actualFooter} (expected ${expectedFooter})`,
+      `Unable to decode ID: Invalid ID version ${actualFooter} (expected ${expectedFooter})`
     );
   }
 
   if (position !== buffer.length) {
     throw new IdDecodeError(
-      `Unable to decode ID: Invalid ID length ${encodedId.length}`,
+      `Unable to decode ID: Invalid ID length ${encodedId.length}`
     );
   }
 
@@ -229,7 +231,7 @@ export const decodeDeveloperDocumentId = (
 
   if (encodeDeveloperDocumentId(decoded) !== encodedId) {
     throw new IdDecodeError(
-      `Unable to decode ID: Invalid ID length ${encodedId.length}`,
+      `Unable to decode ID: Invalid ID length ${encodedId.length}`
     );
   }
 
@@ -238,7 +240,7 @@ export const decodeDeveloperDocumentId = (
 
 export const remapDeveloperDocumentIdTable = (
   encodedId: string,
-  newTableNumber: number,
+  newTableNumber: number
 ): string => {
   const decoded = decodeDeveloperDocumentId(encodedId);
   return encodeDeveloperDocumentId({

@@ -18,7 +18,7 @@ The main differences between the packages:
 | Architecture | Convex component pattern | Direct integration |
 | Triggers | Not built-in | `triggers: { user, session }` |
 | Client Creation | `createClient(components.betterAuth, {...})` | `createClient({ authFunctions, schema })` |
-| DB Adapter | `authComponent.adapter(ctx)` | `authClient.adapter()` + `authClient.httpAdapter()` |
+| DB Adapter | `authComponent.adapter(ctx)` | `authClient.adapter(ctx, getAuthOptions)` |
 | Provider | `ConvexBetterAuthProvider` | `ConvexAuthProvider` |
 | React Utils | `AuthBoundary` | `createAuthMutations()`, auth store |
 
@@ -197,14 +197,14 @@ This is the main migration. We'll replace the component-based client with direct
       { local: { schema: authSchema }, verbose: false }
     );
 
-    export const createAuthOptions = (ctx: GenericCtx<DataModel>) => ({
+    export const getAuthOptions = (ctx: GenericCtx<DataModel>) => ({
       baseURL: process.env.SITE_URL,
       database: authComponent.adapter(ctx),
       // ... plugins and options
     });
 
-    export const createAuth = (ctx: GenericCtx<DataModel>) =>
-      betterAuth(createAuthOptions(ctx));
+    export const getAuth = (ctx: GenericCtx<DataModel>) =>
+      betterAuth(getAuthOptions(ctx));
 
     export const { getAuthUser } = authComponent.clientApi();
 
@@ -261,7 +261,7 @@ This is the main migration. We'll replace the component-based client with direct
     });
 
     // Auth options factory
-    const createAuthOptions = (ctx: GenericCtx) =>
+    const getAuthOptions = (ctx: GenericCtx) =>
       ({
         baseURL: process.env.SITE_URL!,
         emailAndPassword: { enabled: true },
@@ -277,19 +277,12 @@ This is the main migration. We'll replace the component-based client with direct
             jwks: process.env.JWKS,
           }),
         ],
-        database: authClient.httpAdapter(ctx),
+        database: authClient.adapter(ctx, getAuthOptions),
       }) satisfies BetterAuthOptions;
 
-    // For queries/mutations: direct DB access
-    export const getAuth = <Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) =>
-      betterAuth({
-        ...createAuthOptions(ctx),
-        database: authClient.adapter(ctx, createAuthOptions),
-      });
-
-    // For actions/HTTP routes: HTTP adapter
-    export const createAuth = (ctx: ActionCtx) =>
-      betterAuth(createAuthOptions(ctx));
+    // Single context-aware auth entrypoint
+    export const getAuth = (ctx: GenericCtx) =>
+      betterAuth(getAuthOptions(ctx));
 
     // Generate internal CRUD functions
     export const {
@@ -302,7 +295,7 @@ This is the main migration. We'll replace the component-based client with direct
       updateOne,
       getLatestJwks,
       rotateKeys,
-    } = createApi(schema, createAuth, {
+    } = createApi(schema, getAuth, {
       dbTriggers: triggers, // Optional: same db trigger wrapper
       context: getOrmCtx, // Optional: same context enrichment
     });
@@ -319,7 +312,7 @@ This is the main migration. We'll replace the component-based client with direct
 
     // Export for Better Auth CLI
     // biome-ignore lint/suspicious/noExplicitAny: Required for CLI
-    export const auth = betterAuth(createAuthOptions({} as any));
+    export const auth = betterAuth(getAuthOptions({} as any));
     ```
   </CompareItem>
 </Compare>
@@ -330,12 +323,12 @@ This is the main migration. We'll replace the component-based client with direct
 |--------|-------|
 | `createClient(components.betterAuth, {...})` | `createClient({ authFunctions, schema, triggers })` |
 | Trigger + ORM context setup | `dbTriggers` + `context` |
-| `authComponent.adapter(ctx)` | Two adapters: `httpAdapter()` and `adapter()` |
+| `authComponent.adapter(ctx)` | `authClient.adapter(ctx, getAuthOptions)` |
 | `authComponent.clientApi()` | `createApi()` generates internal functions |
 | No triggers | Built-in `triggers: { user, session }` |
 
 <Callout icon={<InfoIcon />}>
-**Why two adapters?** Use `httpAdapter(ctx)` for HTTP routes/actions. Use `adapter(ctx, createAuthOptions)` for queries/mutations with direct DB access (better performance).
+**Context-aware adapter:** `authClient.adapter(ctx, getAuthOptions)` automatically picks direct DB access in queries/mutations and HTTP adapter behavior in actions/HTTP contexts.
 </Callout>
 
 <Callout icon={<InfoIcon />}>
@@ -391,11 +384,11 @@ Use Hono only when you need cRPC or Hono middleware.
   <CompareItem title="Before (convex/http.ts)">
     ```ts showLineNumbers title="convex/http.ts"
     import { httpRouter } from 'convex/server';
-    import { authComponent, createAuth } from './auth';
+    import { authComponent, getAuth } from './auth';
 
     const http = httpRouter();
 
-    authComponent.registerRoutes(http, createAuth);
+    authComponent.registerRoutes(http, getAuth);
 
     export default http;
     ```
@@ -409,11 +402,11 @@ Use Hono only when you need cRPC or Hono middleware.
         import '../lib/http-polyfills';
         import { registerRoutes } from 'better-convex/auth';
         import { httpRouter } from 'convex/server';
-        import { createAuth } from './auth';
+        import { getAuth } from './auth';
 
         const http = httpRouter();
 
-        registerRoutes(http, createAuth, {
+        registerRoutes(http, getAuth, {
           cors: {
             allowedOrigins: [process.env.SITE_URL!],
           },
@@ -429,7 +422,7 @@ Use Hono only when you need cRPC or Hono middleware.
         import { HttpRouterWithHono } from 'better-convex/server';
         import { Hono } from 'hono';
         import { cors } from 'hono/cors';
-        import { createAuth } from './auth';
+        import { getAuth } from './auth';
 
         const app = new Hono();
 
@@ -445,7 +438,7 @@ Use Hono only when you need cRPC or Hono middleware.
         );
 
         // Better Auth middleware
-        app.use(authMiddleware(createAuth));
+        app.use(authMiddleware(getAuth));
 
         export default new HttpRouterWithHono(app);
         ```
@@ -458,7 +451,7 @@ Use Hono only when you need cRPC or Hono middleware.
         import { Hono } from 'hono';
         import { cors } from 'hono/cors';
         import { router } from '../lib/crpc';
-        import { createAuth } from './auth';
+        import { getAuth } from './auth';
 
         const app = new Hono();
 
@@ -474,7 +467,7 @@ Use Hono only when you need cRPC or Hono middleware.
         );
 
         // Better Auth middleware
-        app.use(authMiddleware(createAuth));
+        app.use(authMiddleware(getAuth));
 
         export const appRouter = router({
           // Add your routers here
@@ -713,7 +706,7 @@ The component pattern provided several helper methods on `authComponent`. These 
 <Compare>
   <CompareItem title="Before">
     ```ts showLineNumbers
-    const { auth, headers } = await authComponent.getAuth(createAuth, ctx);
+    const { auth, headers } = await authComponent.getAuth(getAuth, ctx);
     const session = await auth.api.getSession({ headers });
     ```
   </CompareItem>

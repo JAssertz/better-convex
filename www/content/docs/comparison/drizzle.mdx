@@ -186,7 +186,7 @@ See [Migrate from native Convex](/docs/migrations/db) (for `ctx.db`) or [Migrate
     // Schema: index('by_role').on(t.role) on users table
     const admins = await ctx.orm.query.users.findMany({
       where: { role: 'admin' },
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
       limit: 10,
     });
     ```
@@ -276,7 +276,7 @@ const users = await db.query.users.findMany({
   with: {
     posts: {
       where: { published: true },
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
       limit: 5,
     },
   },
@@ -286,7 +286,7 @@ const users = await db.query.users.findMany({
 ## Indexes And Ordering
 
 - `findMany({ cursor, limit })` relies on the first `orderBy` field for cursor ordering
-- Sorting without an index falls back to `_creationTime` ordering
+- Sorting without an index falls back to `createdAt` ordering
 - Post-fetch sorting (multi-field or non-indexable orderBy) sorts before `offset`/`limit`, so the ORM must read the full filtered candidate set first
 - For these post-fetch sort paths, size non-paginated queries intentionally (`limit`, schema `defaultLimit`, or `allowFullScan`)
 - Compound index planning follows prefix validity. Non-leading-only predicates (for example `numLikes` on `[type, numLikes]`) are treated as non-indexable and require `allowFullScan`
@@ -369,8 +369,9 @@ Recommended patterns:
 
 | Issue | Cause | Fix |
 |---|---|---|
-| **`ctx.orm` is missing** | ORM not attached to context | Attach ORM once (`createOrm({ schema }).db(ctx)`) |
-| **`id` vs `id`** | SQL uses `id`, Convex uses `id` | Use `id` for primary keys |
+| **`ctx.orm` is missing** | ORM not attached to context | Attach ORM once (`createOrm({ schema, types: { date: true } }).db(ctx)`) |
+| **Convex internal IDs** | Convex stores `_id` internally | Use public `id` in ORM APIs |
+| **Convex internal creation time** | Convex stores `_creationTime` internally | Use public `createdAt` in ORM APIs |
 | **Nullable fields** | Nullable by default | Add `.notNull()` |
 | **No SQL joins** | Convex is document-based | Use `with` relation loading |
 | **Custom SQL types** | Not available | Use app-level encoding |
@@ -391,7 +392,7 @@ The ORM exposes Drizzle-style helpers for runtime schema metadata:
 ```ts showLineNumbers
 import { getTableColumns, getTableConfig } from 'better-convex/orm';
 
-const columns = getTableColumns(users); // includes id/_creationTime
+const columns = getTableColumns(users); // includes id/createdAt
 const config = getTableConfig(users);   // indexes/unique/fks/rls/checks
 ```
 

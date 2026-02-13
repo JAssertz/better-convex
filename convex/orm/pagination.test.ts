@@ -449,7 +449,7 @@ test('pagination with ORDER BY ascending', async () => {
   });
 });
 
-test('pagination with ORDER BY _creationTime', async () => {
+test('pagination with ORDER BY createdAt', async () => {
   const t = convexTest(schema);
 
   // Setup: Create posts with different like counts
@@ -470,13 +470,13 @@ test('pagination with ORDER BY _creationTime', async () => {
     }
   });
 
-  // Test: Paginate posts by _creationTime descending (indexed)
+  // Test: Paginate posts by createdAt descending (indexed)
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
     const db = ctx.orm;
 
     const result = await db.query.posts.findMany({
-      orderBy: { _creationTime: 'desc' },
+      orderBy: { createdAt: 'desc' },
       cursor: null,
       limit: 5,
     });
@@ -527,7 +527,7 @@ test('pagination - cursor stability (replaying cursor returns same results)', as
   });
 });
 
-test('pagination - default ordering (_creationTime desc)', async () => {
+test('pagination - default ordering (createdAt desc)', async () => {
   const t = convexTest(schema);
 
   // Setup: Create users in sequence
@@ -542,7 +542,7 @@ test('pagination - default ordering (_creationTime desc)', async () => {
     }
   });
 
-  // Test: Paginate without explicit orderBy (should default to _creationTime desc)
+  // Test: Paginate without explicit orderBy (should default to createdAt desc)
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
     const db = ctx.orm;
@@ -554,7 +554,7 @@ test('pagination - default ordering (_creationTime desc)', async () => {
 
     expect(result.page).toHaveLength(5);
     // Newest first (User 9, User 8, User 7, User 6, User 5)
-    // Note: _creationTime ordering means most recently created comes first
+    // Note: createdAt ordering means most recently created comes first
     const names = result.page.map((u: any) => u.name);
     expect(names[0]).toBe('User 9');
     expect(names[4]).toBe('User 5');

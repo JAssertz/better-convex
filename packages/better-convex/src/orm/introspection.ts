@@ -1,5 +1,8 @@
 import type { ColumnBuilder } from './builders/column-builder';
-import type { SystemFields } from './builders/system-fields';
+import type {
+  SystemFieldAliases,
+  SystemFields,
+} from './builders/system-fields';
 import { createSystemFields } from './builders/system-fields';
 import { getIndexes } from './index-utils';
 import {
@@ -16,28 +19,38 @@ type AnyColumns = Record<string, ColumnBuilder<any, any, any>>;
 
 function getSystemFields<TTable extends ConvexTable<any>>(
   table: TTable
-): SystemFields<TTable['_']['name']> {
+): SystemFields<TTable['_']['name']> &
+  SystemFieldAliases<TTable['_']['name'], TTable[typeof Columns]> {
   if ((table as any).id && (table as any)._creationTime) {
     return {
       id: (table as any).id,
-      _creationTime: (table as any)._creationTime,
-    } as SystemFields<TTable['_']['name']>;
+      createdAt: (table as any).createdAt ?? (table as any)._creationTime,
+    } as SystemFields<TTable['_']['name']> &
+      SystemFieldAliases<TTable['_']['name'], TTable[typeof Columns]>;
   }
 
   const system = createSystemFields(getTableName(table) as TTable['_']['name']);
   for (const builder of Object.values(system)) {
     (builder as any).config.table = table;
   }
-  return system;
+  return {
+    id: system.id,
+    createdAt: (system as any).createdAt,
+  } as SystemFields<TTable['_']['name']> &
+    SystemFieldAliases<TTable['_']['name'], TTable[typeof Columns]>;
 }
 
 export function getTableColumns<TTable extends ConvexTable<any>>(
   table: TTable
-): TTable[typeof Columns] & SystemFields<TTable['_']['name']> {
+): TTable[typeof Columns] &
+  SystemFields<TTable['_']['name']> &
+  SystemFieldAliases<TTable['_']['name'], TTable[typeof Columns]> {
   return {
     ...(((table as any)[Columns] ?? {}) as AnyColumns),
     ...getSystemFields(table),
-  } as TTable[typeof Columns] & SystemFields<TTable['_']['name']>;
+  } as TTable[typeof Columns] &
+    SystemFields<TTable['_']['name']> &
+    SystemFieldAliases<TTable['_']['name'], TTable[typeof Columns]>;
 }
 
 export type TableConfigResult<TTable extends ConvexTable<any>> = {

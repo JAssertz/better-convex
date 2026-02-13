@@ -44,6 +44,33 @@ The `initCRPC` builder chains configuration methods:
 1. **`.dataModel<DataModel>()`** - Enables type-safe data model types (table names, `Id<'table'>`) on `ctx`
 2. **`.create()`** - Uses default Convex generic builders (override only when needed)
 
+### Payload Transformer (Optional)
+
+cRPC serializes inputs/outputs through a transformer at the procedure boundary.
+
+- `Date` support is always enabled (cannot be disabled)
+- The reserved wire tag is `$date`
+- Pass a custom transformer only when you need extra wire-safe types
+- Custom transformer is additive to the built-in Date transformer
+
+```ts title="convex/lib/crpc.ts" showLineNumbers
+import { createTaggedTransformer } from 'better-convex/crpc';
+import { initCRPC } from 'better-convex/server';
+import type { DataModel } from '../functions/_generated/dataModel';
+
+const transformer = createTaggedTransformer([
+  // Add custom codecs here (Date is already built-in)
+]);
+
+const c = initCRPC
+  .dataModel<DataModel>()
+  .create({ transformer });
+```
+
+`create({ transformer })` accepts either:
+- A single `DataTransformer`
+- A split `{ input, output }` transformer object
+
 ## Export Procedure Builders
 
 Next, we'll export the procedure builders that you'll use throughout your codebase. These are the building blocks for all your queries, mutations, and actions.

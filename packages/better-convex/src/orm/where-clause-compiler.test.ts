@@ -1,3 +1,4 @@
+import { text } from './builders/text';
 import {
   and,
   between,
@@ -13,6 +14,9 @@ import {
   or,
   startsWith,
 } from './filter-expression';
+import { GelRelationalQuery } from './query';
+import { OrmContext } from './symbols';
+import { convexTable } from './table';
 import { WhereClauseCompiler } from './where-clause-compiler';
 
 describe('WhereClauseCompiler advanced index planning', () => {
@@ -237,5 +241,51 @@ describe('WhereClauseCompiler advanced index planning', () => {
       result.indexFilters.map((filter: any) => filter.operands[0].fieldName)
     ).toEqual(['city', 'status']);
     expect(result.postFilters).toHaveLength(0);
+  });
+});
+
+describe('timestamp mode key normalization', () => {
+  const users = convexTable('users_where_mode_test', {
+    name: text().notNull(),
+  });
+  const usersWithCreatedAt = convexTable('users_where_mode_created_at_test', {
+    name: text().notNull(),
+    createdAt: text().notNull(),
+  });
+
+  const createQuery = (date: boolean, table: any = users) =>
+    new (GelRelationalQuery as any)(
+      {},
+      { table, name: table.tableName, relations: {} },
+      [],
+      { [OrmContext]: { types: { date } } },
+      {},
+      'many'
+    );
+
+  test('accepts createdAt in orderBy object', () => {
+    const query = createQuery(true);
+    const specs = (query as any)._orderBySpecs({ createdAt: 'asc' });
+    expect(specs).toEqual([{ field: '_creationTime', direction: 'asc' }]);
+  });
+
+  test('rejects _creationTime in orderBy object', () => {
+    const query = createQuery(true);
+    expect(() =>
+      (query as any)._orderBySpecs({ _creationTime: 'asc' })
+    ).toThrow(/use `createdAt`/i);
+  });
+
+  test('uses user createdAt column when present', () => {
+    const query = createQuery(true, usersWithCreatedAt);
+    const specs = (query as any)._orderBySpecs({ createdAt: 'asc' });
+    expect(specs).toEqual([{ field: 'createdAt', direction: 'asc' }]);
+  });
+
+  test('date=false still rejects _creationTime', () => {
+    const query = createQuery(false);
+    expect(() =>
+      (query as any)._orderBySpecs({ _creationTime: 'asc' })
+    ).toThrow(/use `createdAt`/i);
   });
 });

@@ -4,7 +4,7 @@ import type { GenericId } from 'convex/values';
 // These represent the expected types for test data structures
 
 export type UserRow = {
-  _id: GenericId<'users'>;
+  id: GenericId<'users'>;
   _creationTime: number;
   name: string;
   email: string;
@@ -18,7 +18,7 @@ export type UserRow = {
 };
 
 export type PostRow = {
-  _id: GenericId<'posts'>;
+  id: GenericId<'posts'>;
   _creationTime: number;
   text: string;
   numLikes: number;
@@ -26,19 +26,19 @@ export type PostRow = {
   embedding: number[] | null;
   title: string | null;
   content: string | null;
-  createdAt: number | null;
+  publishedAt: number | null;
   authorId: GenericId<'users'> | null;
   published: boolean | null;
 };
 
 export type CityRow = {
-  _id: GenericId<'cities'>;
+  id: GenericId<'cities'>;
   _creationTime: number;
   name: string;
 };
 
 export type CommentRow = {
-  _id: GenericId<'comments'>;
+  id: GenericId<'comments'>;
   _creationTime: number;
   text: string;
   postId: GenericId<'posts'>;

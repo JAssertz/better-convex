@@ -237,7 +237,7 @@ test('vector search guardrails reject incompatible options', async () => {
           vector: [0.1, 0.2, 0.3],
           limit: 1,
         },
-        orderBy: { _creationTime: 'desc' },
+        orderBy: { createdAt: 'desc' },
       } as any)
     ).rejects.toThrow(/vectorSearch.+orderBy|orderBy.+vectorSearch/i);
 

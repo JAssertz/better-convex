@@ -128,4 +128,45 @@ describe('ConvexQueryClient (client mode subscriptions)', () => {
 
     unsubObserver();
   });
+
+  test('recreates pending unsubscribe map if missing during observer cleanup', async () => {
+    (globalThis as any).window = {};
+    // @ts-expect-error
+    const mod = await import('./client.ts?subscriptions4');
+    const ConvexQueryClient = mod.ConvexQueryClient as any;
+
+    let unsubscribeCalls = 0;
+    const convexClient = {
+      watchQuery: () => ({
+        onUpdate: (_cb: () => void) => () => {
+          unsubscribeCalls++;
+        },
+      }),
+    };
+
+    const queryClient = new QueryClient();
+    const client = new ConvexQueryClient(convexClient, {
+      queryClient,
+      unsubscribeDelay: 0,
+    });
+
+    // Simulate stale/HMR instance shape where the map is absent at runtime.
+    delete (client as any).pendingUnsubscribes;
+
+    const queryKey = ['convexQuery', 'todos:list', { status: 'open' }] as const;
+    const observer = new QueryObserver(queryClient as any, {
+      meta: { subscribe: true },
+      queryFn: async () => ({ ok: true }),
+      queryKey,
+    });
+    const unsubObserver = observer.subscribe(() => {});
+
+    expect(Object.keys(client.subscriptions).length).toBe(1);
+
+    unsubObserver();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(unsubscribeCalls).toBe(1);
+    expect(Object.keys(client.subscriptions).length).toBe(0);
+  });
 });

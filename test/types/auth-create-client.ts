@@ -24,7 +24,7 @@ const session = convexTable('session', {
   token: text().notNull(),
   userId: id('user').notNull(),
   expiresAt: integer().notNull(),
-  createdAt: integer().notNull(),
+  createdAtMs: integer().notNull(),
   updatedAt: integer().notNull(),
   activeOrganizationId: text(),
 });
@@ -37,10 +37,10 @@ type DataModel = {
       token: string;
       userId: GenericId<'user'>;
       expiresAt: number;
-      createdAt: number;
+      createdAtMs: number;
       updatedAt: number;
       activeOrganizationId?: string | null;
-      _id: GenericId<'session'>;
+      id: GenericId<'session'>;
       _creationTime: number;
     };
     // Not relevant to this test, but required by GenericDataModel.

@@ -70,7 +70,17 @@ describe('rsc/server-query-client', () => {
       'https://example.convex.site',
       { path: '/api/health', method: 'GET' },
       { a: 1 },
-      't0'
+      't0',
+      expect.objectContaining({
+        input: expect.objectContaining({
+          serialize: expect.any(Function),
+          deserialize: expect.any(Function),
+        }),
+        output: expect.objectContaining({
+          serialize: expect.any(Function),
+          deserialize: expect.any(Function),
+        }),
+      })
     );
   });
 

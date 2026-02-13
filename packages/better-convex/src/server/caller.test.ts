@@ -1,4 +1,5 @@
 import { makeFunctionReference } from 'convex/server';
+import { encodeWire } from '../crpc/transformer';
 
 import { createServerCaller } from './caller';
 
@@ -80,5 +81,67 @@ describe('server/caller', () => {
       { include: 'profile' },
       { skipUnauth: true }
     );
+  });
+
+  test('encodes Date args and decodes Date responses', async () => {
+    const api = {
+      users: {
+        me: makeFunctionReference<'query'>('users:me'),
+      },
+    } as const;
+
+    const encoded = encodeWire({ at: new Date(1_700_000_000_000) });
+    const fetchQuery = mock(async (_fn: any, args: any) => {
+      expect(args).toEqual(encoded);
+      return encoded;
+    });
+
+    const caller = createServerCaller(api, {
+      fetchQuery: fetchQuery as any,
+      fetchMutation: mock(async () => null) as any,
+      fetchAction: mock(async () => null) as any,
+      meta: { users: { me: { type: 'query' } } } as any,
+    });
+
+    const result = await caller.users.me({
+      at: new Date(1_700_000_000_000),
+    } as any);
+
+    expect((result as any).at).toBeInstanceOf(Date);
+    expect((result as any).at.getTime()).toBe(1_700_000_000_000);
+  });
+
+  test('supports custom transformer in caller options', async () => {
+    const api = {
+      users: {
+        me: makeFunctionReference<'query'>('users:me'),
+      },
+    } as const;
+
+    const fetchQuery = mock(async (_fn: any, args: any) => {
+      expect(args).toEqual({ $in: { role: 'admin' } });
+      return { $out: { ok: true } };
+    });
+
+    const caller = createServerCaller(api, {
+      fetchQuery: fetchQuery as any,
+      fetchMutation: mock(async () => null) as any,
+      fetchAction: mock(async () => null) as any,
+      meta: { users: { me: { type: 'query' } } } as any,
+      transformer: {
+        input: {
+          serialize: (value: unknown) => ({ $in: value }),
+          deserialize: (value: unknown) => value,
+        },
+        output: {
+          serialize: (value: unknown) => value,
+          deserialize: (value: unknown) => (value as any)?.$out ?? value,
+        },
+      },
+    });
+
+    await expect(caller.users.me({ role: 'admin' } as any)).resolves.toEqual({
+      ok: true,
+    });
   });
 });

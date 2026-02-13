@@ -228,7 +228,7 @@ test('search + orderBy throws guardrail error', async () => {
           index: 'text_search',
           query: 'galaxy',
         },
-        orderBy: { _creationTime: 'desc' },
+        orderBy: { createdAt: 'desc' },
       } as any)
     ).rejects.toThrow(/search.+orderBy|orderBy.+search/i);
   });

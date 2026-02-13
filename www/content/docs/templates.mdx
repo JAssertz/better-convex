@@ -246,13 +246,23 @@ import { createOrm } from 'better-convex/orm';
 import type { MutationCtx, QueryCtx } from '../functions/_generated/server';
 import { relations } from '../functions/schema';
 
-export const orm = createOrm({ schema: relations });
+export const orm = createOrm({ schema: relations, types: { date: true } });
 
 export const withOrm = <Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) => ({
   ...ctx,
   orm: orm.db(ctx),
 });
 ```
+
+Recommended default for ORM + cRPC: `types: { date: true }`, so system `createdAt` values are hydrated as `Date`.
+
+Native (number timestamps) mode:
+
+```ts title="convex/lib/orm.ts"
+export const orm = createOrm({ schema: relations });
+```
+
+In native mode, system `createdAt` remains `number`.
 
 ### crpc.ts
 
@@ -564,26 +574,31 @@ export const router = c.router;
 
 ### types.ts
 
-Type utilities for API inference and document types.
+Type utilities for API inference and ORM model types.
 
-```ts title="convex/shared/types.ts" showLineNumbers {14-17,20-22}
+```ts title="convex/shared/types.ts" showLineNumbers
+import type {
+  InferInsertModel,
+  InferSelectModel,
+} from 'better-convex/orm';
 import type {
   inferApiInputs,
   inferApiOutputs,
   WithHttpRouter,
 } from 'better-convex/server';
-import type { WithoutSystemFields } from 'convex/server';
 
 import type { api } from '../functions/_generated/api';
-import type { Doc, TableNames } from '../functions/_generated/dataModel';
 // biome-ignore lint/style/noRestrictedImports: type
 import type { appRouter } from '../functions/http';
+import type { tables } from '../functions/schema';
 
-export type DocWithId<TableName extends TableNames> = WithoutSystemFields<
-  Doc<TableName>
-> & {
-  id: Doc<TableName>['id'];
-};
+export type TableName = keyof typeof tables;
+export type Select<TTableName extends TableName> = InferSelectModel<
+  (typeof tables)[TTableName]
+>;
+export type Insert<TTableName extends TableName> = InferInsertModel<
+  (typeof tables)[TTableName]
+>;
 
 // API type with HTTP router (http is optional for type inference)
 export type Api = WithHttpRouter<typeof api, typeof appRouter>;
@@ -652,10 +667,10 @@ export const authClient = createClient<DataModel, typeof schema>({
   },
 });
 
-export const createAuthOptions = (ctx: GenericCtx) =>
+export const getAuthOptions = (ctx: GenericCtx) =>
   ({
     baseURL: process.env.SITE_URL!,
-    database: authClient.httpAdapter(ctx),
+    database: authClient.adapter(ctx, getAuthOptions),
     plugins: [
       convex({
         authConfig,
@@ -679,14 +694,7 @@ export const createAuthOptions = (ctx: GenericCtx) =>
     trustedOrigins: [process.env.SITE_URL ?? 'http://localhost:3000'],
   }) satisfies BetterAuthOptions;
 
-export const createAuth = (ctx: GenericCtx) => betterAuth(createAuthOptions(ctx));
-
-export const getAuth = <Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) => {
-  return betterAuth({
-    ...createAuthOptions(ctx),
-    database: authClient.adapter(ctx, createAuthOptions),
-  });
-};
+export const getAuth = (ctx: GenericCtx) => betterAuth(getAuthOptions(ctx));
 
 export const {
   beforeCreate,
@@ -707,14 +715,14 @@ export const {
   updateOne,
   getLatestJwks,
   rotateKeys,
-} = createApi(schema, createAuth, {
+} = createApi(schema, getAuth, {
   dbTriggers,
   context: withOrm,
   skipValidation: true,
 });
 
 // biome-ignore lint/suspicious/noExplicitAny: Required for CLI
-export const auth = betterAuth(createAuthOptions({} as any));
+export const auth = betterAuth(getAuthOptions({} as any));
 ```
 
 
@@ -787,7 +795,7 @@ HTTP routes for Better Auth.
     import { cors } from 'hono/cors';
     import { router } from '../lib/crpc';
     // Import your routers from convex/routers/
-    import { createAuth } from './auth';
+    import { getAuth } from './auth';
 
     const app = new Hono();
 
@@ -803,7 +811,7 @@ HTTP routes for Better Auth.
     );
 
     // Better Auth middleware
-    app.use(authMiddleware(createAuth));
+    app.use(authMiddleware(getAuth));
 
     // HTTP API router (tRPC-style)
     export const appRouter = router({
@@ -818,11 +826,11 @@ HTTP routes for Better Auth.
     import '../lib/http-polyfills';
     import { registerRoutes } from 'better-convex/auth';
     import { httpRouter } from 'convex/server';
-    import { createAuth } from './auth';
+    import { getAuth } from './auth';
 
     const http = httpRouter();
 
-    registerRoutes(http, createAuth, {
+    registerRoutes(http, getAuth, {
       cors: {
         allowedOrigins: [process.env.SITE_URL!],
       },
@@ -877,11 +885,12 @@ export const getSessionUser = optionalAuthQuery
 Session user type for auth context. Customize based on your user table fields.
 
 ```ts title="convex/shared/auth-shared.ts" showLineNumbers {3-9}
-import type { Doc, Id } from '../functions/_generated/dataModel';
+import type { Select } from './types';
+import type { Doc } from '../functions/_generated/dataModel';
 
-export type SessionUser = Omit<Doc<'user'>, '_creationTime' | 'id'> & {
-  id: Id<'user'>;
+export type SessionUser = Select<'user'> & {
   isAdmin: boolean;
+  // Native Better Auth session document for auth header/session plumbing.
   session: Doc<'session'>;
   impersonatedBy?: string;
   plan?: 'premium' | 'team';
@@ -1391,7 +1400,7 @@ export const deletePage = privateMutation
 		    const results = await query.findMany({
 		      cursor: input.cursor,
 		      limit: DELETE_BATCH_SIZE,
-		      orderBy: { _creationTime: 'desc' },
+		      orderBy: { createdAt: 'desc' },
 		    });
 
 		    for (const row of results.page) {
@@ -1436,7 +1445,7 @@ export default privateMutation.mutation(async ({ ctx }) => {
 
   // Check if database needs seeding (e.g., no users exist)
   const existingUser = await ctx.orm.query.user.findFirst({
-    orderBy: { _creationTime: 'desc' },
+    orderBy: { createdAt: 'desc' },
   });
 
   if (!existingUser) {

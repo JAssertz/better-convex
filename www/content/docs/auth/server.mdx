@@ -98,10 +98,10 @@ export const authClient = createClient<DataModel, typeof schema>({
 });
 
 // Auth options factory
-export const createAuthOptions = (ctx: GenericCtx) =>
+export const getAuthOptions = (ctx: GenericCtx) =>
   ({
     baseURL: process.env.SITE_URL!,
-    database: authClient.httpAdapter(ctx),
+    database: authClient.adapter(ctx, getAuthOptions),
     plugins: [
       convex({
         authConfig,
@@ -123,16 +123,8 @@ export const createAuthOptions = (ctx: GenericCtx) =>
     trustedOrigins: [process.env.SITE_URL ?? 'http://localhost:3000'],
   }) satisfies BetterAuthOptions;
 
-// Create auth instance for HTTP routes
-export const createAuth = (ctx: GenericCtx) => betterAuth(createAuthOptions(ctx));
-
-// IMPORTANT: Use getAuth for queries/mutations (direct DB access)
-export const getAuth = <Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) => {
-  return betterAuth({
-    ...createAuthOptions(ctx),
-    database: authClient.adapter(ctx, createAuthOptions),
-  });
-};
+// Create auth instance for all Convex contexts
+export const getAuth = (ctx: GenericCtx) => betterAuth(getAuthOptions(ctx));
 
 // Export trigger handlers for Convex
 export const {
@@ -155,7 +147,7 @@ export const {
   updateOne,
   getLatestJwks,
   rotateKeys,
-} = createApi(schema, createAuth, {
+} = createApi(schema, getAuth, {
   dbTriggers: triggers, // Optional: same db trigger wrapper
   context: getOrmCtx, // Optional: same context enrichment
   skipValidation: true, // Smaller generated types
@@ -163,7 +155,7 @@ export const {
 
 // Export auth instance for Better Auth CLI
 // biome-ignore lint/suspicious/noExplicitAny: Required for CLI
-export const auth = betterAuth(createAuthOptions({} as any));
+export const auth = betterAuth(getAuthOptions({} as any));
 ```
 
 <Callout icon={<InfoIcon />}>
@@ -342,7 +334,7 @@ Now we'll expose Better Auth's endpoints via HTTP.
     import { Hono } from 'hono';
     import { cors } from 'hono/cors';
     import { router } from '../lib/crpc';
-    import { createAuth } from './auth';
+    import { getAuth } from './auth';
 
     const app = new Hono();
 
@@ -358,7 +350,7 @@ Now we'll expose Better Auth's endpoints via HTTP.
     );
 
     // Better Auth middleware
-    app.use(authMiddleware(createAuth));
+    app.use(authMiddleware(getAuth));
 
     export const appRouter = router({
       // Add your routers here
@@ -372,11 +364,11 @@ Now we'll expose Better Auth's endpoints via HTTP.
     import '../lib/http-polyfills';
     import { registerRoutes } from 'better-convex/auth';
     import { httpRouter } from 'convex/server';
-    import { createAuth } from './auth';
+    import { getAuth } from './auth';
 
     const http = httpRouter();
 
-    registerRoutes(http, createAuth, {
+    registerRoutes(http, getAuth, {
       cors: {
         allowedOrigins: [process.env.SITE_URL!],
       },
@@ -392,7 +384,7 @@ Now we'll expose Better Auth's endpoints via HTTP.
     import { HttpRouterWithHono } from 'better-convex/server';
     import { Hono } from 'hono';
     import { cors } from 'hono/cors';
-    import { createAuth } from './auth';
+    import { getAuth } from './auth';
 
     const app = new Hono();
 
@@ -408,7 +400,7 @@ Now we'll expose Better Auth's endpoints via HTTP.
     );
 
     // Better Auth middleware
-    app.use(authMiddleware(createAuth));
+    app.use(authMiddleware(getAuth));
 
     export default new HttpRouterWithHono(app);
     ```
@@ -456,35 +448,30 @@ You've set up the Convex backend. Now let's connect your frontend:
 
 Now that you have auth working, let's understand a few important concepts.
 
-### Direct DB Access vs HTTP Adapter
+### Context-Aware Adapter Selection
 
-The auth client provides two adapters depending on where you're calling from:
+Use `getAuth(ctx)` in every context:
 
-```ts showLineNumbers {2-4,8-10}
-// ✅ In queries/mutations: Use getAuth (direct DB access)
-export const someQuery = publicQuery
-  .query(async ({ ctx }) => {
-    const auth = getAuth(ctx);
-    const session = await auth.api.getSession({ headers: await getHeaders(ctx) });
-  });
+```ts showLineNumbers {2,8}
+export const someQuery = publicQuery.query(async ({ ctx }) => {
+  const auth = getAuth(ctx);
+  const session = await auth.api.getSession({ headers: await getHeaders(ctx) });
+});
 
-// ✅ In HTTP routes/actions: Use createAuth (HTTP adapter)
-export const someAction = publicAction
-  .action(async ({ ctx }) => {
-    const auth = createAuth(ctx);
-    // Use for webhooks, external API calls
-  });
+export const someAction = publicAction.action(async ({ ctx }) => {
+  const auth = getAuth(ctx);
+});
 ```
 
-**Why two adapters?**
+`authClient.adapter(ctx, getAuthOptions)` auto-selects:
 
-| Adapter | Used by | Context | Performance |
-|---------|---------|---------|-------------|
-| `adapter` | `getAuth` | Queries/mutations | Direct DB access, no overhead |
-| `httpAdapter` | `createAuth` | HTTP routes/actions | Uses `ctx.run*` internally |
+| Adapter | Context | Behavior |
+|---------|---------|----------|
+| `adapter` | Queries/mutations (`ctx.db`) | Direct DB access, no `runQuery`/`runMutation` wrapper |
+| `httpAdapter` | Actions/HTTP contexts | Uses `ctx.run*` APIs |
 
 <Callout icon={<InfoIcon />}>
-**Performance:** The `httpAdapter` uses `ctx.runQuery`/`ctx.runMutation` internally, which adds **>50ms latency** per call (increasing with app size). Always use `getAuth` with direct DB access in queries and mutations.
+**Performance:** In queries/mutations, the direct DB adapter is selected automatically, avoiding the extra `ctx.runQuery`/`ctx.runMutation` hop.
 </Callout>
 
 ### Custom DB Triggers
@@ -524,7 +511,7 @@ export const authClient = createClient({
   context: getOrmCtx,
 });
 
-export const { ... } = createApi(schema, createAuth, {
+export const { ... } = createApi(schema, getAuth, {
   dbTriggers: triggers,
   context: getOrmCtx,
 });

@@ -489,9 +489,7 @@ describe('M6.5 Phase 1: Relation Loading', () => {
       // Verify all posts by Alice reference the same user object
       const alicePosts = posts.filter((p: any) => p.authorId === user1Id);
       expect(alicePosts).toHaveLength(3);
-      expect(alicePosts.every((p: any) => p.author!.id === user1Id)).toBe(
-        true
-      );
+      expect(alicePosts.every((p: any) => p.author!.id === user1Id)).toBe(true);
       expect(alicePosts.every((p: any) => p.author!.name === 'Alice')).toBe(
         true
       );

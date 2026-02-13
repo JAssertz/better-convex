@@ -177,7 +177,7 @@ import { createOrm } from 'better-convex/orm';
 import type { MutationCtx, QueryCtx } from '../functions/_generated/server';
 import { relations } from '../functions/schema';
 
-export const orm = createOrm({ schema: relations });
+export const orm = createOrm({ schema: relations, types: { date: true } });
 
 export const withOrm = <Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) => ({
   ...ctx,
@@ -225,13 +225,13 @@ export const list = publicQuery
     z.array(
       z.object({
         id: zid('user'),
-        _creationTime: z.number(),
+        createdAt: z.date(),
         name: z.string(),
         email: z.string(),
         posts: z.array(
           z.object({
             id: zid('posts'),
-            _creationTime: z.number(),
+            createdAt: z.date(),
             title: z.string(),
             published: z.boolean().nullable(),
           })
@@ -245,10 +245,10 @@ export const list = publicQuery
       with: {
         posts: {
           limit: 5,
-          orderBy: { _creationTime: 'desc' },
+          orderBy: { createdAt: 'desc' },
           columns: {
             id: true,
-            _creationTime: true,
+            createdAt: true,
             title: true,
             published: true,
           },
