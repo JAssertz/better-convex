@@ -187,17 +187,17 @@ export type KeyPageResult<T> = {
  * @example
  * const users = convexTable('users', { name: text().notNull() });
  * type User = InferSelectModel<typeof users>;
- * // → { id: Id<'users'>, createdAt: number | Date, name: string }
+ * // → { id: Id<'users'>, createdAt: number, name: string }
  *
  * const posts = convexTable('posts', { title: text() }); // nullable
  * type Post = InferSelectModel<typeof posts>;
- * // → { id: Id<'posts'>, createdAt: number | Date, title: string | null }
+ * // → { id: Id<'posts'>, createdAt: number, title: string | null }
  */
 export type InferSelectModel<TTable extends ConvexTable<any>> = Simplify<
   Merge<
     {
       id: GenericId<TTable['_']['name']>;
-      createdAt: number | Date;
+      createdAt: number;
     },
     {
       [K in keyof TTable['_']['columns']]: GetColumnData<

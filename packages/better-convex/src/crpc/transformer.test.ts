@@ -114,6 +114,33 @@ describe('crpc transformer', () => {
     expect(decoded).toEqual(input);
   });
 
+  test('avoids cloning payloads when no codec matches', () => {
+    const input = {
+      count: 1,
+      nested: { ok: true },
+      list: [{ status: 'ready' }],
+    };
+
+    expect(encodeWire(input)).toBe(input);
+    expect(decodeWire(input)).toBe(input);
+  });
+
+  test('memoizes resolved transformers', () => {
+    const custom = {
+      input: {
+        serialize: (value: unknown) => value,
+        deserialize: (value: unknown) => value,
+      },
+      output: {
+        serialize: (value: unknown) => value,
+        deserialize: (value: unknown) => value,
+      },
+    };
+
+    expect(getTransformer()).toBe(getTransformer());
+    expect(getTransformer(custom)).toBe(getTransformer(custom));
+  });
+
   test('wire payload never uses keys starting with $', () => {
     const encoded = encodeWire({
       list: [new Date('2024-01-01T00:00:00.000Z')],

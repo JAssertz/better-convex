@@ -1038,8 +1038,8 @@ function getTableColumns(
     system.id = (table as any).id as ColumnBuilder<any, any, any>;
   }
   if ((table as any).createdAt || (table as any)._creationTime) {
-    system.createdAt = ((table as any).createdAt ??
-      (table as any)._creationTime) as ColumnBuilder<any, any, any>;
+    system.createdAt = ((table as any)._creationTime ??
+      (table as any).createdAt) as ColumnBuilder<any, any, any>;
   }
 
   return { ...columns, ...system };

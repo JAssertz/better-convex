@@ -82,7 +82,7 @@ import type { GenericDatabaseWriter } from 'convex/server';
 import { createOrm } from 'better-convex/orm';
 import { relations } from '../schema';
 
-const orm = createOrm({ schema: relations, types: { date: true } });
+const orm = createOrm({ schema: relations });
 
 export const withOrm = <Ctx extends { db: GenericDatabaseWriter<any> }>(ctx: Ctx) => {
   const ormDb = orm.db(ctx, { rls: { ctx } });

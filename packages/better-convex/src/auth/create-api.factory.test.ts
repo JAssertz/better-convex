@@ -657,23 +657,38 @@ describe('auth/create-api createApi()', () => {
     test('create uses ORM insert path when ctx.orm exists', async () => {
       const api = createApi(schema, getAuth as any);
       const { ctx, spies, store } = createOrmCtx({});
+      const createdAt = new Date('2026-02-14T13:01:46.173Z');
+      const updatedAt = new Date('2026-02-14T13:01:46.168Z');
+      const expiresAt = new Date('2026-02-14T13:11:46.168Z');
 
       const created = await (api.create as any)._handler(ctx, {
         input: {
           model: 'user',
-          data: { email: 'c@site.com', name: 'carol' },
+          data: {
+            email: 'c@site.com',
+            name: 'carol',
+            createdAt,
+            updatedAt,
+            expiresAt,
+          },
         },
       });
 
       expect(spies.ormInsert).toHaveBeenCalledTimes(1);
       expect(spies.dbInsert).not.toHaveBeenCalled();
       expect(created).toMatchObject({ email: 'c@site.com', name: 'carol' });
+      expect(created.createdAt).toBe(createdAt.getTime());
+      expect(created.updatedAt).toBe(updatedAt.getTime());
+      expect(created.expiresAt).toBe(expiresAt.getTime());
       expect(store.size).toBe(1);
     });
 
-    test('create normalizes ORM docs to include _id for onCreate hooks', async () => {
+    test('create normalizes ORM docs for onCreate hooks and serializes Date values', async () => {
       const api = createApi(schema, getAuth as any);
       const runMutation = mock(async () => undefined);
+      const createdAt = new Date('2026-02-14T12:36:05.293Z');
+      const updatedAt = new Date('2026-02-14T12:36:05.168Z');
+      const expiresAt = new Date('2026-02-14T12:46:05.168Z');
 
       const ctx = {
         db: {
@@ -692,7 +707,14 @@ describe('auth/create-api createApi()', () => {
           insert: mock(() => ({
             values: () => ({
               returning: async () => [
-                { id: 'user-1', email: 'c@site.com', name: 'carol' },
+                {
+                  id: 'user-1',
+                  email: 'c@site.com',
+                  name: 'carol',
+                  createdAt,
+                  updatedAt,
+                  expiresAt,
+                },
               ],
             }),
           })),
@@ -721,6 +743,9 @@ describe('auth/create-api createApi()', () => {
       expect(runMutation).toHaveBeenCalledWith('on-create', {
         doc: {
           _id: 'user-1',
+          createdAt: createdAt.getTime(),
+          updatedAt: updatedAt.getTime(),
+          expiresAt: expiresAt.getTime(),
           email: 'c@site.com',
           id: 'user-1',
           name: 'carol',

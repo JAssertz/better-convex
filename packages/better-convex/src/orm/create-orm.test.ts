@@ -3,7 +3,6 @@ import { createOrm } from './create-orm';
 import { defineRelations } from './relations';
 import { OrmContext } from './symbols';
 import { convexTable } from './table';
-import { getDateTypeMode } from './timestamp-mode';
 
 const createReader = () =>
   ({
@@ -17,22 +16,11 @@ describe('createOrm type adapters', () => {
   });
   const schema = defineRelations({ users });
 
-  test('defaults to number date mode', () => {
+  test('does not attach global date mode in orm context', () => {
     const orm = createOrm({ schema });
     const db = orm.db(createReader()) as any;
 
-    expect(getDateTypeMode(db[OrmContext])).toBe('number');
-  });
-
-  test('propagates types.date globally with per-call override', () => {
-    const orm = createOrm({ schema, types: { date: true } });
-
-    const dateDb = orm.db(createReader()) as any;
-    expect(getDateTypeMode(dateDb[OrmContext])).toBe('date');
-
-    const numberDb = orm.db(createReader(), {
-      types: { date: false },
-    }) as any;
-    expect(getDateTypeMode(numberDb[OrmContext])).toBe('number');
+    expect(db[OrmContext]).toBeDefined();
+    expect(Object.hasOwn(db[OrmContext], 'types')).toBe(false);
   });
 });

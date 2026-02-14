@@ -13,12 +13,12 @@ describe('GelRelationalQuery nullish filter compilation', () => {
     createdAt: text().notNull(),
   });
 
-  const createQuery = (date: boolean, table: any = users) =>
+  const createQuery = (table: any = users) =>
     new (GelRelationalQuery as any)(
       {},
       { table, name: table.tableName, relations: {} },
       [],
-      { [OrmContext]: { types: { date } } },
+      { [OrmContext]: {} },
       {},
       'many'
     );
@@ -78,7 +78,7 @@ describe('GelRelationalQuery nullish filter compilation', () => {
   });
 
   it('maps createdAt field name and rejects _creationTime', () => {
-    const query = createQuery(true);
+    const query = createQuery();
 
     expect((query as any)._normalizePublicFieldName('createdAt')).toBe(
       '_creationTime'
@@ -88,8 +88,8 @@ describe('GelRelationalQuery nullish filter compilation', () => {
     ).toThrow(/use `createdAt`/i);
   });
 
-  it('hydrates createdAt Date when types.date=true', () => {
-    const query = createQuery(true);
+  it('hydrates system createdAt as number by default', () => {
+    const query = createQuery();
 
     const row = (query as any)._toPublicRow({
       _id: 'u1',
@@ -102,14 +102,14 @@ describe('GelRelationalQuery nullish filter compilation', () => {
       name: 'Alice',
     });
     expect(row).not.toHaveProperty('_creationTime');
-    expect(row.createdAt).toBeInstanceOf(Date);
+    expect(row.createdAt).toBe(1_700_000_000_000);
   });
 
-  it('keeps user createdAt column and hides _creationTime', () => {
-    const query = createQuery(true, usersWithCreatedAt);
+  it('reserves createdAt as system _creationTime even if a user column exists', () => {
+    const query = createQuery(usersWithCreatedAt);
 
     expect((query as any)._normalizePublicFieldName('createdAt')).toBe(
-      'createdAt'
+      '_creationTime'
     );
 
     const row = (query as any)._toPublicRow({
@@ -122,13 +122,13 @@ describe('GelRelationalQuery nullish filter compilation', () => {
     expect(row).toMatchObject({
       id: 'u1',
       name: 'Alice',
-      createdAt: '2024-01-01T00:00:00.000Z',
+      createdAt: 1_700_000_000_000,
     });
     expect(row).not.toHaveProperty('_creationTime');
   });
 
-  it('hydrates createdAt number when types.date=false', () => {
-    const query = createQuery(false);
+  it('still maps createdAt to system number alias', () => {
+    const query = createQuery();
 
     const row = (query as any)._toPublicRow({
       _id: 'u1',
@@ -166,7 +166,7 @@ describe('GelRelationalQuery nullish filter compilation', () => {
       [],
       {
         query: (_tableName: string) => queryBuilder,
-        [OrmContext]: { types: { date: false } },
+        [OrmContext]: {},
       },
       {
         cursor: null,

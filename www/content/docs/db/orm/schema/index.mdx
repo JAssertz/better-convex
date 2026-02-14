@@ -39,7 +39,23 @@ Convex auto-generates two fields on every document:
 - `id: Id<'table'>`
 - `createdAt: number` (default)
 
-If you use cRPC, you can enable Date hydration for system timestamps with `createOrm({ types: { date: true } })`. In that mode, ORM rows expose `createdAt: Date`.
+If you want Date values, define `createdAt: timestamp().notNull().defaultNow()` in your table schema. System `createdAt` stays numeric when no explicit column exists.
+
+### Temporal Field Model (`createdAt`, `timestamp()`, `date()`)
+
+Use these rules consistently:
+
+- Use `timestamp()` for point-in-time values (`createdAt`, `updatedAt`, `expiresAt`, etc.).
+- Use `date()` for calendar-only values (no time-of-day semantics).
+- In ORM APIs, `createdAt` is always the public key; `_creationTime` is internal.
+
+| Schema shape | ORM read type for `createdAt` | Convex storage |
+|---|---|---|
+| No explicit `createdAt` column | `number` (system alias) | `_creationTime: number` |
+| `createdAt: timestamp().notNull().defaultNow()` | `Date` (default timestamp mode) | `createdAt: number` |
+| `createdAt: timestamp({ mode: 'string' })` | `string` | `createdAt: number` |
+
+If you use cRPC, Date serialization is built in, so timestamp-backed `Date` values cross the wire safely.
 
 ### Nullability
 
@@ -92,7 +108,7 @@ Here's the full mapping of TypeScript types to column builders:
 | `number[]` \| `null` | `vector(1536)` |
 | `number[]` | `vector(1536).notNull()` |
 
-See [Column Types](/docs/db/orm/column-types) for the full ORM builder reference and Drizzle mapping notes.
+See [Column Types](/docs/db/orm/schema/column-types) for the full ORM builder reference and Drizzle mapping notes.
 
 ## Relations
 

@@ -37,7 +37,9 @@ const users = convexTable('users', {
 **Auto‑generated fields**
 - `id: Id<TName>`
 - `createdAt: number` (default)
-- `createdAt: Date` when `createOrm({ types: { date: true } })` and you call through cRPC
+- `createdAt: Date` when your table defines `createdAt: timestamp().notNull().defaultNow()`
+- `_creationTime` is internal-only; public ORM APIs always use `createdAt`
+- Use `timestamp()` for point-in-time fields and `date()` for calendar-only fields
 
 ### `convexTable.withRLS()`
 
@@ -247,15 +249,15 @@ defineRelations(schema, (r) => ({
 ### `createOrm()`
 
 ```ts
-const orm = createOrm({ schema: relations, types: { date: true } });
+const orm = createOrm({ schema: relations });
 const db = orm.db(ctx);
 ```
 
 Creates a unified ORM setup object. Use `orm.db(ctx)` to build a typed query/mutation client.
 
 `createdAt` is always public in ORM rows. Its type is:
-- `number` by default
-- `Date` when `types: { date: true }` (recommended when using cRPC)
+- `number` for the system alias
+- `Date` when your schema defines `createdAt: timestamp().notNull().defaultNow()`
 
 For async mutation batching, pass scheduler function refs and export generated handlers:
 
@@ -266,7 +268,6 @@ import { internalMutation } from './functions';
 
 const orm = createOrm({
   schema: relations,
-  types: { date: true },
   ormFunctions: internal.orm,
   internalMutation,
 });

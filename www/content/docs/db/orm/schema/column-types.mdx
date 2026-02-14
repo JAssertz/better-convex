@@ -8,8 +8,24 @@ import { InfoIcon, AlertTriangle } from "lucide-react"
 In this guide, we'll learn how to define document fields using Drizzle-style column builders. You'll master string, number, boolean, and reference fields, column hooks like `$defaultFn`, and advanced types like `custom()` and `json<T>()`.
 
 <Callout icon={<AlertTriangle />}>
-The ORM documents a **Convex subset** of Drizzle's PostgreSQL column types. SQL-specific types (timestamps, decimals, database enums, etc.) are not available. For Convex-native arbitrary values, use `custom()` / `json()` and validate shape with `convex/values` validators.
+The ORM documents a **Convex subset** of Drizzle's PostgreSQL column types. Temporal fields are supported with `date()` and `timestamp()`. For Convex-native arbitrary values, use `custom()` / `json()` and validate shape with `convex/values` validators.
 </Callout>
+
+## Temporal Semantics
+
+Use temporal builders intentionally:
+
+- `timestamp()` is for point-in-time values (`createdAt`, `updatedAt`, `expiresAt`).
+- `date()` is for calendar dates (`YYYY-MM-DD`) with no time component.
+- In ORM APIs, `createdAt` is the public field name. Convex internals (`_creationTime`) stay internal.
+
+For most tables, use:
+
+```ts showLineNumbers
+createdAt: timestamp().notNull().defaultNow()
+```
+
+This gives `createdAt: Date` in ORM types while keeping Convex storage numeric.
 
 ## Column Names
 
@@ -70,12 +86,12 @@ The ORM supports Drizzle-style column hooks for common patterns like timestamps 
 Here's how to use `$defaultFn`, `$onUpdateFn`, and `json<T>()` together:
 
 ```ts showLineNumbers {4-6}
-import { convexTable, integer, json, text } from 'better-convex/orm';
+import { convexTable, json, text, timestamp } from 'better-convex/orm';
 
 const users = convexTable('users', {
   email: text().notNull(),
-  createdAt: integer().notNull().$defaultFn(() => Date.now()),
-  updatedAt: integer().notNull().$onUpdateFn(() => Date.now()),
+  createdAt: timestamp().notNull().defaultNow(),
+  updatedAt: timestamp().notNull().$onUpdateFn(() => new Date()),
   metadata: json<Record<string, unknown>>(),
 });
 ```
@@ -127,6 +143,32 @@ import { convexTable, integer } from 'better-convex/orm';
 const events = convexTable('events', {
   retries: integer().notNull(),
   score: integer(),
+});
+```
+
+### `date()`
+
+Calendar date column (`YYYY-MM-DD` semantics).
+
+```ts showLineNumbers
+import { convexTable, date } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  birthday: date(), // string | null (default mode)
+  anniversary: date({ mode: 'date' }), // Date | null
+});
+```
+
+### `timestamp()`
+
+Point-in-time column for event and audit timestamps.
+
+```ts showLineNumbers
+import { convexTable, timestamp } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  createdAt: timestamp().notNull().defaultNow(), // Date
+  startedAtText: timestamp({ mode: 'string' }), // string | null
 });
 ```
 
@@ -234,7 +276,7 @@ const posts = convexTable('posts', {
 
 These Drizzle (SQL) column type categories don't map to Convex documents and are not supported:
 
-- SQL timestamps/dates and database-side timezone semantics
+- SQL database-side timezone/precision semantics for timestamp/date types
 - SQL decimals/numerics
 - SQL database enums (use `textEnum(...)`)
 - SQL arrays (beyond `vector(...)` embeddings)

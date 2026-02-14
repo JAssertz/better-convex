@@ -2,6 +2,7 @@
 import {
   convexTable,
   defineSchema,
+  index,
   integer,
   searchIndex,
   text,
@@ -224,4 +225,17 @@ test('legacy chainable index APIs throw', () => {
       dimensions: 1536,
     })
   ).toThrow(/table.vectorIndex\(\) is not supported/);
+});
+
+test('createdAt index is forbidden because createdAt aliases _creationTime', () => {
+  expect(() =>
+    convexTable(
+      'events',
+      {
+        name: text().notNull(),
+        createdAt: integer().notNull(),
+      },
+      (t) => [index('by_created_at').on(t.createdAt)]
+    )
+  ).toThrow(/cannot use 'createdAt'/i);
 });

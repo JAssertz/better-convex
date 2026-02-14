@@ -202,7 +202,6 @@ import { relations } from '../schema';
 
 export const orm = createOrm({
   schema: relations,
-  types: { date: true },
   ormFunctions: internal.orm,
   internalMutation,
 });

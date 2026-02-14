@@ -23,7 +23,6 @@ import type {
   OrmDeleteMode,
   OrmRuntimeDefaults,
   OrmTableDeleteConfig,
-  ResolvedOrmTypeOptions,
 } from './symbols';
 import { Columns, OrmContext, TableDeleteConfig, TableName } from './symbols';
 import type { ConvexTable } from './table';
@@ -64,7 +63,6 @@ export type OrmContextValue = {
   scheduler?: Scheduler;
   scheduledDelete?: SchedulableFunctionReference;
   scheduledMutationBatch?: SchedulableFunctionReference;
-  types?: ResolvedOrmTypeOptions;
   rls?: RlsContext;
   strict?: boolean;
   defaults?: OrmRuntimeDefaults;
@@ -76,6 +74,7 @@ const UNDEFINED_SENTINEL_KEY = '__betterConvexUndefined';
 const INTERNAL_ID_FIELD = '_id';
 const PUBLIC_ID_FIELD = 'id';
 const DATE_COLUMN_TYPE = 'ConvexDate';
+const TIMESTAMP_COLUMN_TYPE = 'ConvexTimestamp';
 
 type SerializedFieldReference = {
   fieldName: string;
@@ -108,23 +107,167 @@ export type SerializedFilterExpression =
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
-const toMillisIfDate = (value: unknown): unknown =>
-  value instanceof Date ? value.getTime() : value;
+type TemporalColumnType =
+  | typeof DATE_COLUMN_TYPE
+  | typeof TIMESTAMP_COLUMN_TYPE;
+type TemporalMode = 'date' | 'string';
 
-const isDateColumn = (column: ColumnBuilder<any, any, any>): boolean =>
-  (column as any)?.config?.columnType === DATE_COLUMN_TYPE;
+export type TemporalColumnDescriptor = {
+  name: string;
+  columnType: TemporalColumnType;
+  mode: TemporalMode;
+};
 
-const getDateColumnNames = (table: ConvexTable<any>): Set<string> =>
-  new Set(
-    Object.entries(getTableColumns(table))
-      .filter(([, column]) => isDateColumn(column))
-      .map(([name]) => name)
-  );
+const temporalColumnDescriptorCache = new WeakMap<
+  object,
+  Map<string, TemporalColumnDescriptor>
+>();
+
+const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+const toDateOnlyString = (value: Date): string =>
+  value.toISOString().slice(0, 10);
+
+const toDateOnlyDate = (value: string): Date | string =>
+  DATE_ONLY_REGEX.test(value) ? new Date(`${value}T00:00:00.000Z`) : value;
+
+const toTimestampMillis = (value: unknown): unknown => {
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return value;
+};
+
+const readTimestampValue = (value: unknown, mode: TemporalMode): unknown => {
+  if (mode === 'date' && typeof value === 'number') {
+    return new Date(value);
+  }
+  if (mode === 'string' && typeof value === 'number') {
+    return new Date(value).toISOString();
+  }
+  return value;
+};
+
+const getTemporalDescriptorFromColumn = (
+  name: string,
+  column: ColumnBuilder<any, any, any>
+): TemporalColumnDescriptor | undefined => {
+  const config = (column as any)?.config;
+  const columnType = config?.columnType;
+  if (columnType !== DATE_COLUMN_TYPE && columnType !== TIMESTAMP_COLUMN_TYPE) {
+    return;
+  }
+
+  if (columnType === DATE_COLUMN_TYPE) {
+    return {
+      name,
+      columnType,
+      mode: config?.mode === 'date' ? 'date' : 'string',
+    };
+  }
+
+  return {
+    name,
+    columnType,
+    mode: config?.mode === 'string' ? 'string' : 'date',
+  };
+};
+
+const getTemporalColumnDescriptors = (
+  table: ConvexTable<any>
+): Map<string, TemporalColumnDescriptor> => {
+  const cacheKey = table as unknown as object;
+  const cached = temporalColumnDescriptorCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const descriptors = new Map<string, TemporalColumnDescriptor>();
+  for (const [name, column] of Object.entries(getTableColumns(table))) {
+    const descriptor = getTemporalDescriptorFromColumn(name, column);
+    if (!descriptor) {
+      continue;
+    }
+    descriptors.set(name, descriptor);
+  }
+
+  temporalColumnDescriptorCache.set(cacheKey, descriptors);
+  return descriptors;
+};
+
+export const getTemporalColumnDescriptor = (
+  table: ConvexTable<any>,
+  columnName: string
+): TemporalColumnDescriptor | undefined => {
+  const temporalColumns = getTemporalColumnDescriptors(table);
+  const direct = temporalColumns.get(columnName);
+  if (direct) {
+    return direct;
+  }
+
+  const columns = getTableColumns(table);
+  for (const descriptor of temporalColumns.values()) {
+    const configuredName = (columns[descriptor.name] as any)?.config?.name;
+    if (configuredName === columnName) {
+      return descriptor;
+    }
+  }
+
+  return;
+};
+
+const normalizeTemporalWriteValue = (
+  descriptor: TemporalColumnDescriptor,
+  value: unknown
+): unknown => {
+  if (descriptor.columnType === DATE_COLUMN_TYPE) {
+    if (value instanceof Date) {
+      return toDateOnlyString(value);
+    }
+    return value;
+  }
+
+  return toTimestampMillis(value);
+};
+
+const hydrateTemporalReadValue = (
+  descriptor: TemporalColumnDescriptor,
+  value: unknown
+): unknown => {
+  if (descriptor.columnType === DATE_COLUMN_TYPE) {
+    if (descriptor.mode === 'date' && typeof value === 'string') {
+      return toDateOnlyDate(value);
+    }
+    return value;
+  }
+
+  return readTimestampValue(value, descriptor.mode);
+};
+
+export const normalizeTemporalComparableValue = (
+  table: ConvexTable<any>,
+  fieldName: string,
+  value: unknown
+): unknown => {
+  const descriptor = getTemporalColumnDescriptor(table, fieldName);
+  if (!descriptor) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeTemporalWriteValue(descriptor, entry));
+  }
+  return normalizeTemporalWriteValue(descriptor, value);
+};
 
 export const normalizePublicSystemFields = <T>(
   value: T,
   options?: {
-    createdAtAsDate?: boolean;
     useSystemCreatedAtAlias?: boolean;
   }
 ): T => {
@@ -150,15 +293,8 @@ export const normalizePublicSystemFields = <T>(
 
   if (hasCreationTime) {
     const raw = obj[INTERNAL_CREATION_TIME_FIELD];
-    if (
-      options?.useSystemCreatedAtAlias &&
-      raw !== undefined &&
-      !Object.hasOwn(publicRow, PUBLIC_CREATED_AT_FIELD)
-    ) {
-      publicRow[PUBLIC_CREATED_AT_FIELD] =
-        options.createdAtAsDate && typeof raw === 'number'
-          ? new Date(raw)
-          : raw;
+    if (options?.useSystemCreatedAtAlias && raw !== undefined) {
+      publicRow[PUBLIC_CREATED_AT_FIELD] = raw;
     }
     delete publicRow[INTERNAL_CREATION_TIME_FIELD];
   }
@@ -170,27 +306,26 @@ export const normalizePublicSystemFields = <T>(
 
 export const normalizeDateFieldsForWrite = <T extends Record<string, unknown>>(
   table: ConvexTable<any>,
-  value: T,
-  _options?: { createdAtAsDate?: boolean }
+  value: T
 ): T => {
   const useSystemCreatedAt = usesSystemCreatedAtAlias(table);
+  const temporalColumns = getTemporalColumnDescriptors(table);
   const result = { ...value } as Record<string, unknown>;
 
   if (Object.hasOwn(result, INTERNAL_CREATION_TIME_FIELD)) {
     throw new Error(CREATED_AT_MIGRATION_MESSAGE);
   }
   if (useSystemCreatedAt && Object.hasOwn(result, PUBLIC_CREATED_AT_FIELD)) {
-    result[INTERNAL_CREATION_TIME_FIELD] = toMillisIfDate(
-      result[PUBLIC_CREATED_AT_FIELD]
-    );
+    // createdAt is a reserved public alias for system _creationTime.
+    // Writes must never set _creationTime explicitly (Convex controls it).
     delete result[PUBLIC_CREATED_AT_FIELD];
   }
 
-  for (const name of getDateColumnNames(table)) {
+  for (const [name, descriptor] of temporalColumns.entries()) {
     if (!Object.hasOwn(result, name)) {
       continue;
     }
-    result[name] = toMillisIfDate(result[name]);
+    result[name] = normalizeTemporalWriteValue(descriptor, result[name]);
   }
 
   return result as T;
@@ -198,26 +333,34 @@ export const normalizeDateFieldsForWrite = <T extends Record<string, unknown>>(
 
 export const hydrateDateFieldsForRead = <T>(
   table: ConvexTable<any>,
-  value: T,
-  options?: { createdAtAsDate?: boolean }
+  value: T
 ): T => {
+  const rawCreationTime =
+    isPlainObject(value) &&
+    typeof (value as Record<string, unknown>)[INTERNAL_CREATION_TIME_FIELD] ===
+      'number'
+      ? (value as Record<string, unknown>)[INTERNAL_CREATION_TIME_FIELD]
+      : undefined;
   const useSystemCreatedAt = usesSystemCreatedAtAlias(table);
-  const createdAtAsDate = options?.createdAtAsDate === true;
   const base = normalizePublicSystemFields(value, {
-    createdAtAsDate,
     useSystemCreatedAtAlias: useSystemCreatedAt,
   });
   if (!isPlainObject(base)) {
     return base;
   }
   const result = { ...(base as Record<string, unknown>) };
-  const dateColumns = getDateColumnNames(table);
+  const temporalColumns = getTemporalColumnDescriptors(table);
 
-  for (const name of dateColumns) {
-    const fieldValue = result[name];
-    if (typeof fieldValue === 'number') {
-      result[name] = new Date(fieldValue);
+  for (const [name, descriptor] of temporalColumns.entries()) {
+    if (
+      name === PUBLIC_CREATED_AT_FIELD &&
+      result[name] === undefined &&
+      rawCreationTime !== undefined
+    ) {
+      result[name] = hydrateTemporalReadValue(descriptor, rawCreationTime);
+      continue;
     }
+    result[name] = hydrateTemporalReadValue(descriptor, result[name]);
   }
 
   return result as T;
@@ -226,24 +369,21 @@ export const hydrateDateFieldsForRead = <T>(
 export const selectReturningRowWithHydration = (
   table: ConvexTable<any>,
   row: Record<string, unknown>,
-  fields: Record<string, unknown>,
-  options?: { createdAtAsDate?: boolean }
+  fields: Record<string, unknown>
 ): Record<string, unknown> => {
   const useSystemCreatedAt = usesSystemCreatedAtAlias(table);
-  const dateColumns = getDateColumnNames(table);
+  const temporalColumns = getTemporalColumnDescriptors(table);
   const selected: Record<string, unknown> = {};
 
   for (const [selectedKey, column] of Object.entries(fields)) {
     const columnName = getSelectionColumnName(column);
     let value = row[columnName];
 
-    if (columnName === INTERNAL_CREATION_TIME_FIELD && useSystemCreatedAt) {
-      value =
-        options?.createdAtAsDate && typeof value === 'number'
-          ? new Date(value)
-          : value;
-    } else if (dateColumns.has(columnName) && typeof value === 'number') {
-      value = new Date(value);
+    if (!(columnName === INTERNAL_CREATION_TIME_FIELD && useSystemCreatedAt)) {
+      const descriptor = temporalColumns.get(columnName);
+      if (descriptor) {
+        value = hydrateTemporalReadValue(descriptor, value);
+      }
     }
 
     selected[selectedKey] = value;

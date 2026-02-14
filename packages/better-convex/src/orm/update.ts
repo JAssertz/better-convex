@@ -25,7 +25,6 @@ import {
 import { QueryPromise } from './query-promise';
 import { evaluateUpdateDecision } from './rls/evaluator';
 import type { ConvexTable } from './table';
-import { shouldHydrateCreatedAtAsDate } from './timestamp-mode';
 import type {
   MutationAsyncConfig,
   MutationExecuteConfig,
@@ -246,7 +245,6 @@ export class ConvexUpdateBuilder<
 
     const config = args[0] as MutationExecuteConfig | undefined;
     const ormContext = getOrmContext(this.db);
-    const createdAtAsDate = shouldHydrateCreatedAtAsDate(ormContext);
     const strict = ormContext?.strict ?? true;
     const allowFullScan = this.allowFullScanFlag;
     const pagination = this.paginateConfig;
@@ -268,8 +266,7 @@ export class ConvexUpdateBuilder<
     const delayMs = getMutationAsyncDelayMs(ormContext, config?.delayMs);
     const normalizedSetValues = normalizeDateFieldsForWrite(
       this.table,
-      this.setValues as any,
-      { createdAtAsDate }
+      this.setValues as any
     ) as UpdateSet<TTable>;
 
     if (!isPaginated && resolvedMode === 'async') {
@@ -605,20 +602,13 @@ export class ConvexUpdateBuilder<
       }
 
       if (this.returningFields === true) {
-        results.push(
-          hydrateDateFieldsForRead(this.table, updated as any, {
-            createdAtAsDate,
-          })
-        );
+        results.push(hydrateDateFieldsForRead(this.table, updated as any));
       } else {
         results.push(
           selectReturningRowWithHydration(
             this.table,
             updated as any,
-            this.returningFields as any,
-            {
-              createdAtAsDate,
-            }
+            this.returningFields as any
           )
         );
       }

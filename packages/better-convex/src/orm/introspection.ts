@@ -24,7 +24,7 @@ function getSystemFields<TTable extends ConvexTable<any>>(
   if ((table as any).id && (table as any)._creationTime) {
     return {
       id: (table as any).id,
-      createdAt: (table as any).createdAt ?? (table as any)._creationTime,
+      createdAt: (table as any)._creationTime ?? (table as any).createdAt,
     } as SystemFields<TTable['_']['name']> &
       SystemFieldAliases<TTable['_']['name'], TTable[typeof Columns]>;
   }

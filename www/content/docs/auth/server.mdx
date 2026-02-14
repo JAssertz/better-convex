@@ -190,7 +190,16 @@ Your database needs tables for users, sessions, accounts, and more. You have two
     If you prefer full control, define the auth tables directly in your schema:
 
     ```ts title="convex/functions/schema.ts" showLineNumbers {1-2,4-72}
-    import { boolean, convexTable, defineSchema, id, index, integer, text } from 'better-convex/orm';
+    import {
+      boolean,
+      convexTable,
+      defineSchema,
+      id,
+      index,
+      integer,
+      text,
+      timestamp,
+    } from 'better-convex/orm';
 
     export const user = convexTable(
       'user',
@@ -199,7 +208,7 @@ Your database needs tables for users, sessions, accounts, and more. You have two
         email: text().notNull(),
         emailVerified: boolean().notNull(),
         image: text(),
-        createdAt: integer().notNull(),
+        createdAt: timestamp().notNull().defaultNow(),
         updatedAt: integer().notNull(),
 
         // Admin plugin
@@ -216,7 +225,7 @@ Your database needs tables for users, sessions, accounts, and more. You have two
       {
         token: text().notNull(),
         expiresAt: integer().notNull(),
-        createdAt: integer().notNull(),
+        createdAt: timestamp().notNull().defaultNow(),
         updatedAt: integer().notNull(),
         ipAddress: text(),
         userAgent: text(),
@@ -241,7 +250,7 @@ Your database needs tables for users, sessions, accounts, and more. You have two
         refreshTokenExpiresAt: integer(),
         scope: text(),
         password: text(),
-        createdAt: integer().notNull(),
+        createdAt: timestamp().notNull().defaultNow(),
         updatedAt: integer().notNull(),
       },
       (t) => [index('accountId').on(t.accountId), index('userId').on(t.userId)]
@@ -253,7 +262,7 @@ Your database needs tables for users, sessions, accounts, and more. You have two
         identifier: text().notNull(),
         value: text().notNull(),
         expiresAt: integer().notNull(),
-        createdAt: integer(),
+        createdAt: timestamp(),
         updatedAt: integer(),
       },
       (t) => [index('identifier').on(t.identifier)]
@@ -262,7 +271,7 @@ Your database needs tables for users, sessions, accounts, and more. You have two
     export const jwks = convexTable('jwks', {
       publicKey: text().notNull(),
       privateKey: text().notNull(),
-      createdAt: integer().notNull(),
+      createdAt: timestamp().notNull().defaultNow(),
     });
 
     export const tables = { user, session, account, verification, jwks };

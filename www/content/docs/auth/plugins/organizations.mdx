@@ -101,7 +101,16 @@ export const authClient = createAuthClient({
 Add organization tables to your schema:
 
 ```ts title="convex/functions/schema.ts" showLineNumbers {1-2,4-66}
-import { convexTable, defineSchema, id, index, integer, json, text } from 'better-convex/orm';
+import {
+  convexTable,
+  defineSchema,
+  id,
+  index,
+  integer,
+  json,
+  text,
+  timestamp,
+} from 'better-convex/orm';
 
 export const organization = convexTable(
   'organization',
@@ -109,7 +118,7 @@ export const organization = convexTable(
     name: text().notNull(),
     slug: text().notNull(),
     logo: text(),
-    createdAt: integer().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
     metadata: json<Record<string, unknown>>(),
   },
   (t) => [index('slug').on(t.slug), index('name').on(t.name)]
@@ -121,7 +130,7 @@ export const member = convexTable(
     organizationId: id('organization').notNull(),
     userId: id('user').notNull(),
     role: text().notNull(),
-    createdAt: integer().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
   },
   (t) => [
     index('userId').on(t.userId),
@@ -139,7 +148,7 @@ export const invitation = convexTable(
     role: text(),
     status: text().notNull(),
     expiresAt: integer().notNull(),
-    createdAt: integer().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
   },
   (t) => [
     index('email').on(t.email),
@@ -163,14 +172,14 @@ export default defineSchema(tables, { strict: false });
 ### Teams (Optional)
 
 ```ts title="convex/functions/schema.ts" showLineNumbers {1-2,4-26}
-import { convexTable, id, index, integer, text } from 'better-convex/orm';
+import { convexTable, id, index, integer, text, timestamp } from 'better-convex/orm';
 
 export const team = convexTable(
   'team',
   {
     name: text().notNull(),
     organizationId: id('organization').notNull(),
-    createdAt: integer().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
     updatedAt: integer(),
   },
   (t) => [index('organizationId').on(t.organizationId)]
@@ -181,7 +190,7 @@ export const teamMember = convexTable(
   {
     teamId: id('team').notNull(),
     userId: id('user').notNull(),
-    createdAt: integer(),
+    createdAt: timestamp(),
   },
   (t) => [index('teamId').on(t.teamId), index('userId').on(t.userId)]
 );

@@ -253,37 +253,37 @@ describe('timestamp mode key normalization', () => {
     createdAt: text().notNull(),
   });
 
-  const createQuery = (date: boolean, table: any = users) =>
+  const createQuery = (table: any = users) =>
     new (GelRelationalQuery as any)(
       {},
       { table, name: table.tableName, relations: {} },
       [],
-      { [OrmContext]: { types: { date } } },
+      { [OrmContext]: {} },
       {},
       'many'
     );
 
   test('accepts createdAt in orderBy object', () => {
-    const query = createQuery(true);
+    const query = createQuery();
     const specs = (query as any)._orderBySpecs({ createdAt: 'asc' });
     expect(specs).toEqual([{ field: '_creationTime', direction: 'asc' }]);
   });
 
   test('rejects _creationTime in orderBy object', () => {
-    const query = createQuery(true);
+    const query = createQuery();
     expect(() =>
       (query as any)._orderBySpecs({ _creationTime: 'asc' })
     ).toThrow(/use `createdAt`/i);
   });
 
-  test('uses user createdAt column when present', () => {
-    const query = createQuery(true, usersWithCreatedAt);
+  test('always maps createdAt to system _creationTime even if a user column exists', () => {
+    const query = createQuery(usersWithCreatedAt);
     const specs = (query as any)._orderBySpecs({ createdAt: 'asc' });
-    expect(specs).toEqual([{ field: 'createdAt', direction: 'asc' }]);
+    expect(specs).toEqual([{ field: '_creationTime', direction: 'asc' }]);
   });
 
-  test('date=false still rejects _creationTime', () => {
-    const query = createQuery(false);
+  test('still rejects _creationTime for migration', () => {
+    const query = createQuery();
     expect(() =>
       (query as any)._orderBySpecs({ _creationTime: 'asc' })
     ).toThrow(/use `createdAt`/i);

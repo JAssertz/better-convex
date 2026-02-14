@@ -53,7 +53,10 @@ import {
   findVectorIndexByName,
   getIndexes,
 } from './index-utils';
-import { hydrateDateFieldsForRead } from './mutation-utils';
+import {
+  hydrateDateFieldsForRead,
+  normalizeTemporalComparableValue,
+} from './mutation-utils';
 import { asc, desc } from './order-by';
 import { getPage } from './pagination';
 import { QueryPromise } from './query-promise';
@@ -67,12 +70,11 @@ import {
   QueryStream,
   stream,
 } from './stream';
-import { Columns, OrmContext, OrmSchemaDefinition } from './symbols';
+import { Columns, OrmSchemaDefinition } from './symbols';
 import {
   CREATED_AT_MIGRATION_MESSAGE,
   INTERNAL_CREATION_TIME_FIELD,
   PUBLIC_CREATED_AT_FIELD,
-  shouldHydrateCreatedAtAsDate,
   usesSystemCreatedAtAlias,
 } from './timestamp-mode';
 import type {
@@ -175,7 +177,6 @@ export class GelRelationalQuery<
     readonly result: TResult;
   };
   private allowFullScan: boolean;
-  private readonly createdAtAsDate: boolean;
 
   constructor(
     private schema: TSchema,
@@ -196,9 +197,6 @@ export class GelRelationalQuery<
   ) {
     super();
     this.allowFullScan = (config as any).allowFullScan === true;
-    this.createdAtAsDate = shouldHydrateCreatedAtAsDate(
-      (db as any)[OrmContext]
-    );
   }
 
   private _usesSystemCreatedAtAlias(
@@ -218,49 +216,16 @@ export class GelRelationalQuery<
 
   private _normalizePublicFieldName(
     fieldName: string,
-    tableConfig: TableRelationalConfig = this.tableConfig
+    _tableConfig: TableRelationalConfig = this.tableConfig
   ): string {
     this._assertNoLegacyPublicFieldName(fieldName);
     if (fieldName === PUBLIC_ID_FIELD) {
       return INTERNAL_ID_FIELD;
     }
-    if (
-      fieldName === PUBLIC_CREATED_AT_FIELD &&
-      this._usesSystemCreatedAtAlias(tableConfig)
-    ) {
+    if (fieldName === PUBLIC_CREATED_AT_FIELD) {
       return INTERNAL_CREATION_TIME_FIELD;
     }
     return fieldName;
-  }
-
-  private _isDateField(
-    fieldName: string,
-    tableConfig: TableRelationalConfig = this.tableConfig
-  ): boolean {
-    if (
-      fieldName === INTERNAL_CREATION_TIME_FIELD &&
-      this._usesSystemCreatedAtAlias(tableConfig)
-    ) {
-      return true;
-    }
-
-    const columns = this._getColumns(tableConfig);
-    const directColumn = columns[fieldName];
-    if (
-      directColumn &&
-      (directColumn as any)?.config?.columnType === 'ConvexDate'
-    ) {
-      return true;
-    }
-
-    for (const column of Object.values(columns)) {
-      if ((column as any)?.config?.name !== fieldName) {
-        continue;
-      }
-      return (column as any)?.config?.columnType === 'ConvexDate';
-    }
-
-    return false;
   }
 
   private _normalizeComparableValue(
@@ -268,28 +233,30 @@ export class GelRelationalQuery<
     value: unknown,
     tableConfig: TableRelationalConfig = this.tableConfig
   ): unknown {
-    if (!this._isDateField(fieldName, tableConfig)) {
+    if (fieldName === INTERNAL_CREATION_TIME_FIELD) {
+      if (value instanceof Date) {
+        return value.getTime();
+      }
+      if (Array.isArray(value)) {
+        return value.map((item) =>
+          item instanceof Date ? item.getTime() : item
+        );
+      }
       return value;
     }
 
-    if (value instanceof Date) {
-      return value.getTime();
-    }
-    if (Array.isArray(value)) {
-      return value.map((item) =>
-        item instanceof Date ? item.getTime() : item
-      );
-    }
-    return value;
+    return normalizeTemporalComparableValue(
+      tableConfig.table as any,
+      fieldName,
+      value
+    );
   }
 
   private _toPublicRow<T>(
     row: T,
     tableConfig: TableRelationalConfig = this.tableConfig
   ): T {
-    return hydrateDateFieldsForRead(tableConfig.table as any, row, {
-      createdAtAsDate: this.createdAtAsDate,
-    });
+    return hydrateDateFieldsForRead(tableConfig.table as any, row);
   }
 
   private _extractIdOnlyWhere(
@@ -3516,16 +3483,12 @@ export class GelRelationalQuery<
     }
     if (this._usesSystemCreatedAtAlias(tableConfig)) {
       const createdAtBuilder =
-        ((tableConfig.table as any).createdAt as ColumnBuilder<
-          any,
-          any,
-          any
-        >) ??
         ((tableConfig.table as any)._creationTime as ColumnBuilder<
           any,
           any,
           any
-        >);
+        >) ??
+        ((tableConfig.table as any).createdAt as ColumnBuilder<any, any, any>);
       if (createdAtBuilder) {
         system[PUBLIC_CREATED_AT_FIELD] = createdAtBuilder;
       }

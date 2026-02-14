@@ -409,12 +409,16 @@ describe('server/builder', () => {
     } as any);
 
     const fn = c.query
-      .input(z.object({ at: z.any() }))
+      .input(z.object({ at: z.date() }))
       .query(async ({ input }) => input.at instanceof Date);
 
     await expect(
       (fn as any)._handler({}, encodeWire({ at: new Date(1_700_000_000_000) }))
     ).resolves.toBe(true);
+
+    await expect(
+      (fn as any)._handler({}, { at: 1_700_000_000_000 })
+    ).rejects.toBeTruthy();
   });
 
   test('respects custom transformer for input decode and output serialize', async () => {

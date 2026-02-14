@@ -1,7 +1,8 @@
 /** biome-ignore-all lint/performance/useTopLevelRegex: inline regex assertions are intentional in tests. */
 import { and, eq, gt, isNull, not, or } from './filter-expression';
-import { convexTable, date, integer, text } from './index';
+import { convexTable, date, integer, text, timestamp } from './index';
 import {
+  applyDefaults,
   decodeUndefinedDeep,
   deserializeFilterExpression,
   encodeUndefinedDeep,
@@ -24,13 +25,24 @@ const users = convexTable('users', {
   age: integer(),
   deletedAt: integer(),
   status: text(),
-  birthday: date(),
+  birthday: date({ mode: 'date' }),
+  holiday: date(),
+  startsAt: timestamp(),
+  loggedAt: timestamp({ mode: 'string' }),
 });
 
 const usersWithCreatedAt = convexTable('users_with_created_at', {
   name: text().notNull(),
   createdAt: integer().notNull(),
 });
+
+const usersWithTimestampCreatedAt = convexTable(
+  'users_with_timestamp_created_at',
+  {
+    name: text().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
+  }
+);
 
 describe('mutation-utils', () => {
   test('encodeUndefinedDeep/decodeUndefinedDeep round-trip nested values', () => {
@@ -193,94 +205,117 @@ describe('mutation-utils', () => {
     ).toThrow(/mutationBatchSize/i);
   });
 
-  test('normalizeDateFieldsForWrite converts Date fields and createdAt alias', () => {
+  test('normalizeDateFieldsForWrite converts temporal fields and createdAt alias', () => {
     const birthday = new Date('2024-01-01T00:00:00.000Z');
-    const createdAt = new Date('2024-02-01T00:00:00.000Z');
+    const startsAt = new Date('2024-01-12T10:11:12.000Z');
 
-    const normalized = normalizeDateFieldsForWrite(
-      users,
-      {
-        name: 'Alice',
-        birthday,
-        createdAt,
-      },
-      { createdAtAsDate: true }
-    );
+    const normalized = normalizeDateFieldsForWrite(users, {
+      name: 'Alice',
+      birthday,
+      holiday: '2024-03-01',
+      startsAt,
+      loggedAt: '2024-03-03T11:12:13.000Z',
+      createdAt: new Date('2024-02-01T00:00:00.000Z'),
+    });
 
     expect(normalized).toMatchObject({
       name: 'Alice',
-      birthday: birthday.getTime(),
-      _creationTime: createdAt.getTime(),
+      birthday: '2024-01-01',
+      holiday: '2024-03-01',
+      startsAt: startsAt.getTime(),
+      loggedAt: Date.parse('2024-03-03T11:12:13.000Z'),
     });
+    expect(normalized).not.toHaveProperty('_creationTime');
     expect(normalized).not.toHaveProperty('createdAt');
   });
 
   test('normalizeDateFieldsForWrite rejects _creationTime', () => {
     expect(() =>
-      normalizeDateFieldsForWrite(
-        users,
-        {
-          _creationTime: 1_700_000_000_000,
-        } as any,
-        { createdAtAsDate: true }
-      )
+      normalizeDateFieldsForWrite(users, {
+        _creationTime: 1_700_000_000_000,
+      } as any)
     ).toThrow(/use `createdAt`/i);
   });
 
-  test('normalizeDateFieldsForWrite keeps user createdAt column', () => {
-    const normalized = normalizeDateFieldsForWrite(
-      usersWithCreatedAt,
-      {
-        name: 'Alice',
-        createdAt: 123,
-      },
-      { createdAtAsDate: true }
-    ) as any;
+  test('normalizeDateFieldsForWrite reserves createdAt for system alias', () => {
+    const normalized = normalizeDateFieldsForWrite(usersWithCreatedAt, {
+      name: 'Alice',
+      createdAt: 123,
+    }) as any;
 
     expect(normalized).toMatchObject({
       name: 'Alice',
-      createdAt: 123,
     });
+    expect(normalized).not.toHaveProperty('_creationTime');
+    expect(normalized).not.toHaveProperty('createdAt');
+  });
+
+  test('normalizeDateFieldsForWrite drops defaulted createdAt without writing _creationTime', () => {
+    const withDefaults = applyDefaults(usersWithTimestampCreatedAt, {
+      name: 'Alice',
+    }) as { name: string; createdAt?: unknown };
+    const normalized = normalizeDateFieldsForWrite(
+      usersWithTimestampCreatedAt,
+      withDefaults
+    ) as any;
+
+    expect(withDefaults.createdAt).toBeInstanceOf(Date);
+    expect(normalized).toMatchObject({ name: 'Alice' });
+    expect(normalized).not.toHaveProperty('createdAt');
     expect(normalized).not.toHaveProperty('_creationTime');
   });
 
-  test('hydrateDateFieldsForRead maps id and createdAt when date=true', () => {
-    const hydrated = hydrateDateFieldsForRead(
-      users,
-      {
-        _id: 'u1',
-        _creationTime: 1_700_000_000_000,
-        birthday: 1_600_000_000_000,
-      },
-      { createdAtAsDate: true }
-    ) as any;
+  test('hydrateDateFieldsForRead maps temporal fields and keeps system createdAt as number', () => {
+    const hydrated = hydrateDateFieldsForRead(users, {
+      _id: 'u1',
+      _creationTime: 1_700_000_000_000,
+      birthday: '2024-01-01',
+      holiday: '2024-02-01',
+      startsAt: 1_600_000_000_000,
+      loggedAt: 1_600_000_000_000,
+    }) as any;
 
     expect(hydrated).toMatchObject({
       id: 'u1',
+      createdAt: 1_700_000_000_000,
+      holiday: '2024-02-01',
     });
     expect(hydrated).not.toHaveProperty('_id');
     expect(hydrated).not.toHaveProperty('_creationTime');
-    expect(hydrated.createdAt).toBeInstanceOf(Date);
     expect(hydrated.birthday).toBeInstanceOf(Date);
+    expect(hydrated.startsAt).toBeInstanceOf(Date);
+    expect(typeof hydrated.loggedAt).toBe('string');
   });
 
-  test('hydrateDateFieldsForRead keeps user createdAt and hides _creationTime', () => {
-    const hydrated = hydrateDateFieldsForRead(
-      usersWithCreatedAt,
-      {
-        _id: 'u1',
-        _creationTime: 1_700_000_000_000,
-        name: 'Alice',
-        createdAt: 123,
-      },
-      { createdAtAsDate: true }
-    ) as any;
+  test('hydrateDateFieldsForRead reserves createdAt for system alias', () => {
+    const hydrated = hydrateDateFieldsForRead(usersWithCreatedAt, {
+      _id: 'u1',
+      _creationTime: 1_700_000_000_000,
+      name: 'Alice',
+      createdAt: 123,
+    }) as any;
 
     expect(hydrated).toMatchObject({
       id: 'u1',
       name: 'Alice',
-      createdAt: 123,
+      createdAt: 1_700_000_000_000,
     });
+    expect(hydrated).not.toHaveProperty('_creationTime');
+  });
+
+  test('hydrateDateFieldsForRead backfills missing timestamp createdAt from _creationTime', () => {
+    const hydrated = hydrateDateFieldsForRead(usersWithTimestampCreatedAt, {
+      _id: 'u1',
+      _creationTime: 1_700_000_000_000,
+      name: 'Alice',
+    }) as any;
+
+    expect(hydrated).toMatchObject({
+      id: 'u1',
+      name: 'Alice',
+    });
+    expect(hydrated.createdAt).toBeInstanceOf(Date);
+    expect(hydrated.createdAt.getTime()).toBe(1_700_000_000_000);
     expect(hydrated).not.toHaveProperty('_creationTime');
   });
 
@@ -290,35 +325,20 @@ describe('mutation-utils', () => {
       {
         _id: 'u1',
         _creationTime: 1_700_000_000_000,
-        birthday: 1_600_000_000_000,
+        birthday: '2024-01-01',
+        startsAt: 1_600_000_000_000,
       },
       {
         id: { columnName: '_id' },
         createdAt: { columnName: '_creationTime' },
         birthday: users.birthday,
-      },
-      { createdAtAsDate: true }
+        startsAt: users.startsAt,
+      }
     ) as any;
 
     expect(selected.id).toBe('u1');
-    expect(selected.createdAt).toBeInstanceOf(Date);
+    expect(selected.createdAt).toBe(1_700_000_000_000);
     expect(selected.birthday).toBeInstanceOf(Date);
-  });
-
-  test('hydrateDateFieldsForRead maps createdAt to number when date=false', () => {
-    const hydrated = hydrateDateFieldsForRead(
-      users,
-      {
-        _id: 'u1',
-        _creationTime: 1_700_000_000_000,
-      },
-      { createdAtAsDate: false }
-    ) as any;
-
-    expect(hydrated).toMatchObject({
-      id: 'u1',
-      createdAt: 1_700_000_000_000,
-    });
-    expect(hydrated).not.toHaveProperty('_creationTime');
+    expect(selected.startsAt).toBeInstanceOf(Date);
   });
 });

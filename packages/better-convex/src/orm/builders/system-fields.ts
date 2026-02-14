@@ -104,7 +104,7 @@ type ConvexSystemCreatedAtConfig = ColumnBuilderBaseConfig<
   'number',
   'ConvexSystemCreatedAt'
 > & {
-  data: number | Date;
+  data: number;
   driverParam: number;
   enumValues: undefined;
 };

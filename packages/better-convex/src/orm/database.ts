@@ -30,10 +30,8 @@ import {
   OrmContext,
   type OrmRuntimeOptions,
   OrmSchemaOptions,
-  type OrmTypeOptions,
 } from './symbols';
 import type { ConvexTable } from './table';
-import { resolveTypeOptions } from './timestamp-mode';
 import type { VectorSearchProvider } from './types';
 import { ConvexUpdateBuilder } from './update';
 
@@ -86,7 +84,6 @@ export type CreateDatabaseOptions = {
   scheduledDelete?: SchedulableFunctionReference;
   scheduledMutationBatch?: SchedulableFunctionReference;
   vectorSearch?: VectorSearchProvider;
-  types?: OrmTypeOptions;
   rls?: RlsContext;
   relationLoading?: {
     concurrency?: number;
@@ -150,7 +147,6 @@ export function createDatabase<TSchema extends TablesRelationalConfig>(
       scheduler: options?.scheduler,
       scheduledDelete: options?.scheduledDelete,
       scheduledMutationBatch: options?.scheduledMutationBatch,
-      types: resolveTypeOptions(options?.types),
       rls,
       strict,
       defaults,

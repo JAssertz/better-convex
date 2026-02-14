@@ -2,6 +2,7 @@
 export * from './builder';
 export * from './caller';
 export * from './caller-factory';
+export * from './env';
 export * from './error';
 export * from './http-builder';
 export * from './http-router';

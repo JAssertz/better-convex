@@ -365,11 +365,20 @@ Recommended patterns:
 - Avoid deep offset pagination for large tables
 - Use `with` to avoid N+1 queries
 
+## Temporal Types On Convex
+
+For Drizzle parity, `date()` and `timestamp()` exist in the ORM, but storage follows Convex rules:
+
+- `timestamp()` is the recommended type for point-in-time fields (`createdAt`, `updatedAt`, `expiresAt`).
+- `date()` is calendar-only (`YYYY-MM-DD` semantics).
+- Public ORM APIs use `createdAt`; Convex internal `_creationTime` is hidden.
+- `timestamp().defaultNow()` yields `Date` in ORM reads while underlying Convex storage stays numeric.
+
 ## Gotchas
 
 | Issue | Cause | Fix |
 |---|---|---|
-| **`ctx.orm` is missing** | ORM not attached to context | Attach ORM once (`createOrm({ schema, types: { date: true } }).db(ctx)`) |
+| **`ctx.orm` is missing** | ORM not attached to context | Attach ORM once (`createOrm({ schema }).db(ctx)`) |
 | **Convex internal IDs** | Convex stores `_id` internally | Use public `id` in ORM APIs |
 | **Convex internal creation time** | Convex stores `_creationTime` internally | Use public `createdAt` in ORM APIs |
 | **Nullable fields** | Nullable by default | Add `.notNull()` |

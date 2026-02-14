@@ -42,6 +42,27 @@ const CODEC_MARKER_VALUE = 1;
 const CODEC_TAG_KEY = 't';
 const CODEC_VALUE_KEY = 'v';
 
+const hasOnlyCodecPayloadKeys = (value: Record<string, unknown>): boolean => {
+  let keyCount = 0;
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) {
+      continue;
+    }
+    keyCount += 1;
+    if (
+      key !== CODEC_MARKER_KEY &&
+      key !== CODEC_TAG_KEY &&
+      key !== CODEC_VALUE_KEY
+    ) {
+      return false;
+    }
+    if (keyCount > 3) {
+      return false;
+    }
+  }
+  return keyCount === 3;
+};
+
 /**
  * Date wire tag (Convex-style reserved key).
  */
@@ -93,15 +114,37 @@ export const createTaggedTransformer = (
     }
 
     if (Array.isArray(value)) {
-      return value.map((item) => serialize(item));
+      let result: unknown[] | undefined;
+      for (let index = 0; index < value.length; index += 1) {
+        const item = value[index];
+        const serialized = serialize(item);
+        if (serialized !== item) {
+          if (!result) {
+            result = value.slice();
+          }
+          result[index] = serialized;
+        }
+      }
+      return result ?? value;
     }
 
     if (isPlainObject(value)) {
-      const result: Record<string, unknown> = {};
-      for (const [key, nested] of Object.entries(value)) {
-        result[key] = serialize(nested);
+      let result: Record<string, unknown> | undefined;
+      for (const key in value) {
+        if (!Object.hasOwn(value, key)) {
+          continue;
+        }
+
+        const nested = value[key];
+        const serialized = serialize(nested);
+        if (serialized !== nested) {
+          if (!result) {
+            result = { ...value };
+          }
+          result[key] = serialized;
+        }
       }
-      return result;
+      return result ?? value;
     }
 
     return value;
@@ -109,7 +152,18 @@ export const createTaggedTransformer = (
 
   const deserialize = (value: unknown): unknown => {
     if (Array.isArray(value)) {
-      return value.map((item) => deserialize(item));
+      let result: unknown[] | undefined;
+      for (let index = 0; index < value.length; index += 1) {
+        const item = value[index];
+        const deserialized = deserialize(item);
+        if (deserialized !== item) {
+          if (!result) {
+            result = value.slice();
+          }
+          result[index] = deserialized;
+        }
+      }
+      return result ?? value;
     }
 
     if (isPlainObject(value)) {
@@ -119,7 +173,7 @@ export const createTaggedTransformer = (
         marker === CODEC_MARKER_VALUE &&
         typeof tag === 'string' &&
         CODEC_VALUE_KEY in value &&
-        Object.keys(value).length === 3
+        hasOnlyCodecPayloadKeys(value)
       ) {
         const codec = codecByTag.get(tag);
         if (codec) {
@@ -127,12 +181,22 @@ export const createTaggedTransformer = (
         }
       }
 
-      const entries = Object.entries(value);
-      const result: Record<string, unknown> = {};
-      for (const [key, nested] of entries) {
-        result[key] = deserialize(nested);
+      let result: Record<string, unknown> | undefined;
+      for (const key in value) {
+        if (!Object.hasOwn(value, key)) {
+          continue;
+        }
+
+        const nested = value[key];
+        const deserialized = deserialize(nested);
+        if (deserialized !== nested) {
+          if (!result) {
+            result = { ...value };
+          }
+          result[key] = deserialized;
+        }
       }
-      return result;
+      return result ?? value;
     }
 
     return value;
@@ -150,6 +214,11 @@ export const createTaggedTransformer = (
 export const defaultCRPCTransformer: DataTransformer = createTaggedTransformer([
   dateWireCodec,
 ]);
+
+const DEFAULT_COMBINED_TRANSFORMER: CombinedDataTransformer = {
+  input: defaultCRPCTransformer,
+  output: defaultCRPCTransformer,
+};
 
 const IDENTITY_TRANSFORMER: CombinedDataTransformer = {
   input: {
@@ -202,6 +271,8 @@ const composeWithDefault = (transformer?: DataTransformer): DataTransformer => {
   };
 };
 
+const transformerCache = new WeakMap<object, CombinedDataTransformer>();
+
 /**
  * Normalize transformer config to split input/output shape.
  * User transformers are additive and always composed with default Date handling.
@@ -209,11 +280,24 @@ const composeWithDefault = (transformer?: DataTransformer): DataTransformer => {
 export const getTransformer = (
   transformer?: DataTransformerOptions
 ): CombinedDataTransformer => {
+  if (!transformer) {
+    return DEFAULT_COMBINED_TRANSFORMER;
+  }
+
+  const cacheKey = transformer as object;
+  const cached = transformerCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const custom = normalizeCustomTransformer(transformer);
-  return {
+  const resolved = {
     input: composeWithDefault(custom?.input),
     output: composeWithDefault(custom?.output),
   };
+
+  transformerCache.set(cacheKey, resolved);
+  return resolved;
 };
 
 /**

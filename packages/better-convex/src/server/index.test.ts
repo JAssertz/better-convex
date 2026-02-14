@@ -11,5 +11,6 @@ describe('server public exports', () => {
     expect(typeof server.createHttpRouter).toBe('function');
     expect(typeof server.createServerCaller).toBe('function');
     expect(typeof server.createLazyCaller).toBe('function');
+    expect(typeof server.createEnv).toBe('function');
   });
 });

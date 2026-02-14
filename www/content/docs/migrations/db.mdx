@@ -86,7 +86,7 @@ import type { GenericDatabaseReader, GenericDatabaseWriter } from 'convex/server
 import { createOrm } from 'better-convex/orm';
 import { relations } from '../schema';
 
-const orm = createOrm({ schema: relations, types: { date: true } });
+const orm = createOrm({ schema: relations });
 
 export const withOrm = <Ctx extends {
   db: GenericDatabaseReader<any> | GenericDatabaseWriter<any>;
@@ -107,7 +107,7 @@ const c = initCRPC
 
 Done once, every handler can read through `ctx.orm`.
 
-Use `types: { date: true }` when your handlers run through cRPC and you want ORM `createdAt` values hydrated as `Date`. Without it, `createdAt` stays `number`.
+Use `createdAt: timestamp().notNull().defaultNow()` on tables where your ORM rows should expose `createdAt: Date`. Without an explicit column, system `createdAt` stays `number`.
 
 ## Step 2: Migrate core reads
 

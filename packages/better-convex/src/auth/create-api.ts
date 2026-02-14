@@ -163,6 +163,56 @@ const withBothIdFields = <T extends Record<string, unknown>>(doc: T): T => {
   } as T;
 };
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+const serializeDatesForConvex = (value: unknown): unknown => {
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  if (Array.isArray(value)) {
+    let result: unknown[] | undefined;
+
+    for (let index = 0; index < value.length; index += 1) {
+      const entry = value[index];
+      const serialized = serializeDatesForConvex(entry);
+      if (serialized !== entry) {
+        if (!result) {
+          result = value.slice();
+        }
+        result[index] = serialized;
+      }
+    }
+
+    return result ?? value;
+  }
+
+  if (!isPlainObject(value)) {
+    return value;
+  }
+
+  let serialized: Record<string, unknown> | undefined;
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) {
+      continue;
+    }
+
+    const nested = value[key];
+    const encoded = serializeDatesForConvex(nested);
+    if (encoded !== nested) {
+      if (!serialized) {
+        serialized = { ...value };
+      }
+      serialized[key] = encoded;
+    }
+  }
+
+  return serialized ?? value;
+};
+
+const toConvexSafe = <T>(value: T): T => serializeDatesForConvex(value) as T;
+
 // Extracted handler functions
 export const createHandler = async (
   ctx: any,
@@ -184,10 +234,10 @@ export const createHandler = async (
   if (!args.skipBeforeHooks && args.beforeCreateHandle) {
     const transformedData = await ctx.runMutation(
       args.beforeCreateHandle as FunctionHandle<'mutation'>,
-      {
+      serializeDatesForConvex({
         data,
         model: args.input.model,
-      }
+      })
     );
 
     if (transformedData !== undefined) {
@@ -220,17 +270,20 @@ export const createHandler = async (
   }
 
   const normalizedDoc = ormTable ? withBothIdFields(doc) : doc;
-  const result = selectFields(normalizedDoc, args.select);
+  const result = await selectFields(normalizedDoc, args.select);
 
   if (args.onCreateHandle) {
     const hookDoc = normalizedDoc;
-    await ctx.runMutation(args.onCreateHandle as FunctionHandle<'mutation'>, {
-      doc: hookDoc,
-      model: args.input.model,
-    });
+    await ctx.runMutation(
+      args.onCreateHandle as FunctionHandle<'mutation'>,
+      serializeDatesForConvex({
+        doc: hookDoc,
+        model: args.input.model,
+      })
+    );
   }
 
-  return result;
+  return toConvexSafe(result);
 };
 
 export const findOneHandler = async (
@@ -242,7 +295,7 @@ export const findOneHandler = async (
   },
   schema: Schema,
   betterAuthSchema: any
-) => await listOne(ctx, schema, betterAuthSchema, args);
+) => toConvexSafe(await listOne(ctx, schema, betterAuthSchema, args));
 
 export const findManyHandler = async (
   ctx: any,
@@ -259,7 +312,7 @@ export const findManyHandler = async (
   },
   schema: Schema,
   betterAuthSchema: any
-) => await paginate(ctx, schema, betterAuthSchema, args);
+) => toConvexSafe(await paginate(ctx, schema, betterAuthSchema, args));
 
 export const updateOneHandler = async (
   ctx: any,
@@ -286,11 +339,11 @@ export const updateOneHandler = async (
   if (args.beforeUpdateHandle) {
     const transformedUpdate = await ctx.runMutation(
       args.beforeUpdateHandle as FunctionHandle<'mutation'>,
-      {
+      serializeDatesForConvex({
         doc,
         model: args.input.model,
         update,
-      }
+      })
     );
 
     if (transformedUpdate !== undefined) {
@@ -333,14 +386,17 @@ export const updateOneHandler = async (
 
   if (args.onUpdateHandle) {
     const hookNewDoc = normalizedUpdatedDoc;
-    await ctx.runMutation(args.onUpdateHandle as FunctionHandle<'mutation'>, {
-      model: args.input.model,
-      newDoc: hookNewDoc,
-      oldDoc: doc,
-    });
+    await ctx.runMutation(
+      args.onUpdateHandle as FunctionHandle<'mutation'>,
+      serializeDatesForConvex({
+        model: args.input.model,
+        newDoc: hookNewDoc,
+        oldDoc: doc,
+      })
+    );
   }
 
-  return normalizedUpdatedDoc;
+  return toConvexSafe(normalizedUpdatedDoc);
 };
 
 export const updateManyHandler = async (
@@ -389,11 +445,11 @@ export const updateManyHandler = async (
       if (args.beforeUpdateHandle) {
         const transformedUpdate = await ctx.runMutation(
           args.beforeUpdateHandle as FunctionHandle<'mutation'>,
-          {
+          serializeDatesForConvex({
             doc,
             model: args.input.model,
             update,
-          }
+          })
         );
 
         if (transformedUpdate !== undefined) {
@@ -425,21 +481,21 @@ export const updateManyHandler = async (
         const hookNewDoc = ormTable ? withBothIdFields(newDoc) : newDoc;
         await ctx.runMutation(
           args.onUpdateHandle as FunctionHandle<'mutation'>,
-          {
+          serializeDatesForConvex({
             model: args.input.model,
             newDoc: hookNewDoc,
             oldDoc: doc,
-          }
+          })
         );
       }
     });
   }
 
-  return {
+  return toConvexSafe({
     ...result,
     count: page.length,
     ids: page.map((doc: any) => doc._id),
-  };
+  });
 };
 
 export const deleteOneHandler = async (
@@ -467,10 +523,10 @@ export const deleteOneHandler = async (
   if (!args.skipBeforeHooks && args.beforeDeleteHandle) {
     const transformedDoc = await ctx.runMutation(
       args.beforeDeleteHandle as FunctionHandle<'mutation'>,
-      {
+      serializeDatesForConvex({
         doc,
         model: args.input.model,
-      }
+      })
     );
 
     if (transformedDoc !== undefined) {
@@ -491,13 +547,16 @@ export const deleteOneHandler = async (
   }
 
   if (args.onDeleteHandle) {
-    await ctx.runMutation(args.onDeleteHandle as FunctionHandle<'mutation'>, {
-      doc: hookDoc,
-      model: args.input.model,
-    });
+    await ctx.runMutation(
+      args.onDeleteHandle as FunctionHandle<'mutation'>,
+      serializeDatesForConvex({
+        doc: hookDoc,
+        model: args.input.model,
+      })
+    );
   }
 
-  return hookDoc;
+  return toConvexSafe(hookDoc);
 };
 
 export const deleteManyHandler = async (
@@ -531,10 +590,10 @@ export const deleteManyHandler = async (
     if (!args.skipBeforeHooks && args.beforeDeleteHandle) {
       const transformedDoc = await ctx.runMutation(
         args.beforeDeleteHandle as FunctionHandle<'mutation'>,
-        {
+        serializeDatesForConvex({
           doc,
           model: args.input.model,
-        }
+        })
       );
 
       if (transformedDoc !== undefined) {
@@ -549,18 +608,21 @@ export const deleteManyHandler = async (
     }
 
     if (args.onDeleteHandle) {
-      await ctx.runMutation(args.onDeleteHandle as FunctionHandle<'mutation'>, {
-        doc: hookDoc,
-        model: args.input.model,
-      });
+      await ctx.runMutation(
+        args.onDeleteHandle as FunctionHandle<'mutation'>,
+        serializeDatesForConvex({
+          doc: hookDoc,
+          model: args.input.model,
+        })
+      );
     }
   });
 
-  return {
+  return toConvexSafe({
     ...result,
     count: page.length,
     ids: page.map((doc: any) => doc._id),
-  };
+  });
 };
 
 export const createApi = <Schema extends SchemaDefinition<any, any>>(

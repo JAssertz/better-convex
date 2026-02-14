@@ -144,6 +144,7 @@ import {
   id,
   index,
   integer,
+  timestamp,
   text,
 } from 'better-convex/orm';
 
@@ -154,7 +155,7 @@ export const user = convexTable(
     email: text().notNull(),
     emailVerified: boolean().notNull(),
     image: text(),
-    createdAt: integer().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
     updatedAt: integer().notNull(),
 
     // Admin plugin
@@ -171,7 +172,7 @@ export const session = convexTable(
   {
     token: text().notNull(),
     expiresAt: integer().notNull(),
-    createdAt: integer().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
     updatedAt: integer().notNull(),
     ipAddress: text(),
     userAgent: text(),
@@ -196,7 +197,7 @@ export const account = convexTable(
     refreshTokenExpiresAt: integer(),
     scope: text(),
     password: text(),
-    createdAt: integer().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
     updatedAt: integer().notNull(),
   },
   (t) => [index('accountId').on(t.accountId), index('userId').on(t.userId)]
@@ -208,7 +209,7 @@ export const verification = convexTable(
     identifier: text().notNull(),
     value: text().notNull(),
     expiresAt: integer().notNull(),
-    createdAt: integer(),
+    createdAt: timestamp(),
     updatedAt: integer(),
   },
   (t) => [index('identifier').on(t.identifier)]
@@ -217,7 +218,7 @@ export const verification = convexTable(
 export const jwks = convexTable('jwks', {
   publicKey: text().notNull(),
   privateKey: text().notNull(),
-  createdAt: integer().notNull(),
+  createdAt: timestamp().notNull().defaultNow(),
 });
 
 // Example: optional profile table for post-signup setup
@@ -246,7 +247,7 @@ import { createOrm } from 'better-convex/orm';
 import type { MutationCtx, QueryCtx } from '../functions/_generated/server';
 import { relations } from '../functions/schema';
 
-export const orm = createOrm({ schema: relations, types: { date: true } });
+export const orm = createOrm({ schema: relations });
 
 export const withOrm = <Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) => ({
   ...ctx,
@@ -254,15 +255,15 @@ export const withOrm = <Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) => ({
 });
 ```
 
-Recommended default for ORM + cRPC: `types: { date: true }`, so system `createdAt` values are hydrated as `Date`.
+Recommended default for ORM + cRPC: declare `createdAt: timestamp().notNull().defaultNow()` on tables where you want Date values.
 
-Native (number timestamps) mode:
+Native (number timestamp) mode:
 
 ```ts title="convex/lib/orm.ts"
 export const orm = createOrm({ schema: relations });
 ```
 
-In native mode, system `createdAt` remains `number`.
+In native mode (no explicit `createdAt` column), system `createdAt` remains `number`.
 
 ### crpc.ts
 

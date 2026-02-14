@@ -27,7 +27,7 @@ test('getTableColumns includes system fields', () => {
   expect(columns).not.toHaveProperty('_creationTime');
 });
 
-test('getTableColumns keeps user createdAt column when present', () => {
+test('getTableColumns reserves createdAt as system _creationTime when present', () => {
   const users = convexTable('users_with_created_at_introspection', {
     name: text().notNull(),
     createdAt: text().notNull(),
@@ -35,7 +35,7 @@ test('getTableColumns keeps user createdAt column when present', () => {
 
   const columns = getTableColumns(users) as any;
   expect(columns).toHaveProperty('createdAt');
-  expect(columns.createdAt.config.name).toBe('createdAt');
+  expect(columns.createdAt.config.name).toBe('_creationTime');
   expect(columns).not.toHaveProperty('_creationTime');
 });
 

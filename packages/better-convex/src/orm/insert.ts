@@ -20,7 +20,6 @@ import {
 import { QueryPromise } from './query-promise';
 import { canInsertRow, evaluateUpdateDecision } from './rls/evaluator';
 import type { ConvexTable } from './table';
-import { shouldHydrateCreatedAtAsDate } from './timestamp-mode';
 import type {
   InsertValue,
   MutationResult,
@@ -142,15 +141,11 @@ export class ConvexInsertBuilder<
       throw new Error('values() must be called before execute()');
     }
 
-    const createdAtAsDate = shouldHydrateCreatedAtAsDate(
-      getOrmContext(this.db)
-    );
     const results: Record<string, unknown>[] = [];
     for (const value of this.valuesList) {
       const preparedValue = normalizeDateFieldsForWrite(
         this.table,
-        applyDefaults(this.table, value as any),
-        { createdAtAsDate }
+        applyDefaults(this.table, value as any)
       );
       const ormContext = getOrmContext(this.db);
       const rls = ormContext?.rls;
@@ -176,9 +171,7 @@ export class ConvexInsertBuilder<
 
       if (conflictResult?.status === 'updated') {
         if (conflictResult.row && this.returningFields) {
-          results.push(
-            this.resolveReturningRow(conflictResult.row, createdAtAsDate)
-          );
+          results.push(this.resolveReturningRow(conflictResult.row));
         }
         continue;
       }
@@ -198,9 +191,7 @@ export class ConvexInsertBuilder<
 
       const inserted = await this.db.get(id as any);
       if (inserted) {
-        results.push(
-          this.resolveReturningRow(inserted as any, createdAtAsDate)
-        );
+        results.push(this.resolveReturningRow(inserted as any));
       }
     }
 
@@ -211,18 +202,14 @@ export class ConvexInsertBuilder<
     return results as MutationResult<TTable, TReturning>;
   }
 
-  private resolveReturningRow(
-    row: Record<string, unknown>,
-    createdAtAsDate: boolean
-  ) {
+  private resolveReturningRow(row: Record<string, unknown>) {
     if (this.returningFields === true) {
-      return hydrateDateFieldsForRead(this.table, row, { createdAtAsDate });
+      return hydrateDateFieldsForRead(this.table, row);
     }
     return selectReturningRowWithHydration(
       this.table,
       row,
-      this.returningFields as any,
-      { createdAtAsDate }
+      this.returningFields as any
     );
   }
 
@@ -286,7 +273,6 @@ export class ConvexInsertBuilder<
 
     const tableName = getTableName(this.table);
     const ormContext = getOrmContext(this.db);
-    const createdAtAsDate = shouldHydrateCreatedAtAsDate(ormContext);
     const rls = ormContext?.rls;
 
     // Normalize set(): ignore `undefined` (noop), translate unsetToken -> `undefined` (unset).
@@ -333,9 +319,7 @@ export class ConvexInsertBuilder<
       ...onUpdateSet,
       ...normalizedSet,
     };
-    const writeSet = normalizeDateFieldsForWrite(this.table, effectiveSet, {
-      createdAtAsDate,
-    });
+    const writeSet = normalizeDateFieldsForWrite(this.table, effectiveSet);
 
     const updateDecision = evaluateUpdateDecision({
       table: this.table,

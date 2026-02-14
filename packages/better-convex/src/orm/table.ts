@@ -484,6 +484,17 @@ function assertColumnInTable(
   return getColumnName(column);
 }
 
+function assertNoReservedCreatedAtIndexFields(
+  fields: readonly string[],
+  context: string
+): void {
+  if (fields.includes('createdAt')) {
+    throw new Error(
+      `${context} cannot use 'createdAt'. 'createdAt' is reserved and maps to internal '_creationTime'.`
+    );
+  }
+}
+
 function assertSearchFieldType(
   column: ColumnBuilderBase,
   indexName: string
@@ -587,6 +598,7 @@ function applyExtraConfig<T extends TableConfig>(
       const fields = columns.map((column) =>
         assertColumnInTable(column, table.tableName, `Index '${name}'`)
       );
+      assertNoReservedCreatedAtIndexFields(fields, `Index '${name}'`);
 
       table.addIndex(name, fields);
       if (unique) {
@@ -600,6 +612,7 @@ function applyExtraConfig<T extends TableConfig>(
       const fields = columns.map((column) =>
         assertColumnInTable(column, table.tableName, 'Unique constraint')
       );
+      assertNoReservedCreatedAtIndexFields(fields, 'Unique constraint');
       const indexName = getUniqueIndexName(table.tableName, fields, name);
       table.addIndex(indexName, fields);
       table.addUniqueIndex(indexName, fields, nullsNotDistinct);
@@ -668,10 +681,18 @@ function applyExtraConfig<T extends TableConfig>(
         table.tableName,
         `Search index '${name}'`
       );
+      assertNoReservedCreatedAtIndexFields(
+        [searchFieldName],
+        `Search index '${name}'`
+      );
       assertSearchFieldType(searchField, name);
 
       const filterFieldNames = filterFields.map((field) =>
         assertColumnInTable(field, table.tableName, `Search index '${name}'`)
+      );
+      assertNoReservedCreatedAtIndexFields(
+        filterFieldNames,
+        `Search index '${name}'`
       );
 
       table.addSearchIndex(name, {
@@ -697,6 +718,10 @@ function applyExtraConfig<T extends TableConfig>(
         table.tableName,
         `Vector index '${name}'`
       );
+      assertNoReservedCreatedAtIndexFields(
+        [vectorFieldName],
+        `Vector index '${name}'`
+      );
       assertVectorFieldType(vectorField, name);
 
       const columnDimensions = getColumnDimensions(vectorField);
@@ -708,6 +733,10 @@ function applyExtraConfig<T extends TableConfig>(
 
       const filterFieldNames = filterFields.map((field) =>
         assertColumnInTable(field, table.tableName, `Vector index '${name}'`)
+      );
+      assertNoReservedCreatedAtIndexFields(
+        filterFieldNames,
+        `Vector index '${name}'`
       );
 
       table.addVectorIndex(name, {

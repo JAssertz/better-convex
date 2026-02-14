@@ -67,6 +67,7 @@ export type {
   ConvexCustomBuilderInitial,
   ConvexDateBuilder,
   ConvexDateBuilderInitial,
+  ConvexDateMode,
   ConvexIdBuilder,
   ConvexIdBuilderInitial,
   ConvexNumberBuilder,
@@ -75,6 +76,9 @@ export type {
   ConvexTextBuilderInitial,
   ConvexTextEnumBuilder,
   ConvexTextEnumBuilderInitial,
+  ConvexTimestampBuilder,
+  ConvexTimestampBuilderInitial,
+  ConvexTimestampMode,
   ConvexVectorBuilder,
   ConvexVectorBuilderInitial,
   DrizzleEntity,
@@ -95,6 +99,7 @@ export {
   json,
   text,
   textEnum,
+  timestamp,
   vector,
 } from './builders';
 export {

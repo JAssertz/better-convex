@@ -22,11 +22,35 @@ The ORM mirrors Drizzle's relational query builder while adapting to Convex's do
 Here's a quick summary of the key differences you'll encounter coming from a SQL-based ORM:
 
 - `id` and `createdAt` are auto-created by Convex
-- `createdAt` is `number` by default, or `Date` with `createOrm({ types: { date: true } })` + cRPC
+- System `createdAt` is `number`; define `createdAt: timestamp().notNull().defaultNow()` for `Date`
+- `timestamp()` is the recommended point-in-time type for audit fields like `createdAt` / `updatedAt`
+- `date()` is calendar-only (`YYYY-MM-DD`) and should be used for date-without-time fields
 - Fields are nullable by default (`text()` -> `string | null`)
 - `columns` projection and string operators run post-fetch
 - `with` is relation loading (no SQL joins)
 - Cursor pagination needs an index on the primary `orderBy` field
+
+## Timestamps And Dates
+
+The ORM keeps Convex storage constraints and gives you a stronger public type API:
+
+- Public system fields are `id` and `createdAt` in ORM APIs.
+- Internal Convex fields (`_id`, `_creationTime`) stay internal-only in ORM APIs.
+- `timestamp()` gives point-in-time semantics and returns `Date` by default.
+- `date()` gives calendar-date semantics and can return `string` or `Date` depending on mode.
+
+For most tables, define an explicit timestamp column:
+
+```ts title="convex/schema.ts" showLineNumbers
+import { convexTable, text, timestamp } from 'better-convex/orm';
+
+export const posts = convexTable('posts', {
+  title: text().notNull(),
+  createdAt: timestamp().notNull().defaultNow(), // Date in ORM API
+});
+```
+
+With cRPC, Date wire serialization is built in, so `Date` values round-trip without manual `getTime()` calls.
 
 ## Quick Example
 

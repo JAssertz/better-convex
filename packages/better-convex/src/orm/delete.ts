@@ -24,7 +24,6 @@ import {
 import { QueryPromise } from './query-promise';
 import { canDeleteRow } from './rls/evaluator';
 import type { ConvexTable } from './table';
-import { shouldHydrateCreatedAtAsDate } from './timestamp-mode';
 import type {
   MutationAsyncConfig,
   MutationExecuteConfig,
@@ -229,7 +228,6 @@ export class ConvexDeleteBuilder<
     const config = args[0] as MutationExecuteConfig | undefined;
     const tableName = getTableName(this.table);
     const ormContext = getOrmContext(this.db);
-    const createdAtAsDate = shouldHydrateCreatedAtAsDate(ormContext);
     const strict = ormContext?.strict ?? true;
     const allowFullScan = this.allowFullScanFlag;
     const pagination = this.paginateConfig;
@@ -525,20 +523,13 @@ export class ConvexDeleteBuilder<
       visited.add(`${tableName}:${(row as any)._id}`);
       if (this.returningFields) {
         if (this.returningFields === true) {
-          results.push(
-            hydrateDateFieldsForRead(this.table, row as any, {
-              createdAtAsDate,
-            })
-          );
+          results.push(hydrateDateFieldsForRead(this.table, row as any));
         } else {
           results.push(
             selectReturningRowWithHydration(
               this.table,
               row as any,
-              this.returningFields as any,
-              {
-                createdAtAsDate,
-              }
+              this.returningFields as any
             )
           );
         }

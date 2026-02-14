@@ -16,7 +16,6 @@ import { extractRelationsConfig } from './extractRelationsConfig';
 import type { TablesRelationalConfig } from './relations';
 import { scheduledDeleteFactory } from './scheduled-delete';
 import { scheduledMutationBatchFactory } from './scheduled-mutation-batch';
-import type { OrmTypeOptions } from './symbols';
 import type { VectorSearchProvider } from './types';
 
 export type OrmFunctions = {
@@ -65,7 +64,6 @@ type GenericOrmCtx<
 
 type CreateOrmConfigBase<TSchema extends TablesRelationalConfig> = {
   schema: TSchema;
-  types?: OrmTypeOptions;
   internalMutation?: typeof internalMutationGeneric;
 };
 
@@ -106,8 +104,7 @@ function isOrmCtx(source: OrmSource): source is OrmReaderCtx | OrmWriterCtx {
 
 function createDbFactory<TSchema extends TablesRelationalConfig>(
   schema: TSchema,
-  ormFunctions?: OrmFunctions,
-  types?: OrmTypeOptions
+  ormFunctions?: OrmFunctions
 ): OrmFactory<TSchema> {
   const edgeMetadata = extractRelationsConfig(schema as TablesRelationalConfig);
   return (<TSource extends OrmSource>(
@@ -128,7 +125,6 @@ function createDbFactory<TSchema extends TablesRelationalConfig>(
 
     return createDatabase(rawDb, schema, edgeMetadata, {
       ...options,
-      types: options?.types ?? types,
       scheduler,
       vectorSearch,
       scheduledDelete,
@@ -151,7 +147,7 @@ export function createOrm<TSchema extends TablesRelationalConfig>(
   const edgeMetadata = extractRelationsConfig(
     config.schema as TablesRelationalConfig
   );
-  const db = createDbFactory(config.schema, config.ormFunctions, config.types);
+  const db = createDbFactory(config.schema, config.ormFunctions);
 
   if (!config.ormFunctions) {
     return { db };

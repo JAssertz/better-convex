@@ -1007,8 +1007,8 @@ export type ApiInputs = inferApiInputs<Api>;
 export type ApiOutputs = inferApiOutputs<Api>;
 ```
 
-ORM default (with cRPC): use `createOrm({ schema, types: { date: true } })` so system `createdAt` is `Date`.
-Native path: keep `createdAt` as `number`.
+ORM + cRPC default: define `createdAt: timestamp().notNull().defaultNow()` on tables where you want `createdAt: Date`.
+Native path: omit explicit `createdAt` and system `createdAt` stays `number`.
 
 ### meta.ts
 

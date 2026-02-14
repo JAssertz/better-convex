@@ -23,6 +23,7 @@ import {
   zCustomMutation,
   zCustomQuery,
   zodOutputToConvex,
+  zodToConvex,
 } from 'convex-helpers/server/zod4';
 import { z } from 'zod';
 import {
@@ -296,6 +297,150 @@ type ProcedureBuilderDef<TMeta = object> = {
   isInternal?: boolean;
 };
 
+const replaceUnencodableOutputTypes = (schema: z.ZodTypeAny): z.ZodTypeAny => {
+  if (schema instanceof z.ZodDate) {
+    return z.any();
+  }
+
+  if (schema instanceof z.ZodArray) {
+    return z.array(
+      replaceUnencodableOutputTypes(schema.element as z.ZodTypeAny)
+    );
+  }
+
+  if (schema instanceof z.ZodObject) {
+    const nextShape: Record<string, z.ZodTypeAny> = {};
+    for (const [key, value] of Object.entries(schema.shape)) {
+      nextShape[key] = replaceUnencodableOutputTypes(value as z.ZodTypeAny);
+    }
+    return z.object(nextShape);
+  }
+
+  if (schema instanceof z.ZodUnion) {
+    return z.union(
+      schema.options.map((option) =>
+        replaceUnencodableOutputTypes(option as z.ZodTypeAny)
+      ) as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]
+    );
+  }
+
+  if (schema instanceof z.ZodOptional) {
+    return replaceUnencodableOutputTypes(
+      schema.unwrap() as z.ZodTypeAny
+    ).optional();
+  }
+
+  if (schema instanceof z.ZodNullable) {
+    return replaceUnencodableOutputTypes(
+      schema.unwrap() as z.ZodTypeAny
+    ).nullable();
+  }
+
+  if (schema instanceof z.ZodRecord) {
+    return z.record(
+      schema.keyType as z.ZodString,
+      replaceUnencodableOutputTypes(schema.valueType as z.ZodTypeAny)
+    );
+  }
+
+  return schema;
+};
+
+const replaceUnencodableInputTypes = (schema: z.ZodTypeAny): z.ZodTypeAny => {
+  if (schema instanceof z.ZodDate) {
+    return z.any();
+  }
+
+  if (schema instanceof z.ZodArray) {
+    return z.array(
+      replaceUnencodableInputTypes(schema.element as z.ZodTypeAny)
+    );
+  }
+
+  if (schema instanceof z.ZodObject) {
+    const nextShape: Record<string, z.ZodTypeAny> = {};
+    for (const [key, value] of Object.entries(schema.shape)) {
+      nextShape[key] = replaceUnencodableInputTypes(value as z.ZodTypeAny);
+    }
+    return z.object(nextShape);
+  }
+
+  if (schema instanceof z.ZodUnion) {
+    return z.union(
+      schema.options.map((option) =>
+        replaceUnencodableInputTypes(option as z.ZodTypeAny)
+      ) as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]
+    );
+  }
+
+  if (schema instanceof z.ZodOptional) {
+    return replaceUnencodableInputTypes(
+      schema.unwrap() as z.ZodTypeAny
+    ).optional();
+  }
+
+  if (schema instanceof z.ZodNullable) {
+    return replaceUnencodableInputTypes(
+      schema.unwrap() as z.ZodTypeAny
+    ).nullable();
+  }
+
+  if (schema instanceof z.ZodRecord) {
+    return z.record(
+      schema.keyType as z.ZodString,
+      replaceUnencodableInputTypes(schema.valueType as z.ZodTypeAny)
+    );
+  }
+
+  if (schema instanceof z.ZodDefault) {
+    return replaceUnencodableInputTypes(schema.removeDefault() as z.ZodTypeAny);
+  }
+
+  return schema;
+};
+
+const resolveConvexArgsShape = (
+  inputShape?: Record<string, z.ZodTypeAny>
+): Record<string, z.ZodTypeAny> | undefined => {
+  if (!inputShape) return;
+
+  const rawSchema = z.object(inputShape);
+  try {
+    zodToConvex(rawSchema as any);
+    return inputShape;
+  } catch {
+    const compatibleSchema = replaceUnencodableInputTypes(rawSchema);
+    try {
+      zodToConvex(compatibleSchema as any);
+      return (compatibleSchema as z.ZodObject<any>).shape;
+    } catch {
+      const permissiveShape = Object.fromEntries(
+        Object.keys(inputShape).map((key) => [key, z.any()])
+      ) as Record<string, z.ZodTypeAny>;
+      return permissiveShape;
+    }
+  }
+};
+
+const resolveConvexReturnsSchema = (
+  schema?: z.ZodTypeAny
+): z.ZodTypeAny | undefined => {
+  if (!schema) return;
+
+  try {
+    zodOutputToConvex(schema);
+    return schema;
+  } catch {
+    const compatibleSchema = replaceUnencodableOutputTypes(schema);
+    try {
+      zodOutputToConvex(compatibleSchema);
+      return compatibleSchema;
+    } catch {
+      return;
+    }
+  }
+};
+
 /**
  * Fluent procedure builder with full type inference
  *
@@ -308,12 +453,9 @@ type ProcedureBuilderDef<TMeta = object> = {
  */
 export class ProcedureBuilder<
   TBaseCtx,
-  // biome-ignore lint/correctness/noUnusedVariables: used in subclasses for type inference
-  TContext,
+  _TContext,
   TContextOverrides extends UnsetMarker | object = UnsetMarker,
-  // biome-ignore lint/correctness/noUnusedVariables: used in subclasses for type inference
   TInput extends UnsetMarker | z.ZodObject<any> = UnsetMarker,
-  // biome-ignore lint/correctness/noUnusedVariables: used in subclasses for type inference
   TOutput extends UnsetMarker | z.ZodTypeAny = UnsetMarker,
   TMeta extends object = object,
 > {
@@ -394,33 +536,40 @@ export class ProcedureBuilder<
   ) {
     const { middlewares, outputSchema, meta, functionConfig, isInternal } =
       this._def;
-    const mergedInput = this._getMergedInput();
+    const mergedInput = this._getMergedInput() as
+      | Record<string, z.ZodTypeAny>
+      | undefined;
+    const inputSchema = mergedInput ? z.object(mergedInput) : undefined;
+    const convexArgs = resolveConvexArgsShape(mergedInput);
 
     // Use customCtx for initial context transformation only
     const customFunction = customFn(
       baseFunction,
       customCtx(async (_ctx) => functionConfig.createContext(_ctx))
     );
-    const canUseConvexOutputValidator = (() => {
-      if (!outputSchema) return false;
-      try {
-        zodOutputToConvex(outputSchema);
-        return true;
-      } catch {
-        return false;
-      }
-    })();
+    const returnsSchema = resolveConvexReturnsSchema(outputSchema);
+    const typedReturnsSchema = returnsSchema as
+      | (TOutput extends z.ZodTypeAny ? TOutput : never)
+      | undefined;
+    const typedArgs = (convexArgs ?? {}) as TInput extends z.ZodObject<
+      infer TShape
+    >
+      ? TShape
+      : Record<string, never>;
+    const shouldValidateOutputWithZod =
+      !!outputSchema && returnsSchema !== outputSchema;
 
     const fn = customFunction({
-      args: mergedInput ?? {},
-      ...(outputSchema && canUseConvexOutputValidator
-        ? { returns: outputSchema }
-        : {}),
+      args: typedArgs,
+      ...(typedReturnsSchema ? { returns: typedReturnsSchema } : {}),
       handler: async (ctx: any, rawInput: any) => {
         const decodedInput =
           functionConfig.transformer.input.deserialize(rawInput);
+        const parsedInput = inputSchema
+          ? inputSchema.parse(decodedInput)
+          : decodedInput;
         // Create getRawInput function for middleware
-        const getRawInput: GetRawInputFn = async () => decodedInput;
+        const getRawInput: GetRawInputFn = async () => parsedInput;
 
         try {
           // Execute middleware chain with input access
@@ -428,25 +577,24 @@ export class ProcedureBuilder<
             middlewares,
             ctx,
             meta,
-            decodedInput,
+            parsedInput,
             getRawInput
           );
 
           // Call handler with middleware-modified context and input
           const handlerInput =
-            result.input === decodedInput
-              ? decodedInput
+            result.input === parsedInput
+              ? parsedInput
               : functionConfig.transformer.input.deserialize(
-                  result.input ?? decodedInput
+                  result.input ?? parsedInput
                 );
           const output = await handler({
             ctx: result.ctx,
             input: handlerInput,
           });
-          const validatedOutput =
-            !outputSchema || canUseConvexOutputValidator
-              ? output
-              : outputSchema.parse(output);
+          const validatedOutput = shouldValidateOutputWithZod
+            ? outputSchema.parse(output)
+            : output;
           return functionConfig.transformer.output.serialize(validatedOutput);
         } catch (cause) {
           const err = toCRPCError(cause);

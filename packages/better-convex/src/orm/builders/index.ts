@@ -50,6 +50,7 @@ export {
 export {
   ConvexDateBuilder,
   type ConvexDateBuilderInitial,
+  type ConvexDateMode,
   date,
 } from './date';
 // ID builder (Convex-specific)
@@ -85,6 +86,12 @@ export {
   type ConvexTextEnumBuilderInitial,
   textEnum,
 } from './text-enum';
+export {
+  ConvexTimestampBuilder,
+  type ConvexTimestampBuilderInitial,
+  type ConvexTimestampMode,
+  timestamp,
+} from './timestamp';
 // Vector builder (Convex vector search)
 export {
   ConvexVectorBuilder,
