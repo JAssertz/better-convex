@@ -80,20 +80,10 @@ export class ConvexIdBuilder<
  *
  * @example
  * id('users') → unnamed column referencing users table
- * id('col_name', 'users') → named column referencing users table
  */
 export function id<TTableName extends string>(
   tableName: TTableName
 ): ConvexIdBuilderInitial<'', TTableName>;
-export function id<TName extends string, TTableName extends string>(
-  name: TName,
-  tableName: TTableName
-): ConvexIdBuilderInitial<TName, TTableName>;
-export function id(a: string, b?: string) {
-  if (b !== undefined) {
-    // Two args: name + tableName
-    return new ConvexIdBuilder(a, b);
-  }
-  // One arg: just tableName (unnamed column)
-  return new ConvexIdBuilder('', a);
+export function id(tableName: string) {
+  return new ConvexIdBuilder('', tableName);
 }

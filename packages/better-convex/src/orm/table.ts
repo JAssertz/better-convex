@@ -287,6 +287,16 @@ type ForeignKeyDefinition = {
   onDelete?: ForeignKeyAction;
 };
 
+type DeferredForeignKeyDefinition = {
+  localColumnName: string;
+  ref: () => ColumnBuilderBase;
+  config: {
+    name?: string;
+    onUpdate?: ForeignKeyAction;
+    onDelete?: ForeignKeyAction;
+  };
+};
+
 export type ConvexDeletionConfig = {
   mode: OrmDeleteMode;
   delayMs?: number;
@@ -781,6 +791,8 @@ class ConvexTableImpl<T extends TableConfig> {
     nullsNotDistinct: boolean;
   }[] = [];
   private foreignKeys: ForeignKeyDefinition[] = [];
+  private deferredForeignKeys: DeferredForeignKeyDefinition[] = [];
+  private deferredForeignKeysResolved = false;
   private stagedDbIndexes: any[] = [];
   private searchIndexes: any[] = [];
   private stagedSearchIndexes: any[] = [];
@@ -880,24 +892,10 @@ class ConvexTableImpl<T extends TableConfig> {
 
       if (config?.foreignKeyConfigs?.length) {
         for (const foreignConfig of config.foreignKeyConfigs) {
-          const foreignColumn = foreignConfig.ref();
-          const foreignTableName = getColumnTableName(foreignColumn);
-          if (!foreignTableName) {
-            throw new Error(
-              `Foreign key on '${name}' references a column without a table.`
-            );
-          }
-
-          const foreignTable = getColumnTable(foreignColumn);
-          const foreignColumnName = getColumnName(foreignColumn);
-          this.addForeignKey({
-            name: foreignConfig.config.name,
-            columns: [columnName],
-            foreignTableName,
-            foreignTable: foreignTable as any,
-            foreignColumns: [foreignColumnName],
-            onDelete: foreignConfig.config.onDelete,
-            onUpdate: foreignConfig.config.onUpdate,
+          this.deferredForeignKeys.push({
+            localColumnName: columnName,
+            ref: foreignConfig.ref,
+            config: foreignConfig.config,
           });
         }
       }
@@ -1046,10 +1044,56 @@ class ConvexTableImpl<T extends TableConfig> {
     this.foreignKeys.push(definition);
   }
 
+  private resolveDeferredForeignKeys(): void {
+    if (this.deferredForeignKeysResolved) {
+      return;
+    }
+    this.deferredForeignKeysResolved = true;
+
+    for (const deferred of this.deferredForeignKeys) {
+      let foreignColumn: ColumnBuilderBase;
+      try {
+        foreignColumn = deferred.ref();
+      } catch (error) {
+        const reason = error instanceof Error ? ` ${error.message}` : '';
+        throw new Error(
+          `Failed to resolve foreign key reference for '${this.tableName}.${deferred.localColumnName}'. Use references(() => targetTable.column) after both tables are declared.${reason}`
+        );
+      }
+
+      const foreignTableName = getColumnTableName(foreignColumn);
+      if (!foreignTableName) {
+        throw new Error(
+          `Foreign key on '${this.tableName}.${deferred.localColumnName}' references a column without a table. Use references(() => targetTable.column).`
+        );
+      }
+
+      const foreignTable = getColumnTable(foreignColumn);
+      if (!foreignTable) {
+        throw new Error(
+          `Foreign key on '${this.tableName}.${deferred.localColumnName}' references a column without table metadata. Replace references(() => id('tableName')) with references(() => table.id).`
+        );
+      }
+      const foreignColumnName = getColumnName(foreignColumn);
+      this.addForeignKey({
+        name: deferred.config.name,
+        columns: [deferred.localColumnName],
+        foreignTableName,
+        foreignTable: foreignTable as any,
+        foreignColumns: [foreignColumnName],
+        onDelete: deferred.config.onDelete,
+        onUpdate: deferred.config.onUpdate,
+      });
+    }
+
+    this.deferredForeignKeys = [];
+  }
+
   /**
    * Internal: expose foreign key metadata for mutation enforcement
    */
   getForeignKeys(): ForeignKeyDefinition[] {
+    this.resolveDeferredForeignKeys();
     return this.foreignKeys;
   }
 

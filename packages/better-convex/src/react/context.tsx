@@ -232,7 +232,10 @@ export function createCRPCContext<TApi extends Record<string, unknown>>(
     }, [authStore, fetchAccessToken]);
 
     // Memoize the proxy to prevent recreation on every render
-    const proxy = useMemo(() => createCRPCOptionsProxy(api, meta), []);
+    const proxy = useMemo(
+      () => createCRPCOptionsProxy(api, meta, options.transformer),
+      []
+    );
 
     // Create vanilla client proxy for direct procedural calls
     const vanillaClient = useMemo(

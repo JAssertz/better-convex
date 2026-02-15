@@ -34,7 +34,6 @@ Add the admin plugin to your auth options:
 
 ```ts title="convex/functions/auth.ts" showLineNumbers {5-12}
 import { admin } from 'better-auth/plugins';
-import type { GenericCtx } from '../lib/crpc';
 
 const getAuthOptions = (ctx: GenericCtx) =>
   ({

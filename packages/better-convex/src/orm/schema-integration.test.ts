@@ -54,11 +54,12 @@ test('convexTable allows createdAt as user column', () => {
   expect((users as any).createdAt?.config?.name).toBe('createdAt');
 });
 
-test('references accepts detached id(_id, table) columns', () => {
-  const comments = convexTable('comments', {
+test('references resolves self references via table.id', () => {
+  let comments: ReturnType<typeof convexTable>;
+  comments = convexTable('comments', {
     content: text().notNull(),
-    parentId: id('comments')
-      .references(() => id('_id', 'comments'), { onDelete: 'cascade' })
+    parentId: text()
+      .references(() => comments.id, { onDelete: 'cascade' })
       .notNull(),
   });
 
@@ -75,4 +76,46 @@ test('references accepts detached id(_id, table) columns', () => {
       }),
     ])
   );
+});
+
+test('references resolves forward references via table.id', () => {
+  const posts = convexTable('posts', {
+    title: text().notNull(),
+    userId: text()
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+  });
+
+  const users = convexTable('users', {
+    name: text().notNull(),
+  });
+
+  expect(() => defineSchema({ posts, users })).not.toThrow();
+
+  const config = getTableConfig(posts);
+  expect(config.foreignKeys).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        columns: ['userId'],
+        foreignTableName: 'users',
+        foreignColumns: ['_id'],
+        onDelete: 'cascade',
+      }),
+    ])
+  );
+});
+
+test('references rejects detached id(table) callbacks', () => {
+  const users = convexTable('users', {
+    name: text().notNull(),
+  });
+
+  const posts = convexTable('posts', {
+    title: text().notNull(),
+    userId: text()
+      .references(() => id('users'), { onDelete: 'cascade' })
+      .notNull(),
+  });
+
+  expect(() => getTableConfig(posts)).toThrow(/without table metadata/i);
 });

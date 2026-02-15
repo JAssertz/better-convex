@@ -20,6 +20,7 @@ import {
 import type { FunctionArgs, FunctionReference } from 'convex/server';
 import { getFunctionName } from 'convex/server';
 import { convexAction, convexQuery } from '../crpc/query-options';
+import type { DataTransformerOptions } from '../crpc/transformer';
 import {
   type ConvexQueryHookOptions,
   type CRPCClient,
@@ -59,7 +60,8 @@ function getQueryKeyPrefix(
 function createRecursiveProxy(
   api: Record<string, unknown>,
   path: string[],
-  meta: CallerMeta
+  meta: CallerMeta,
+  transformer?: DataTransformerOptions
 ): unknown {
   return new Proxy(
     // Use a function as target so the proxy is callable
@@ -198,19 +200,21 @@ function createRecursiveProxy(
             if (fnType === 'action') {
               return useConvexActionOptions(
                 funcRef as FunctionReference<'action'>,
-                opts as Parameters<typeof useConvexActionOptions>[1]
+                opts as Parameters<typeof useConvexActionOptions>[1],
+                transformer
               );
             }
 
             return useConvexMutationOptions(
               funcRef as FunctionReference<'mutation'>,
-              opts as Parameters<typeof useConvexMutationOptions>[1]
+              opts as Parameters<typeof useConvexMutationOptions>[1],
+              transformer
             );
           };
         }
 
         // Continue path accumulation
-        return createRecursiveProxy(api, [...path, prop], meta);
+        return createRecursiveProxy(api, [...path, prop], meta, transformer);
       },
     }
   );
@@ -241,7 +245,8 @@ function createRecursiveProxy(
  */
 export function createCRPCOptionsProxy<TApi extends Record<string, unknown>>(
   api: TApi,
-  meta: CallerMeta
+  meta: CallerMeta,
+  transformer?: DataTransformerOptions
 ): CRPCClient<TApi> {
-  return createRecursiveProxy(api, [], meta) as CRPCClient<TApi>;
+  return createRecursiveProxy(api, [], meta, transformer) as CRPCClient<TApi>;
 }

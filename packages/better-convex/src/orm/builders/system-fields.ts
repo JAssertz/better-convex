@@ -7,7 +7,6 @@
  * These are automatically added to every Convex table.
  */
 
-import type { GenericId } from 'convex/values';
 import { v } from 'convex/values';
 import {
   ColumnBuilder,
@@ -20,22 +19,18 @@ import {
  * System ID field builder (public id, internal _id)
  * Always present, always non-null
  */
-type ConvexSystemIdConfig<TTableName extends string> = ColumnBuilderBaseConfig<
+type ConvexSystemIdConfig = ColumnBuilderBaseConfig<
   'string',
   'ConvexSystemId'
 > & {
-  data: GenericId<TTableName>;
-  driverParam: GenericId<TTableName>;
+  data: string;
+  driverParam: string;
   enumValues: undefined;
 };
 
 export class ConvexSystemIdBuilder<
   TTableName extends string,
-> extends ColumnBuilder<
-  ConvexSystemIdConfig<TTableName>,
-  {},
-  { notNull: true }
-> {
+> extends ColumnBuilder<ConvexSystemIdConfig, {}, { notNull: true }> {
   static readonly [entityKind]: string = 'ConvexSystemIdBuilder';
   readonly [entityKind]: string = 'ConvexSystemIdBuilder';
 

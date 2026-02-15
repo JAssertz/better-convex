@@ -287,8 +287,6 @@ import { registerTriggers } from './triggers';
 // Types
 // =============================================================================
 
-export type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
-
 type SessionUser = {
   id: Id<'user'>;
   plan?: 'premium' | null;
@@ -594,12 +592,8 @@ import type { appRouter } from '../functions/http';
 import type { tables } from '../functions/schema';
 
 export type TableName = keyof typeof tables;
-export type Select<TTableName extends TableName> = InferSelectModel<
-  (typeof tables)[TTableName]
->;
-export type Insert<TTableName extends TableName> = InferInsertModel<
-  (typeof tables)[TTableName]
->;
+export type Select<T extends TableName> = InferSelectModel<(typeof tables)[T]>;
+export type Insert<T extends TableName> = InferInsertModel<(typeof tables)[T]>;
 
 // API type with HTTP router (http is optional for type inference)
 export type Api = WithHttpRouter<typeof api, typeof appRouter>;
@@ -633,13 +627,14 @@ import { createApi, createClient, type AuthFunctions } from 'better-convex/auth'
 
 import { internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
-import type { MutationCtx, QueryCtx } from './_generated/server';
-import type { GenericCtx } from '../lib/crpc';
+import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
 import { withOrm } from '../lib/orm';
 import { registerTriggers } from '../lib/triggers';
 
 import authConfig from './auth.config';
 import schema, { profiles } from './schema';
+
+type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
 
 const authFunctions: AuthFunctions = internal.auth;
 const dbTriggers = registerTriggers();

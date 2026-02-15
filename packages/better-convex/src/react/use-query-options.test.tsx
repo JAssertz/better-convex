@@ -2,6 +2,7 @@ import { skipToken } from '@tanstack/react-query';
 import { renderHook } from '@testing-library/react';
 import * as convexReact from 'convex/react';
 import { makeFunctionReference } from 'convex/server';
+import { encodeWire } from '../crpc/transformer';
 import type { AuthType } from '../internal/auth';
 import * as authModule from '../internal/auth';
 import * as authStoreModule from './auth-store';
@@ -153,6 +154,31 @@ describe('use-query-options', () => {
     expect(convexMutation).toHaveBeenCalledTimes(0);
   });
 
+  test('useConvexMutationOptions serializes Date args before calling convex mutation', async () => {
+    const fn = makeFunctionReference<'mutation'>('todos:create');
+
+    useAuthGuardSpy.mockImplementation(() => (() => false) as any);
+    useFnMetaSpy.mockImplementation(
+      () => (() => ({ auth: 'optional' satisfies AuthType })) as any
+    );
+
+    const convexMutation = mock(async () => ({ ok: true }));
+    useConvexMutationSpy.mockImplementation(() => convexMutation as any);
+
+    const { result } = renderHook(() => useConvexMutationOptions(fn));
+    const dueDate = new Date('2026-02-02T23:00:00.000Z');
+
+    await result.current.mutationFn?.(
+      { dueDate, title: 'x' } as any,
+      mutationFnContext
+    );
+
+    expect(convexMutation).toHaveBeenCalledTimes(1);
+    expect(convexMutation).toHaveBeenCalledWith(
+      encodeWire({ dueDate, title: 'x' })
+    );
+  });
+
   test('useConvexActionOptions runs action when not guarded', async () => {
     const fn = makeFunctionReference<'action'>('ai:generate');
 
@@ -173,6 +199,31 @@ describe('use-query-options', () => {
     );
     expect(out).toEqual({ ok: true });
     expect(convexAction).toHaveBeenCalledTimes(1);
+  });
+
+  test('useConvexActionOptions serializes Date args before calling convex action', async () => {
+    const fn = makeFunctionReference<'action'>('workers:run');
+
+    useAuthGuardSpy.mockImplementation(() => (() => false) as any);
+    useFnMetaSpy.mockImplementation(
+      () => (() => ({ auth: 'optional' satisfies AuthType })) as any
+    );
+
+    const convexAction = mock(async () => ({ ok: true }));
+    useConvexActionSpy.mockImplementation(() => convexAction as any);
+
+    const { result } = renderHook(() => useConvexActionOptions(fn));
+    const runAt = new Date('2026-02-03T10:00:00.000Z');
+
+    await result.current.mutationFn?.(
+      { runAt, force: true } as any,
+      mutationFnContext
+    );
+
+    expect(convexAction).toHaveBeenCalledTimes(1);
+    expect(convexAction).toHaveBeenCalledWith(
+      encodeWire({ runAt, force: true })
+    );
   });
 
   test('useUploadMutationOptions uploads via presigned URL and returns result', async () => {

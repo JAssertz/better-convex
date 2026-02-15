@@ -324,8 +324,6 @@ import { rateLimitGuard } from "./rate-limiter";
 // Types
 // =============================================================================
 
-export type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
-
 type SessionUser = {
   id: Id<"user">;
   plan?: "premium" | null;
@@ -664,8 +662,6 @@ import { registerTriggers } from "./triggers";
 // =============================================================================
 // Types
 // =============================================================================
-
-export type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
 
 type SessionUser = {
   id: Id<"user">;
@@ -1039,12 +1035,13 @@ import {
   type AuthFunctions,
 } from "better-convex/auth";
 import { internal } from "./_generated/api";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
-import type { GenericCtx } from "../lib/crpc";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import type { DataModel } from "./_generated/dataModel";
 import { internalMutationWithTriggers } from "../lib/crpc";
 import schema from "./schema";
 import authConfig from "./auth.config";
+
+type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
 
 const authFunctions: AuthFunctions = internal.auth;
 

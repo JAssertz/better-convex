@@ -150,4 +150,59 @@ describe('createCRPCContext', () => {
       createVanillaProxySpy.mockRestore();
     }
   });
+
+  test('forwards transformer option to CRPC proxies', () => {
+    const createOptionsProxySpy = spyOn(
+      proxyModule,
+      'createCRPCOptionsProxy'
+    ).mockReturnValue({ foo: 'bar' } as any);
+    const createVanillaProxySpy = spyOn(
+      vanillaClientModule,
+      'createVanillaCRPCProxy'
+    ).mockReturnValue({ foo: 'baz' } as any);
+
+    const transformer = {
+      serialize: (value: unknown) => value,
+      deserialize: (value: unknown) => value,
+    };
+    const meta = {} as any;
+    const api = {} as any;
+
+    try {
+      const convexQueryClient = {} as any;
+      const convexClient = {} as any;
+
+      const { CRPCProvider } = createCRPCContext({
+        api,
+        meta,
+        transformer,
+      });
+
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <CRPCProvider
+          convexClient={convexClient}
+          convexQueryClient={convexQueryClient}
+        >
+          {children}
+        </CRPCProvider>
+      );
+
+      renderHook(() => useMeta(), { wrapper });
+
+      expect(createOptionsProxySpy).toHaveBeenCalledWith(
+        api,
+        meta,
+        transformer
+      );
+      expect(createVanillaProxySpy).toHaveBeenCalledWith(
+        api,
+        meta,
+        convexClient,
+        transformer
+      );
+    } finally {
+      createOptionsProxySpy.mockRestore();
+      createVanillaProxySpy.mockRestore();
+    }
+  });
 });
