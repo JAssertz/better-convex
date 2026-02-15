@@ -40,7 +40,7 @@ Pin `better-auth` to avoid breaking changes. Check [Better Auth releases](https:
 Next, we'll create the auth configuration file. This tells Convex how to validate JWTs using Static JWKS:
 
 ```ts title="convex/functions/auth.config.ts" showLineNumbers {4-6}
-import { getAuthConfigProvider } from 'better-convex/auth';
+import { getAuthConfigProvider } from 'better-convex/auth-config';
 import type { AuthConfig } from 'convex/server';
 
 export default {
@@ -61,7 +61,7 @@ import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
 import type { DataModel } from './_generated/dataModel';
 import schema from './schema';
 import authConfig from './auth.config';
-import { getOrmCtx } from '../lib/orm';
+import { withOrm } from '../lib/orm';
 import { registerTriggers } from '../lib/triggers';
 
 type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
@@ -73,7 +73,7 @@ export const authClient = createClient<DataModel, typeof schema>({
   authFunctions,
   schema,
   dbTriggers: triggers, // Optional: wrap ctx.db with convex-helpers triggers
-  context: getOrmCtx, // Optional: enrich auth mutation + trigger ctx once
+  context: withOrm, // Optional: enrich auth mutation + trigger ctx once
   triggers: {
     user: {
       beforeCreate: async (_ctx, data) => {
@@ -148,7 +148,7 @@ export const {
   rotateKeys,
 } = createApi(schema, getAuth, {
   dbTriggers: triggers, // Optional: same db trigger wrapper
-  context: getOrmCtx, // Optional: same context enrichment
+  context: withOrm, // Optional: same context enrichment
   skipValidation: true, // Smaller generated types
 });
 
@@ -511,17 +511,17 @@ export { triggers };
 
 ```ts title="convex/functions/auth.ts" showLineNumbers {1,7-8,13-14}
 import { triggers } from './lib/triggers';
-import { getOrmCtx } from './lib/orm';
+import { withOrm } from './lib/orm';
 
 export const authClient = createClient({
   // ...
   dbTriggers: triggers,
-  context: getOrmCtx,
+  context: withOrm,
 });
 
 export const { ... } = createApi(schema, getAuth, {
   dbTriggers: triggers,
-  context: getOrmCtx,
+  context: withOrm,
 });
 ```
 

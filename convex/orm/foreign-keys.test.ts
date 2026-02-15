@@ -67,6 +67,8 @@ const withCtx = async <T>(
   fn: (ctx: { orm: DatabaseWithMutations<typeof relations> }) => Promise<T>
 ) => withOrmCtx(schema, relations, async ({ orm }) => fn({ orm }));
 
+const asAnyId = (id: unknown) => id as any;
+
 describe('foreign key enforcement', () => {
   it('enforces _id references on insert', async () =>
     withCtx(async ({ orm }) => {
@@ -75,7 +77,10 @@ describe('foreign key enforcement', () => {
         .values({ name: 'Ada', slug: 'ada' })
         .returning();
 
-      await orm.insert(profiles).values({ userId: user.id }).returning();
+      await orm
+        .insert(profiles)
+        .values({ userId: asAnyId(user.id) })
+        .returning();
 
       await expect(
         orm.insert(profiles).values({ userId: 'missing' as any })
@@ -91,14 +96,14 @@ describe('foreign key enforcement', () => {
 
       const [profile] = await orm
         .insert(profiles)
-        .values({ userId: user.id })
+        .values({ userId: asAnyId(user.id) })
         .returning();
 
       await expect(
         orm
           .update(profiles)
           .set({ userId: 'missing' as any })
-          .where(eq(profiles.id, profile.id))
+          .where(eq(profiles.id, asAnyId(profile.id)))
           .returning()
       ).rejects.toThrow(/foreign/i);
     }));

@@ -17,7 +17,7 @@ import {
   text,
 } from 'better-convex/orm';
 import { it as baseIt, describe, expect } from 'vitest';
-import { convexTest, getOrmCtx } from '../setup.testing';
+import { convexTest, withOrm } from '../setup.testing';
 
 const users = convexTable('rls_users', {
   name: text().notNull(),
@@ -121,7 +121,7 @@ const it = baseIt.extend<{ ctx: any }>({
   ctx: async ({}, use) => {
     const t = convexTest(schema);
     await t.run(async (baseCtx) => {
-      const ctx = getOrmCtx(baseCtx, relations, {
+      const ctx = withOrm(baseCtx, relations, {
         rls: {
           roleResolver: (ctx) => (ctx as { roles?: string[] }).roles ?? [],
         },

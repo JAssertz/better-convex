@@ -29,9 +29,9 @@ import { it as baseIt, describe, expect, vi } from 'vitest';
 import schema, { relations as appRelations, users } from '../schema';
 import {
   convexTest,
-  getOrmCtx,
   runCtx,
   type TestCtx,
+  withOrm,
   withOrmCtx,
 } from '../setup.testing';
 
@@ -114,7 +114,7 @@ describe('M7 Mutations', () => {
       name: 'Alice',
       email: 'alice@example.com',
     });
-    expect(await ctx.db.get(user.id)).toBeNull();
+    expect(await ctx.db.get(user.id as any)).toBeNull();
   });
 
   it('should skip insert on conflict do nothing', async ({ ctx }) => {
@@ -188,7 +188,9 @@ describe('M7 Mutations', () => {
       .returning();
 
     expect(updated).toEqual([]);
-    expect(await ctx.db.get(user.id)).toMatchObject({ name: baseUser.name });
+    expect(await ctx.db.get(user.id as any)).toMatchObject({
+      name: baseUser.name,
+    });
 
     const deleted = await db
       .delete(users)
@@ -196,7 +198,7 @@ describe('M7 Mutations', () => {
       .returning();
 
     expect(deleted).toEqual([]);
-    expect(await ctx.db.get(user.id)).toBeTruthy();
+    expect(await ctx.db.get(user.id as any)).toBeTruthy();
   });
 
   it('should allow inArray update/delete with indexed where without allowFullScan', async ({
@@ -793,7 +795,7 @@ describe('M7 Mutations', () => {
       const t = convexTest(schema);
 
       await t.run(async (baseCtx) => {
-        const ctx = getOrmCtx(baseCtx, appRelations, {
+        const ctx = withOrm(baseCtx, appRelations, {
           scheduler: baseCtx.scheduler,
           scheduledMutationBatch: scheduledMutationBatchRef,
         });
@@ -831,7 +833,7 @@ describe('M7 Mutations', () => {
       await t.finishAllScheduledFunctions(vi.runAllTimers);
 
       await t.run(async (baseCtx) => {
-        const ctx = getOrmCtx(baseCtx, appRelations, {
+        const ctx = withOrm(baseCtx, appRelations, {
           scheduler: baseCtx.scheduler,
           scheduledMutationBatch: scheduledMutationBatchRef,
         });

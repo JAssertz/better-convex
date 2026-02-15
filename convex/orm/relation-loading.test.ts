@@ -22,7 +22,7 @@ import type { StorageActionWriter } from 'convex/server';
 import { test as baseTest, describe, expect } from 'vitest';
 import type { MutationCtx } from '../_generated/server';
 import { cities, posts, users } from '../schema';
-import { convexTest, getOrmCtx, withOrmCtx } from '../setup.testing';
+import { convexTest, withOrm, withOrmCtx } from '../setup.testing';
 
 // M6.5 Phase 2: Comments table and relations for nested testing (local to this test file)
 const ormComments = convexTable(
@@ -122,7 +122,7 @@ const test = baseTest.extend<{ ctx: TestCtx }>({
   ctx: async ({}, use) => {
     const t = convexTest(testSchemaWithComments);
     await t.run(async (baseCtx) => {
-      const ctx = getOrmCtx(baseCtx, testRelations);
+      const ctx = withOrm(baseCtx, testRelations);
       await use(ctx);
     });
   },

@@ -4,7 +4,6 @@ import {
   convexTable,
   defineRelations,
   defineSchema,
-  id,
   index,
   integer,
   searchIndex,
@@ -27,8 +26,8 @@ export const users = convexTable(
     status: text(),
     role: text(),
     deletedAt: integer(),
-    cityId: id('cities'),
-    homeCityId: id('cities'),
+    cityId: text(),
+    homeCityId: text(),
   },
   (t) => [
     index('by_city').on(t.cityId),
@@ -53,7 +52,7 @@ export const posts = convexTable(
     title: text(),
     content: text(),
     published: boolean(),
-    authorId: id('users'),
+    authorId: text(),
     publishedAt: integer(),
     embedding: vector(1536),
   },
@@ -74,8 +73,8 @@ export const posts = convexTable(
 export const comments = convexTable(
   'comments',
   {
-    postId: id('posts').notNull(),
-    authorId: id('users'),
+    postId: text().notNull(),
+    authorId: text(),
     text: text().notNull(),
   },
   (t) => [index('by_post').on(t.postId), index('by_author').on(t.authorId)]
@@ -88,17 +87,17 @@ export const books = convexTable('books', {
 export const bookAuthors = convexTable(
   'bookAuthors',
   {
-    bookId: id('books').notNull(),
-    authorId: id('users').notNull(),
+    bookId: text().notNull(),
+    authorId: text().notNull(),
     role: text().notNull(),
   },
   (t) => [index('by_book').on(t.bookId), index('by_author').on(t.authorId)]
 );
 
 export const node = convexTable('node', {
-  parentId: id('node'),
-  leftId: id('node'),
-  rightId: id('node'),
+  parentId: text(),
+  leftId: text(),
+  rightId: text(),
 });
 
 export const metrics = convexTable(
@@ -107,7 +106,7 @@ export const metrics = convexTable(
     total: bigint().notNull(),
     ratio: integer(),
     active: boolean().notNull(),
-    ownerId: id('users'),
+    ownerId: text(),
   },
   (t) => [index('by_owner').on(t.ownerId)]
 );

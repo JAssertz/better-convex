@@ -224,7 +224,7 @@ This is the main migration. We'll replace the component-based client with direct
     import { internal } from "./_generated/api";
     import type { DataModel } from "./_generated/dataModel";
     import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
-    import { getOrmCtx } from "../lib/orm";
+    import { withOrm } from "../lib/orm";
     import { registerTriggers } from "../lib/triggers";
     import authConfig from "./auth.config";
     import schema from "./schema";
@@ -240,7 +240,7 @@ This is the main migration. We'll replace the component-based client with direct
       authFunctions,
       schema,
       dbTriggers: triggers, // Optional: trigger-wrapped db writes
-      context: getOrmCtx, // Optional: enrich auth mutation + trigger ctx once
+      context: withOrm, // Optional: enrich auth mutation + trigger ctx once
       triggers: {
         user: {
           beforeCreate: async (_ctx, data) => {
@@ -297,7 +297,7 @@ This is the main migration. We'll replace the component-based client with direct
       rotateKeys,
     } = createApi(schema, getAuth, {
       dbTriggers: triggers, // Optional: same db trigger wrapper
-      context: getOrmCtx, // Optional: same context enrichment
+      context: withOrm, // Optional: same context enrichment
     });
 
     // Generate trigger handlers

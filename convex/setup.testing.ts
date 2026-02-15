@@ -18,7 +18,7 @@ export function convexTest<Schema extends SchemaDefinition<any, any>>(
   return baseConvexTest(schema);
 }
 
-export const getOrmCtx = <
+export const withOrm = <
   Ctx extends { db: GenericDatabaseWriter<any> },
   Schema extends TablesRelationalConfig,
 >(
@@ -42,8 +42,8 @@ export const getOrmCtx = <
 // Default context wrapper that attaches Better Convex ORM as ctx.orm
 export async function runCtx<T extends { db: GenericDatabaseWriter<any> }>(
   ctx: T
-): Promise<ReturnType<typeof getOrmCtx<T, typeof relations>>> {
-  return getOrmCtx(ctx, relations);
+): Promise<ReturnType<typeof withOrm<T, typeof relations>>> {
+  return withOrm(ctx, relations);
 }
 
 export type TestCtx = Awaited<ReturnType<typeof runCtx>>;
@@ -64,7 +64,7 @@ export async function withOrmCtx<
   const t = convexTest(schema);
   let result: Result | undefined;
   await t.run(async (baseCtx) => {
-    const ctx = getOrmCtx(baseCtx, relationsConfig, options);
+    const ctx = withOrm(baseCtx, relationsConfig, options);
     result = await fn(ctx);
   });
   return result as Result;
