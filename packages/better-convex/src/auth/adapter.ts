@@ -16,6 +16,8 @@ import {
 import { asyncMap } from 'convex-helpers';
 import { prop, sortBy, uniqueBy } from 'remeda';
 import type { SetOptional } from 'type-fest';
+import type { GenericCtx } from '../server/context-utils';
+import { isRunMutationCtx } from '../server/context-utils';
 import {
   createHandler,
   deleteManyHandler,
@@ -26,8 +28,6 @@ import {
   updateOneHandler,
 } from './create-api';
 import type { AuthFunctions, Triggers } from './create-client';
-import type { GenericCtx } from '../server/context-utils';
-import { isRunMutationCtx } from '../server/context-utils';
 
 export const handlePagination = async (
   next: ({

@@ -29,7 +29,7 @@ type ConvexSystemIdConfig = ColumnBuilderBaseConfig<
 };
 
 export class ConvexSystemIdBuilder<
-  TTableName extends string,
+  _TTableName extends string,
 > extends ColumnBuilder<ConvexSystemIdConfig, {}, { notNull: true }> {
   static readonly [entityKind]: string = 'ConvexSystemIdBuilder';
   readonly [entityKind]: string = 'ConvexSystemIdBuilder';

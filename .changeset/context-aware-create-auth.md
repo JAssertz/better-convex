@@ -2,6 +2,10 @@
 "better-convex": minor
 ---
 
+- Added `better-convex/orm` as the recommended DB API surface (Drizzle-style schema/query/mutation API).
+  - Docs: [/docs/db/orm](https://www.better-convex.com/docs/db/orm)
+  - Migration guide: [/docs/migrations/convex](https://www.better-convex.com/docs/migrations/convex)
+
 ## Breaking changes
 
 - `createAuth(ctx)` is removed. Use `getAuth(ctx)` for query/mutation/action/http.
@@ -68,10 +72,6 @@ bun remove @convex-dev/better-auth convex-ents
 
 ## Features
 
-- Added `better-convex/orm` as the recommended DB API surface (Drizzle-style schema/query/mutation API).
-  - Docs: [/docs/db/orm](https://www.better-convex.com/docs/db/orm)
-  - Migration guide: [/docs/migrations/ents](https://www.better-convex.com/docs/migrations/ents)
-
 - `initCRPC.create()` supports default Convex builders, so old manual wiring is usually unnecessary.
 
 ```ts
@@ -91,6 +91,19 @@ const internalMutationWithTriggers = customMutation(...);
 const c = initCRPC.create();
 // or when needed:
 const cWithTriggers = initCRPC.create({ triggers });
+```
+
+- cRPC now supports wire transformers end-to-end (Date codec included by default).
+  - Supported in `initCRPC.create({ transformer })`, HTTP proxy, server caller, React client, and RSC query client.
+
+```ts
+const c = initCRPC.create({ transformer: superjson });
+
+const http = createHttpProxy({
+  convexSiteUrl,
+  routes,
+  transformer: superjson,
+});
 ```
 
 - Auth setup now supports `dbTriggers` and `context` in both `createClient` and `createApi`.
@@ -123,12 +136,22 @@ export const getEnv = () => {
 export const getEnv = createEnv({ schema: envSchema });
 ```
 
+- Added new public server helpers: context guards (`isActionCtx`/`requireActionCtx`, etc.).
+
 ## Patched
 
 - Updated template and docs to use:
   - `better-convex/auth-client` (`convexClient`)
   - `better-convex/auth-config` (`getAuthConfigProvider`)
 - Example app migration now reflects the current user-facing API (`ctx.orm`, `getAuth(ctx)`, simpler `initCRPC.create()`).
+- cRPC/server error handling now normalizes known causes into deterministic CRPC errors:
+  - `OrmNotFoundError` -> `NOT_FOUND`
+  - `APIError` status/statusCode -> mapped cRPC code
+  - standard `Error.message`/stack preservation on wrapped errors
+- HTTP route validation errors (params/query/body/form) now return `BAD_REQUEST` consistently.
+- `createAuthMutations` now throws `AUTH_STATE_TIMEOUT` when auth token never appears after sign-in/up flow.
+- `getSession` now returns `null` when no session id is present (instead of attempting invalid DB lookups).
+- CLI reliability improvements (`better-convex dev/codegen/env`): argument parsing and entrypoint resolution are more robust across runtime/symlink setups.
 
 ```ts
 // Client import migration
@@ -137,4 +160,11 @@ import { convexClient } from "@convex-dev/better-auth/client/plugins";
 
 // After
 import { convexClient } from "better-convex/auth-client";
+```
+
+```ts
+// Retry only non-deterministic errors
+import { isCRPCError } from "better-convex/crpc";
+
+retry: (count, error) => !isCRPCError(error) && count < 3;
 ```

@@ -19,27 +19,19 @@ export type RunMutationCtx<DataModel extends GenericDataModel> = (
 
 export const isQueryCtx = <DataModel extends GenericDataModel>(
   ctx: GenericCtx<DataModel>
-): ctx is GenericQueryCtx<DataModel> => {
-  return 'db' in ctx;
-};
+): ctx is GenericQueryCtx<DataModel> => 'db' in ctx;
 
 export const isMutationCtx = <DataModel extends GenericDataModel>(
   ctx: GenericCtx<DataModel>
-): ctx is GenericMutationCtx<DataModel> => {
-  return 'db' in ctx && 'scheduler' in ctx;
-};
+): ctx is GenericMutationCtx<DataModel> => 'db' in ctx && 'scheduler' in ctx;
 
 export const isActionCtx = <DataModel extends GenericDataModel>(
   ctx: GenericCtx<DataModel>
-): ctx is GenericActionCtx<DataModel> => {
-  return 'runAction' in ctx;
-};
+): ctx is GenericActionCtx<DataModel> => 'runAction' in ctx;
 
 export const isRunMutationCtx = <DataModel extends GenericDataModel>(
   ctx: GenericCtx<DataModel>
-): ctx is RunMutationCtx<DataModel> => {
-  return 'runMutation' in ctx;
-};
+): ctx is RunMutationCtx<DataModel> => 'runMutation' in ctx;
 
 export const requireQueryCtx = <DataModel extends GenericDataModel>(
   ctx: GenericCtx<DataModel>
