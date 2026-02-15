@@ -1,5 +1,3 @@
-import type { GenericCtx } from '@convex-dev/better-auth';
-import { isQueryCtx } from '@convex-dev/better-auth/utils';
 import type { BetterAuthOptions } from 'better-auth';
 
 import {
@@ -18,6 +16,8 @@ import {
   customMutation,
 } from 'convex-helpers/server/customFunctions';
 
+import type { GenericCtx } from '../server/context-utils';
+import { isQueryCtx } from '../server/context-utils';
 import { dbAdapter, httpAdapter } from './adapter';
 
 export type AuthFunctions = {

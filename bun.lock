@@ -105,6 +105,7 @@
         "better-convex": "./dist/cli.mjs",
       },
       "dependencies": {
+        "@convex-dev/better-auth": "^0.10.10",
         "chokidar": "^5.0.0",
         "common-tags": "^1.8.2",
         "dotenv": "^17.2.3",
@@ -122,7 +123,6 @@
         "tsdown": "^0.20.1",
       },
       "peerDependencies": {
-        "@convex-dev/better-auth": ">=0.10.4",
         "@tanstack/react-query": ">=5",
         "better-auth": ">=1.4.9",
         "convex": ">=1.31",
@@ -133,7 +133,6 @@
         "zod": ">=3",
       },
       "optionalPeers": [
-        "@convex-dev/better-auth",
         "better-auth",
         "hono",
         "next",

@@ -297,7 +297,14 @@ This command takes a work document (plan, specification, or todo file) and execu
    )"
    ```
 
-4. **Notify User**
+4. **Update Plan Status**
+
+   If the input document has YAML frontmatter with a `status` field, update it to `completed`:
+   ```
+   status: active  →  status: completed
+   ```
+
+5. **Notify User**
    - Summarize what was completed
    - Link to PR
    - Note any follow-up work needed

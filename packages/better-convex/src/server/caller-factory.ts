@@ -91,8 +91,6 @@ export type ConvexContext<TApi> = {
  *
  * @example
  * ```ts
- * import { getToken } from '@convex-dev/better-auth/utils';
- *
  * const { createContext, createCaller } = createCallerFactory({
  *   api,
  *   convexSiteUrl: env.NEXT_PUBLIC_CONVEX_SITE_URL,

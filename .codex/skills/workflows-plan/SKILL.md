@@ -178,6 +178,7 @@ Select how comprehensive you want the issue to be, simpler is mostly better.
 ---
 title: [Issue Title]
 type: [feat|fix|refactor]
+status: active
 date: YYYY-MM-DD
 ---
 
@@ -230,6 +231,7 @@ end
 ---
 title: [Issue Title]
 type: [feat|fix|refactor]
+status: active
 date: YYYY-MM-DD
 ---
 
@@ -294,6 +296,7 @@ date: YYYY-MM-DD
 ---
 title: [Issue Title]
 type: [feat|fix|refactor]
+status: active
 date: YYYY-MM-DD
 ---
 

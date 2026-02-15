@@ -28,7 +28,7 @@ Let's set it up step by step.
 We'll start by installing the required packages:
 
 ```bash
-bun add better-auth@1.4.9 @convex-dev/better-auth better-convex hono
+bun add better-auth@1.4.9 better-convex hono
 ```
 
 <Callout icon={<InfoIcon />}>
@@ -40,7 +40,7 @@ Pin `better-auth` to avoid breaking changes. Check [Better Auth releases](https:
 Next, we'll create the auth configuration file. This tells Convex how to validate JWTs using Static JWKS:
 
 ```ts title="convex/functions/auth.config.ts" showLineNumbers {4-6}
-import { getAuthConfigProvider } from '@convex-dev/better-auth/auth-config';
+import { getAuthConfigProvider } from 'better-convex/auth';
 import type { AuthConfig } from 'convex/server';
 
 export default {
@@ -54,9 +54,8 @@ Now we'll create the auth client. This connects Better Auth to your Convex datab
 
 ```ts title="convex/functions/auth.ts" showLineNumbers {8,11,14-16,24-29,45-49,54-57,62-69,72-84}
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
-import { convex } from '@convex-dev/better-auth/plugins';
 import { admin } from 'better-auth/plugins';
-import { createClient, createApi, type AuthFunctions } from 'better-convex/auth';
+import { convex, createClient, createApi, type AuthFunctions } from 'better-convex/auth';
 import { internal } from './_generated/api';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
 import type { DataModel } from './_generated/dataModel';

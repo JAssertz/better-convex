@@ -12,5 +12,9 @@ describe('server public exports', () => {
     expect(typeof server.createServerCaller).toBe('function');
     expect(typeof server.createLazyCaller).toBe('function');
     expect(typeof server.createEnv).toBe('function');
+    expect(typeof server.requireActionCtx).toBe('function');
+    expect(typeof server.requireMutationCtx).toBe('function');
+    expect(typeof server.requireQueryCtx).toBe('function');
+    expect(typeof server.requireRunMutationCtx).toBe('function');
   });
 });

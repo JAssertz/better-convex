@@ -14,6 +14,7 @@
   "exports": {
     "./auth": "./dist/auth/index.js",
     "./auth-client": "./dist/auth-client/index.js",
+    "./auth-config": "./dist/auth-config/index.js",
     "./auth-nextjs": "./dist/auth-nextjs/index.js",
     "./crpc": "./dist/crpc/index.js",
     "./orm": "./dist/orm/index.js",
@@ -36,6 +37,7 @@
     "typecheck:types": "tsc --project ../../convex/test-types/tsconfig.json"
   },
   "dependencies": {
+    "@convex-dev/better-auth": "^0.10.10",
     "chokidar": "^5.0.0",
     "common-tags": "^1.8.2",
     "dotenv": "^17.2.3",
@@ -53,7 +55,6 @@
     "tsdown": "^0.20.1"
   },
   "peerDependencies": {
-    "@convex-dev/better-auth": ">=0.10.4",
     "@tanstack/react-query": ">=5",
     "better-auth": ">=1.4.9",
     "convex": ">=1.31",
@@ -64,9 +65,6 @@
     "zod": ">=3"
   },
   "peerDependenciesMeta": {
-    "@convex-dev/better-auth": {
-      "optional": true
-    },
     "better-auth": {
       "optional": true
     },

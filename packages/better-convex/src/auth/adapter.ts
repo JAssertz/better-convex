@@ -1,5 +1,3 @@
-import type { GenericCtx } from '@convex-dev/better-auth';
-import { isRunMutationCtx } from '@convex-dev/better-auth/utils';
 import type { BetterAuthOptions, Where } from 'better-auth';
 import {
   type AdapterFactoryOptions,
@@ -28,6 +26,8 @@ import {
   updateOneHandler,
 } from './create-api';
 import type { AuthFunctions, Triggers } from './create-client';
+import type { GenericCtx } from '../server/context-utils';
+import { isRunMutationCtx } from '../server/context-utils';
 
 export const handlePagination = async (
   next: ({

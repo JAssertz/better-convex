@@ -620,10 +620,9 @@ Optional - only needed if using Better Auth for authentication.
 Better Auth client setup with Convex adapter.
 
 ```ts title="convex/functions/auth.ts" showLineNumbers
-import { convex } from '@convex-dev/better-auth/plugins';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { admin } from 'better-auth/plugins';
-import { createApi, createClient, type AuthFunctions } from 'better-convex/auth';
+import { convex, createApi, createClient, type AuthFunctions } from 'better-convex/auth';
 
 import { internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
@@ -729,7 +728,7 @@ See [Auth Server documentation](/docs/auth/server) for detailed configuration.
 Auth configuration provider for Convex.
 
 ```ts title="convex/functions/auth.config.ts" showLineNumbers {5-6}
-import { getAuthConfigProvider } from '@convex-dev/better-auth/auth-config';
+import { getAuthConfigProvider } from 'better-convex/auth';
 import type { AuthConfig } from 'convex/server';
 
 export default {
@@ -898,9 +897,9 @@ export type SessionUser = Select<'user'> & {
 Better Auth client for React with plugins.
 
 ```ts title="src/lib/convex/auth-client.ts" showLineNumbers {10-16,21-27}
-import { convexClient } from '@convex-dev/better-auth/client/plugins';
 import { adminClient, inferAdditionalFields } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
+import { convexClient } from 'better-convex/auth-client';
 import { createAuthMutations } from 'better-convex/react';
 
 // Import your Auth type from convex

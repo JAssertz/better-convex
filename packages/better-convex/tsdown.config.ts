@@ -30,6 +30,7 @@ export default defineConfig([
   // Server-safe builds (crpc, rsc, server, orm) - no "use client"
   {
     entry: {
+      'auth-config/index': 'src/auth-config/index.ts',
       'auth/index': 'src/auth/index.ts',
       'auth-nextjs/index': 'src/auth-nextjs/index.ts',
       'crpc/index': 'src/crpc/index.ts',
