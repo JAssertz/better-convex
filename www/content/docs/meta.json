@@ -28,6 +28,7 @@
     "---Integrations---",
     "react",
     "nextjs",
+    "tanstack-start",
     "---Auth---",
     "auth/index",
     "auth/server",
