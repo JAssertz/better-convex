@@ -17,19 +17,19 @@ import {
   mutationGeneric,
   queryGeneric,
 } from 'convex/server';
-import { customCtx } from 'convex-helpers/server/customFunctions';
+import { z } from 'zod';
+import {
+  type DataTransformerOptions,
+  getTransformer,
+} from '../crpc/transformer';
+import { customCtx } from '../internal/upstream/server/customFunctions';
 import {
   zCustomAction,
   zCustomMutation,
   zCustomQuery,
   zodOutputToConvex,
   zodToConvex,
-} from 'convex-helpers/server/zod4';
-import { z } from 'zod';
-import {
-  type DataTransformerOptions,
-  getTransformer,
-} from '../crpc/transformer';
+} from '../internal/upstream/server/zod4';
 import { toCRPCError } from './error';
 import {
   createHttpProcedureBuilder,
@@ -144,19 +144,10 @@ type FunctionsConfig = {
 };
 
 /** Config for create() including optional defaultMeta */
-type CreateConfig<
-  TMeta extends object,
-  DataModel extends GenericDataModel = GenericDataModel,
-> = FunctionsConfig & {
+type CreateConfig<TMeta extends object> = FunctionsConfig & {
   defaultMeta?: TMeta;
   /** Optional cRPC payload transformer (always composed with built-in Date support). */
   transformer?: DataTransformerOptions;
-  /** Optional DB trigger wrapper applied to mutation/internalMutation contexts */
-  triggers?: {
-    wrapDB: (
-      ctx: GenericMutationCtx<DataModel>
-    ) => GenericMutationCtx<DataModel>;
-  };
 };
 
 // =============================================================================
@@ -1169,7 +1160,7 @@ class CRPCBuilderWithContext<
    * Create the CRPC instance with function builders
    */
   create(
-    config?: CreateConfig<TMeta, DataModel>
+    config?: CreateConfig<TMeta>
   ): CRPCInstance<
     DataModel,
     TQueryCtx,
@@ -1188,14 +1179,9 @@ class CRPCBuilderWithContext<
       internalAction = internalActionGeneric,
       httpAction = httpActionGeneric,
       transformer: transformerOptions,
-      triggers,
     } = config ?? {};
     const transformer = getTransformer(transformerOptions);
     const mutationCreateContext = this.contextConfig.mutation ?? ((ctx) => ctx);
-    const createMutationContext = (ctx: GenericMutationCtx<DataModel>) => {
-      const wrappedCtx = triggers?.wrapDB(ctx) ?? ctx;
-      return mutationCreateContext(wrappedCtx);
-    };
 
     const result = {
       query: new QueryProcedureBuilder<
@@ -1230,7 +1216,7 @@ class CRPCBuilderWithContext<
         functionConfig: {
           base: mutation,
           internal: internalMutation,
-          createContext: createMutationContext,
+          createContext: mutationCreateContext,
           transformer,
         },
       }),
@@ -1303,7 +1289,7 @@ class CRPCBuilderWithMeta<
   /**
    * Create the CRPC instance directly (uses default passthrough context)
    */
-  create(config?: CreateConfig<TMeta, DataModel>): CRPCInstance<
+  create(config?: CreateConfig<TMeta>): CRPCInstance<
     DataModel,
     GenericQueryCtx<DataModel>,
     GenericMutationCtx<DataModel>,
@@ -1351,7 +1337,7 @@ class CRPCBuilder<DataModel extends GenericDataModel> {
   /**
    * Create the CRPC instance directly (uses default passthrough context)
    */
-  create(config?: CreateConfig<object, DataModel>): CRPCInstance<
+  create(config?: CreateConfig<object>): CRPCInstance<
     DataModel,
     GenericQueryCtx<DataModel>,
     GenericMutationCtx<DataModel>,
@@ -1419,7 +1405,7 @@ export const initCRPC = {
   /**
    * Create the CRPC instance directly (uses GenericDataModel and default passthrough context)
    */
-  create(config?: CreateConfig<object, GenericDataModel>): CRPCInstance<
+  create(config?: CreateConfig<object>): CRPCInstance<
     GenericDataModel,
     GenericQueryCtx<GenericDataModel>,
     GenericMutationCtx<GenericDataModel>,

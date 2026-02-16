@@ -44,6 +44,7 @@ import {
   type OrmTableDeleteConfig,
   RlsPolicies,
   TableDeleteConfig,
+  TableLifecycleHooks,
   TableName,
 } from './symbols';
 
@@ -124,6 +125,8 @@ export type ConvexTableExtraConfigValue =
   | ConvexCheckBuilder
   | ConvexUniqueConstraintBuilder
   | ConvexDeletionBuilder
+  | ConvexLifecycleBuilder
+  | OrmTriggerLike
   | RlsPolicy;
 export type ConvexTableExtraConfig = Record<
   string,
@@ -302,6 +305,78 @@ export type ConvexDeletionConfig = {
   delayMs?: number;
 };
 
+export type OrmLifecycleOperation = 'insert' | 'update' | 'delete';
+
+export type OrmLifecycleChange<TDoc = Record<string, unknown>> = {
+  id: unknown;
+} & (
+  | {
+      operation: 'insert';
+      oldDoc: null;
+      newDoc: TDoc;
+    }
+  | {
+      operation: 'update';
+      oldDoc: TDoc;
+      newDoc: TDoc;
+    }
+  | {
+      operation: 'delete';
+      oldDoc: TDoc;
+      newDoc: null;
+    }
+);
+
+type OrmLifecycleChangeFor<
+  TOperation extends OrmLifecycleOperation | 'change',
+  TDoc = Record<string, unknown>,
+> = TOperation extends 'insert'
+  ? Extract<OrmLifecycleChange<TDoc>, { operation: 'insert' }>
+  : TOperation extends 'update'
+    ? Extract<OrmLifecycleChange<TDoc>, { operation: 'update' }>
+    : TOperation extends 'delete'
+      ? Extract<OrmLifecycleChange<TDoc>, { operation: 'delete' }>
+      : OrmLifecycleChange<TDoc>;
+
+export type OrmLifecycleHandler<
+  TOperation extends OrmLifecycleOperation | 'change' = 'change',
+  TDoc = Record<string, unknown>,
+> = (
+  ctx: {
+    db: unknown;
+    innerDb: unknown;
+  } & Record<string, unknown>,
+  change: OrmLifecycleChangeFor<TOperation, TDoc>
+) => Promise<void> | void;
+
+export type OrmLifecycleConfig =
+  | {
+      operation: 'insert';
+      handler: OrmLifecycleHandler<'insert'>;
+    }
+  | {
+      operation: 'update';
+      handler: OrmLifecycleHandler<'update'>;
+    }
+  | {
+      operation: 'delete';
+      handler: OrmLifecycleHandler<'delete'>;
+    }
+  | {
+      operation: 'change';
+      handler: OrmLifecycleHandler<'change'>;
+    };
+
+export type OrmTriggerLike<
+  TDoc = Record<string, unknown>,
+  TCtx = Record<string, unknown>,
+> = {
+  bivarianceHack: (
+    ctx: TCtx,
+    change: OrmLifecycleChange<TDoc>
+  ) => Promise<void> | void;
+}['bivarianceHack'];
+
 export class ConvexDeletionBuilder {
   static readonly [entityKind] = 'ConvexDeletionBuilder';
   readonly [entityKind] = 'ConvexDeletionBuilder';
@@ -326,6 +401,49 @@ export function deletion(
   return new ConvexDeletionBuilder({
     mode,
     delayMs: options?.delayMs,
+  });
+}
+
+export class ConvexLifecycleBuilder {
+  static readonly [entityKind] = 'ConvexLifecycleBuilder';
+  readonly [entityKind] = 'ConvexLifecycleBuilder';
+
+  constructor(readonly config: OrmLifecycleConfig) {}
+}
+
+export function onInsert<TDoc = Record<string, unknown>>(
+  handler: OrmLifecycleHandler<'insert', TDoc>
+): ConvexLifecycleBuilder {
+  return new ConvexLifecycleBuilder({
+    operation: 'insert',
+    handler: handler as OrmLifecycleHandler<'insert'>,
+  });
+}
+
+export function onUpdate<TDoc = Record<string, unknown>>(
+  handler: OrmLifecycleHandler<'update', TDoc>
+): ConvexLifecycleBuilder {
+  return new ConvexLifecycleBuilder({
+    operation: 'update',
+    handler: handler as OrmLifecycleHandler<'update'>,
+  });
+}
+
+export function onDelete<TDoc = Record<string, unknown>>(
+  handler: OrmLifecycleHandler<'delete', TDoc>
+): ConvexLifecycleBuilder {
+  return new ConvexLifecycleBuilder({
+    operation: 'delete',
+    handler: handler as OrmLifecycleHandler<'delete'>,
+  });
+}
+
+export function onChange<TDoc = Record<string, unknown>>(
+  handler: OrmLifecycleHandler<'change', TDoc>
+): ConvexLifecycleBuilder {
+  return new ConvexLifecycleBuilder({
+    operation: 'change',
+    handler: handler as OrmLifecycleHandler<'change'>,
   });
 }
 
@@ -438,6 +556,21 @@ function isConvexDeletionBuilder(
     value !== null &&
     (value as { [entityKind]?: string })[entityKind] === 'ConvexDeletionBuilder'
   );
+}
+
+function isConvexLifecycleBuilder(
+  value: unknown
+): value is ConvexLifecycleBuilder {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { [entityKind]?: string })[entityKind] ===
+      'ConvexLifecycleBuilder'
+  );
+}
+
+function isOrmTriggerLike(value: unknown): value is OrmTriggerLike {
+  return typeof value === 'function';
 }
 
 function getColumnName(column: ColumnBuilderBase): string {
@@ -589,6 +722,19 @@ function applyExtraConfig<T extends TableConfig>(
         mode: entry.config.mode,
         delayMs: entry.config.delayMs,
       } satisfies OrmTableDeleteConfig;
+      continue;
+    }
+
+    if (isConvexLifecycleBuilder(entry)) {
+      table.addLifecycleHook(entry.config);
+      continue;
+    }
+
+    if (isOrmTriggerLike(entry)) {
+      table.addLifecycleHook({
+        operation: 'change',
+        handler: entry as OrmLifecycleHandler<'change'>,
+      });
       continue;
     }
 
@@ -810,6 +956,7 @@ class ConvexTableImpl<T extends TableConfig> {
   [EnableRLS] = false;
   [RlsPolicies]: RlsPolicy[] = [];
   [TableDeleteConfig]?: OrmTableDeleteConfig;
+  [TableLifecycleHooks]: OrmLifecycleConfig[] = [];
 
   /**
    * Public tableName for convenience
@@ -1009,6 +1156,14 @@ class ConvexTableImpl<T extends TableConfig> {
    */
   isRlsEnabled(): boolean {
     return this[EnableRLS];
+  }
+
+  addLifecycleHook(config: OrmLifecycleConfig): void {
+    this[TableLifecycleHooks].push(config);
+  }
+
+  getLifecycleHooks(): OrmLifecycleConfig[] {
+    return this[TableLifecycleHooks];
   }
 
   /**
@@ -1262,6 +1417,7 @@ export interface ConvexTable<
   [RlsPolicies]: RlsPolicy[];
   [EnableRLS]: boolean;
   [TableDeleteConfig]?: OrmTableDeleteConfig;
+  [TableLifecycleHooks]: OrmLifecycleConfig[];
 
   /**
    * Convex schema validator
@@ -1287,6 +1443,16 @@ export type ConvexTableWithColumns<
   [Key in keyof T['columns']]: T['columns'][Key];
 } & SystemFields<T['name']> &
   SystemFieldAliases<T['name'], T['columns']>;
+
+export function getTableLifecycleHooks(
+  table: ConvexTable<any>
+): OrmLifecycleConfig[] {
+  const fromMethod = (table as any).getLifecycleHooks?.();
+  if (Array.isArray(fromMethod)) {
+    return fromMethod;
+  }
+  return ((table as any)[TableLifecycleHooks] ?? []) as OrmLifecycleConfig[];
+}
 
 /**
  * Create a type-safe Convex table definition

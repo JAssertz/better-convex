@@ -105,7 +105,7 @@ Now when you use `authQuery` or `authMutation`, `ctx.user` and `ctx.userId` are 
 
 ```ts title="convex/functions/session.ts" showLineNumbers {1-4,6-16}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { authMutation } from '../lib/crpc';
 import { session } from './schema';
 

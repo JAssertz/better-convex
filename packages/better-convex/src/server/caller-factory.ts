@@ -11,8 +11,8 @@ import type {
   FunctionReference,
   FunctionReturnType,
 } from 'convex/server';
-import type { EmptyObject } from 'convex-helpers';
 import type { DataTransformerOptions } from '../crpc/transformer';
+import type { EmptyObject } from '../internal/upstream';
 import {
   type CallerMeta,
   type CallerOpts,

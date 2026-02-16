@@ -232,8 +232,18 @@ export type { ConvexTable, TableConfig } from './table';
 export {
   type ConvexDeletionBuilder,
   type ConvexDeletionConfig,
+  type ConvexLifecycleBuilder,
   convexTable,
   deletion,
+  type OrmLifecycleChange,
+  type OrmLifecycleConfig,
+  type OrmLifecycleHandler,
+  type OrmLifecycleOperation,
+  type OrmTriggerLike,
+  onChange,
+  onDelete,
+  onInsert,
+  onUpdate,
 } from './table';
 // M3: Query Builder Types
 export type {

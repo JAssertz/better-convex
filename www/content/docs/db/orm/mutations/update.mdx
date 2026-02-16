@@ -13,7 +13,7 @@ Let's start with a mutation that renames a user by `id`:
 
 ```ts showLineNumbers title="convex/functions/users.ts"
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { eq } from 'better-convex/orm';
 import { publicMutation } from '../lib/crpc';
 import { users } from '../schema';

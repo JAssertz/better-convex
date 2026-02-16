@@ -2,7 +2,12 @@
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "extends": ["ultracite/core", "ultracite/react", "ultracite/next"],
   "files": {
-    "includes": ["!!tmp", "!**/_generated", "!!**/convex.json"]
+    "includes": [
+      "!!tmp",
+      "!**/_generated",
+      "!!**/convex.json",
+      "!!packages/better-convex/src/internal/upstream/server/zod4.ts"
+    ]
   },
   "javascript": {
     "formatter": {

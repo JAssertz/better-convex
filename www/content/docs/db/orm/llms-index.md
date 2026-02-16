@@ -10,28 +10,34 @@ This file provides a structured index of the ORM documentation for AI assistants
 ## Core Concepts
 
 **Getting Started:**
+
 - `/docs/db/orm` - Overview, installation, and value proposition
 - `/docs/quickstart#orm-setup` - ORM setup section in the main quickstart
 
 **Schema Definition:**
+
 - `/docs/db/orm/schema` - Table definitions, field types, indexes, and type inference
 - `/docs/db/orm/schema/column-types` - Column builders and TypeScript type mapping
 - `/docs/db/orm/schema/indexes-constraints` - Indexes, unique constraints, and foreign keys
 
 **Relations:**
+
 - `/docs/db/orm/schema/relations` - One‑to‑one, one‑to‑many, many‑to‑many relations
 
 **Querying Data:**
+
 - `/docs/db/orm/queries` - findMany(), findFirst(), cursor pagination (`cursor` + `limit`), filters, orderBy
 - `/docs/db/orm/queries/operators` - All supported `where` operators (query + mutation)
 
 **Mutations:**
+
 - `/docs/db/orm/mutations` - insert(), update(), delete(), returning(), onConflictDoUpdate()
 - `/docs/db/orm/mutations/insert` - insert() builder details
 - `/docs/db/orm/mutations/update` - update() builder details
 - `/docs/db/orm/mutations/delete` - delete() builder details
 
 **Row-Level Security:**
+
 - `/docs/db/orm/rls` - rlsPolicy, rlsRole, and runtime enforcement
 
 ## Migration & Comparison
@@ -50,6 +56,7 @@ This file provides a structured index of the ORM documentation for AI assistants
 ### Key APIs
 
 **Schema:**
+
 ```ts
 convexTable(name, columns)
 defineSchema(tables, { defaults?: { defaultLimit?, mutationBatchSize?, mutationMaxRows? } })
@@ -58,55 +65,70 @@ extractRelationsConfig(schema)
 ```
 
 **Queries:**
+
 ```ts
 await ctx.orm.query.table.findMany({
   where: { field: value },
-  orderBy: { createdAt: 'desc' },
+  orderBy: { createdAt: "desc" },
   limit: 10,
   offset: 0,
-})
+});
 
 await ctx.orm.query.table.findFirst({
   where: { field: value },
-})
+});
 
 await ctx.orm.query.table.findMany({
   where: { active: true },
   cursor: null,
   limit: 20,
-})
+});
 
-await ctx.orm.query.table
-  .withIndex('by_status')
-  .findMany({
-    // Predicate where requires an explicit index plan (no allowFullScan fallback)
-    where: (_table, { predicate }) => predicate((row) => row.status === 'active'),
-    cursor: null,
-    limit: 20,
-    maxScan: 2000,
-  })
+await ctx.orm.query.table.withIndex("by_status").findMany({
+  // Predicate where requires an explicit index plan (no allowFullScan fallback)
+  where: (_table, { predicate }) => predicate((row) => row.status === "active"),
+  cursor: null,
+  limit: 20,
+  maxScan: 2000,
+});
 ```
 
 **Mutations:**
+
 ```ts
-await ctx.orm.insert(table).values(data)
-await ctx.orm.update(table).set(data).where(eq(table.id, id))
-await ctx.orm.delete(table).where(eq(table.id, id))
+await ctx.orm.insert(table).values(data);
+await ctx.orm.update(table).set(data).where(eq(table.id, id));
+await ctx.orm.delete(table).where(eq(table.id, id));
 // Full-scan opt-in (only if no index on email)
-await ctx.orm.update(table).set(data).where(eq(table.email, email)) // indexed
-await ctx.orm.update(table).set(data).where(eq(table.email, email)).allowFullScan()
-await ctx.orm.delete(table).where(eq(table.email, email)) // indexed
-await ctx.orm.delete(table).where(eq(table.email, email)).allowFullScan()
+await ctx.orm.update(table).set(data).where(eq(table.email, email)); // indexed
+await ctx.orm
+  .update(table)
+  .set(data)
+  .where(eq(table.email, email))
+  .allowFullScan();
+await ctx.orm.delete(table).where(eq(table.email, email)); // indexed
+await ctx.orm.delete(table).where(eq(table.email, email)).allowFullScan();
 ```
 
 **RLS:**
+
 ```ts
-const secret = convexTable.withRLS('secrets', { /* ... */ }, (t) => [
-  rlsPolicy('read_own', { for: 'select', using: (ctx) => eq(t.ownerId, ctx.viewerId) }),
-])
+const secret = convexTable.withRLS(
+  "secrets",
+  {
+    /* ... */
+  },
+  (t) => [
+    rlsPolicy("read_own", {
+      for: "select",
+      using: (ctx) => eq(t.ownerId, ctx.viewerId),
+    }),
+  ]
+);
 ```
 
 **Object `where` operators:**
+
 ```ts
 { field: value }
 { field: { ne: value } }
@@ -126,27 +148,29 @@ const secret = convexTable.withRLS('secrets', { /* ... */ }, (t) => [
 ```
 
 **Mutation filter helpers:**
+
 ```ts
-eq(field, value)
-ne(field, value)
-gt(field, value)
-gte(field, value)
-lt(field, value)
-lte(field, value)
-between(field, min, max)
-notBetween(field, min, max)
-inArray(field, values)
-notInArray(field, values)
-and(...filters)
-or(...filters)
-not(filter)
-isNull(field)
-isNotNull(field)
+eq(field, value);
+ne(field, value);
+gt(field, value);
+gte(field, value);
+lt(field, value);
+lte(field, value);
+between(field, min, max);
+notBetween(field, min, max);
+inArray(field, values);
+notInArray(field, values);
+and(...filters);
+or(...filters);
+not(filter);
+isNull(field);
+isNotNull(field);
 ```
 
 ### Feature Overview
 
 **Core features:**
+
 - Schema definition (convexTable, column builders)
 - Relations definition and loading (one, many, with)
 - Query operations (findMany, findFirst, cursor pagination)
@@ -157,9 +181,10 @@ isNotNull(field)
 - Column selection (post‑fetch)
 - String operators (post‑fetch)
 - Mutations (insert, update, delete, returning)
-- Aggregation workaround via `/docs/server/components/aggregates` (`@convex-dev/aggregate`)
+- Aggregation workaround via `/docs/server/advanced/aggregates` (`@convex-dev/aggregate`)
 
 **Unavailable in Convex:**
+
 - Raw SQL queries
 - Database migrations
 - SQL joins
@@ -171,7 +196,7 @@ isNotNull(field)
 - `Property 'query' does not exist` → Ensure ORM is attached as `ctx.orm`
 - `Type error: missing required field` → Check `.notNull()` in schema
 - `findUnique is not a function` → Use `findFirst` with `where`
-- `count/sum/avg/max/min is not on db.query.*` → Use `/docs/server/components/aggregates` (`@convex-dev/aggregate`)
+- `count/sum/avg/max/min is not on db.query.*` → Use `/docs/server/advanced/aggregates` (`@convex-dev/aggregate`)
 - `'include' does not exist` → Use `with` instead of `include`
 - `findMany() requires explicit sizing` → Add `limit`, use cursor pagination (`cursor` + `limit`), set schema `defaultLimit`, or opt in with `allowFullScan`
 - `.withIndex(...) required` → `predicate` `where` and typed post-fetch operators need explicit index selection
@@ -179,6 +204,7 @@ isNotNull(field)
 - `update/delete pagination does not support multi-probe filters yet` → Rewrite to a single-range index filter, or run non-paginated mode with row cap
 
 **Index-compiled operators (when indexed):**
+
 - `eq`, `ne`, `gt`, `gte`, `lt`, `lte`
 - `between`, `notBetween`
 - `in`, `notIn`
@@ -188,6 +214,7 @@ isNotNull(field)
 - same-field equality `OR` branches
 
 **Post-fetch operators (typed API requires explicit `.withIndex(...)`):**
+
 - `arrayContains`, `arrayContained`, `arrayOverlaps` (use inverted/join tables)
 - `contains` (use search index or tokenized denormalized field)
 - `endsWith` (use reversed-string indexed column + `startsWith`)

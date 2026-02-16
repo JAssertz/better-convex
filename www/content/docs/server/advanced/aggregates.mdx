@@ -7,7 +7,7 @@ links:
 
 import { InfoIcon } from "lucide-react"
 
-In this guide, we'll explore efficient aggregations in Convex. You'll learn to set up TableAggregate for O(log n) counts and sums, integrate with triggers for automatic maintenance, and implement common patterns like leaderboards, follower counts, and dashboard metrics.
+In this guide, we'll explore efficient aggregations in Convex. You'll learn to set up TableAggregate for O(log n) counts and sums, integrate with ORM triggers for automatic maintenance, and implement common patterns like leaderboards, follower counts, and dashboard metrics.
 
 ## Overview
 
@@ -30,7 +30,7 @@ Let's set it up.
 
 ```ts showLineNumbers {2,4-5,7-9}
 // ✅ CORRECT: Register trigger once, aggregates stay in sync automatically
-triggers.register('scores', scoresAggregate.trigger());
+scoresAggregate.trigger();
 
 // Just insert - trigger handles aggregate!
 await ctx.orm.insert(scores).values({ score: 100 });
@@ -258,30 +258,29 @@ This also fixes the TypeScript "Type instantiation is excessively deep" error.
 
 ## Trigger Integration
 
-Register aggregates with [triggers](/docs/server/components/triggers) for automatic maintenance:
+Register aggregates with [triggers](/docs/db/orm/triggers) directly in your schema:
 
-```ts title="convex/lib/triggers.ts" showLineNumbers {1-6,10-11,13-16}
-import { Triggers } from 'convex-helpers/server/triggers';
+```ts title="convex/functions/schema.ts" showLineNumbers {1-2,6-7,9-10,12}
+import { convexTable } from 'better-convex/orm';
 import {
-  aggregatePostLikes,
   aggregateFollowers,
   aggregateFollowing,
+  aggregatePostLikes,
   aggregateTotalUsers,
-} from '../aggregates';
+} from './aggregates';
 
-export const registerTriggers = () => {
-  const triggers = new Triggers<DataModel>();
+export const postLikesTable = convexTable('postLikes', {/* ... */}, () => [
+  aggregatePostLikes.trigger(),
+]);
 
-  // Auto-maintain counts on insert/delete
-  triggers.register('postLikes', aggregatePostLikes.trigger());
-  triggers.register('user', aggregateTotalUsers.trigger());
+export const userTable = convexTable('user', {/* ... */}, () => [
+  aggregateTotalUsers.trigger(),
+]);
 
-  // Multiple triggers for same table
-  triggers.register('follows', aggregateFollowers.trigger());
-  triggers.register('follows', aggregateFollowing.trigger());
-
-  return triggers;
-};
+export const followsTable = convexTable('follows', {/* ... */}, () => [
+  aggregateFollowers.trigger(),
+  aggregateFollowing.trigger(),
+]);
 ```
 
 ## Usage
@@ -474,8 +473,10 @@ export const aggregatePostLikes = new TableAggregate<{
   sortKey: () => null,
 });
 
-// Register trigger
-triggers.register('postLikes', aggregatePostLikes.trigger());
+// Register trigger in schema
+export const postLikesTable = convexTable('postLikes', {/* ... */}, () => [
+  aggregatePostLikes.trigger(),
+]);
 
 // Query count
 const likeCount = await aggregatePostLikes.count(ctx, {
@@ -520,7 +521,7 @@ Here are key practices to follow when using aggregates.
 
 ```ts showLineNumbers {1-3,5-7}
 // ✅ BEST: Triggers handle everything
-triggers.register('scores', scoresAggregate.trigger());
+scoresAggregate.trigger();
 await ctx.orm.insert(scores).values(data); // Done!
 
 // ❌ AVOID: Manual updates are error-prone
@@ -707,14 +708,11 @@ const usWestCount = await leaderboard.count(ctx, {
 
 Aggregates update automatically when triggers handle cascade deletes:
 
-```ts showLineNumbers {1-3,5-14}
-// Register aggregate triggers
-triggers.register('characterStars', aggregateCharacterStars.trigger());
-triggers.register('characters', aggregateCharacters.trigger());
+```ts showLineNumbers {1-2,4-14}
+import { onDelete } from 'better-convex/orm';
 
-// Cascade delete - aggregates update automatically
-triggers.register('user', async (ctx, change) => {
-  if (change.operation === 'delete') {
+export const userTable = convexTable('user', {/* ... */}, () => [
+  onDelete(async (ctx, change) => {
     // Index characters.userId.
     const characterRows = await ctx.orm.query.characters.findMany({
       where: { userId: change.id },
@@ -722,11 +720,14 @@ triggers.register('user', async (ctx, change) => {
     });
 
     for (const char of characterRows) {
-      // Aggregate trigger fires on each delete!
       await ctx.orm.delete(characters).where(eq(characters.id, char.id));
     }
-  }
-});
+  }),
+]);
+
+export const characterStarsTable = convexTable('characterStars', {/* ... */}, () => [
+  aggregateCharacterStars.trigger(),
+]);
 ```
 
 ### Lazy Aggregation Configuration
@@ -872,7 +873,7 @@ export const deleteScore = authMutation
 ## Next Steps
 
 <Cards>
-  <Card title="Triggers" href="/docs/server/components/triggers" />
-  <Card title="Rate Limiting" href="/docs/server/rate-limiting" />
+  <Card title="Triggers" href="/docs/db/orm/triggers" />
+  <Card title="Rate Limiting" href="/docs/server/advanced/rate-limiting" />
   <Card title="@convex-dev/aggregate" href="https://www.convex.dev/components/aggregate" />
 </Cards>

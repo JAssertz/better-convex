@@ -164,7 +164,7 @@ Use `runAfter` to schedule a function to run after a delay (in milliseconds):
 
 ```ts title="convex/functions/orders.ts" showLineNumbers {10-13}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { authMutation } from '../lib/crpc';
 import { internal } from './_generated/api';
 
@@ -392,8 +392,8 @@ Here are key practices to follow when using scheduling:
 ## Next Steps
 
 <Cards>
-  <Card title="Triggers" href="/docs/server/components/triggers" />
-  <Card title="Rate Limiting" href="/docs/server/rate-limiting" />
+  <Card title="Triggers" href="/docs/db/orm/triggers" />
+  <Card title="Rate Limiting" href="/docs/server/advanced/rate-limiting" />
   <Card title="HTTP Router" href="/docs/server/http" />
   <Card title="Error Handling" href="/docs/server/error-handling" />
 </Cards>

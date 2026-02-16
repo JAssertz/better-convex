@@ -42,7 +42,7 @@ Foreign key cascade handling loads all referencing rows via `.collect()`, which 
 ### Option 2: Stream-Based Cascade
 
 **Approach:**
-- Use `convex-helpers/server/stream` to iterate indexed queries and apply cascade actions incrementally.
+- Use `better-convex/orm/stream` to iterate indexed queries and apply cascade actions incrementally.
 
 **Pros:**
 - Fits Convex guidance for large data processing

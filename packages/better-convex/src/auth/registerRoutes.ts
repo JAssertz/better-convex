@@ -1,6 +1,6 @@
 /** biome-ignore-all lint/suspicious/noConsole: lib */
 import { type HttpRouter, httpActionGeneric } from 'convex/server';
-import { corsRouter } from 'convex-helpers/server/cors';
+import { corsRouter } from '../internal/upstream/server/cors';
 
 import type { GetAuth } from './types';
 

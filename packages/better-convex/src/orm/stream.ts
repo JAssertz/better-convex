@@ -252,7 +252,7 @@ export abstract class QueryStream<T extends GenericStreamItem>
    * All documents filtered out are still considered "read" from the database;
    * they are just excluded from the output stream.
    *
-   * In contrast to `filter` from convex-helpers/server/filter, this filterWith
+   * In contrast to `filter` from legacy helper filtering, this filterWith
    * is applied *before* any pagination. That means if the filter excludes a lot
    * of documents, the `.paginate()` method will read a lot of documents until
    * it gets as many documents as it wants. If you run into issues with reading
@@ -335,8 +335,7 @@ export abstract class QueryStream<T extends GenericStreamItem>
     );
   }
   async paginate(opts: StreamPaginateOptions): Promise<PaginationResult<T>> {
-    const numItems = opts.limit;
-    if (numItems === 0) {
+    if (opts.limit === 0) {
       if (opts.cursor === null) {
         throw new Error(
           '.paginate called with cursor of null and 0 for limit. ' +
@@ -366,8 +365,8 @@ export abstract class QueryStream<T extends GenericStreamItem>
       inclusive: true,
     };
     const maxRowsToRead = opts.maxScan;
-    const softMaxRowsToRead = numItems + 1;
-    let maxRows: number | undefined = numItems;
+    const softMaxRowsToRead = opts.limit + 1;
+    let maxRows: number | undefined = opts.limit;
     if (opts.endCursor) {
       newEndKey = {
         key: deserializeCursor(opts.endCursor),

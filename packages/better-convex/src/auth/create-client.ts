@@ -14,7 +14,7 @@ import { v } from 'convex/values';
 import {
   customCtx,
   customMutation,
-} from 'convex-helpers/server/customFunctions';
+} from '../internal/upstream/server/customFunctions';
 
 import type { GenericCtx } from '../server/context-utils';
 import { isQueryCtx } from '../server/context-utils';
@@ -82,10 +82,6 @@ export type Triggers<
   };
 };
 
-type DbTriggers<DataModel extends GenericDataModel> = {
-  wrapDB: (ctx: GenericMutationCtx<DataModel>) => GenericMutationCtx<DataModel>;
-};
-
 export const createClient = <
   DataModel extends GenericDataModel,
   Schema extends SchemaDefinition<GenericSchema, true>,
@@ -95,7 +91,6 @@ export const createClient = <
   authFunctions: AuthFunctions;
   schema: Schema;
   internalMutation?: typeof internalMutationGeneric;
-  dbTriggers?: DbTriggers<DataModel>;
   context?: (
     ctx: GenericMutationCtx<DataModel>
   ) => TriggerCtx | Promise<TriggerCtx>;
@@ -113,12 +108,9 @@ export const createClient = <
   triggersApi: () => {
     const mutationBuilderBase =
       config.internalMutation ?? internalMutationGeneric;
-    const hasMutationCtxTransforms =
-      config.dbTriggers !== undefined || config.context !== undefined;
-    const transformMutationCtx = async (ctx: GenericMutationCtx<DataModel>) => {
-      const wrappedCtx = config.dbTriggers?.wrapDB(ctx) ?? ctx;
-      return (await config.context?.(wrappedCtx)) ?? (wrappedCtx as TriggerCtx);
-    };
+    const hasMutationCtxTransforms = config.context !== undefined;
+    const transformMutationCtx = async (ctx: GenericMutationCtx<DataModel>) =>
+      (await config.context?.(ctx)) ?? (ctx as TriggerCtx);
     const mutationBuilder: typeof mutationBuilderBase = hasMutationCtxTransforms
       ? (customMutation(
           mutationBuilderBase,

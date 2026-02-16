@@ -225,7 +225,6 @@ This is the main migration. We'll replace the component-based client with direct
     import type { DataModel } from "./_generated/dataModel";
     import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
     import { withOrm } from "../lib/orm";
-    import { registerTriggers } from "../lib/triggers";
     import authConfig from "./auth.config";
     import schema from "./schema";
 
@@ -233,13 +232,11 @@ This is the main migration. We'll replace the component-based client with direct
 
     // Reference internal auth functions (generated after first `npx convex dev`)
     const authFunctions: AuthFunctions = internal.auth;
-    const triggers = registerTriggers();
 
     // Create the auth client with triggers
     export const authClient = createClient<DataModel, typeof schema>({
       authFunctions,
       schema,
-      dbTriggers: triggers, // Optional: trigger-wrapped db writes
       context: withOrm, // Optional: enrich auth mutation + trigger ctx once
       triggers: {
         user: {
@@ -296,7 +293,6 @@ This is the main migration. We'll replace the component-based client with direct
       getLatestJwks,
       rotateKeys,
     } = createApi(schema, getAuth, {
-      dbTriggers: triggers, // Optional: same db trigger wrapper
       context: withOrm, // Optional: same context enrichment
     });
 
@@ -322,17 +318,13 @@ This is the main migration. We'll replace the component-based client with direct
 | Before | After |
 |--------|-------|
 | `createClient(components.betterAuth, {...})` | `createClient({ authFunctions, schema, triggers })` |
-| Trigger + ORM context setup | `dbTriggers` + `context` |
+| ORM context setup | `context` |
 | `authComponent.adapter(ctx)` | `authClient.adapter(ctx, getAuthOptions)` |
 | `authComponent.clientApi()` | `createApi()` generates internal functions |
 | No triggers | Built-in `triggers: { user, session }` |
 
 <Callout icon={<InfoIcon />}>
 **Context-aware adapter:** `authClient.adapter(ctx, getAuthOptions)` automatically picks direct DB access in queries/mutations and HTTP adapter behavior in actions/HTTP contexts.
-</Callout>
-
-<Callout icon={<InfoIcon />}>
-**Trigger wiring:** Use `dbTriggers` to run auth CRUD through `wrapDB`, then `context` for context enrichment.
 </Callout>
 
 ## Step 5: Add Polyfills
@@ -1089,16 +1081,16 @@ Run `npx convex dev` first to generate the internal API, then reference it corre
 const authFunctions: AuthFunctions = internal.auth;
 ```
 
-### "Triggers not firing"
+### "Auth triggers not firing"
 
-Triggers must be defined in `createClient`. They only fire through Better Auth flows, not direct database operations.
+Auth triggers must be defined in `createClient({ triggers: ... })`. They only fire through Better Auth flows, not direct database operations.
 
 ## Next Steps
 
 Done! Your auth is now migrated. Here's what to explore next:
 
 <Cards>
-  <Card title="Triggers" href="/docs/auth/triggers" description="Add user lifecycle hooks" />
+  <Card title="Triggers" href="/docs/auth/triggers" description="Add user triggers" />
   <Card title="Organizations" href="/docs/auth/plugins/organizations" description="Multi-tenant support" />
   <Card title="Client Setup" href="/docs/auth/client" description="React hooks and utilities" />
 </Cards>

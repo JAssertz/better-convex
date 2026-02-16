@@ -89,8 +89,7 @@ const internalMutationWithTriggers = customMutation(...);
 
 // After
 const c = initCRPC.create();
-// or when needed:
-const cWithTriggers = initCRPC.create({ triggers });
+// Triggers are declared in schema table config.
 ```
 
 - cRPC now supports wire transformers end-to-end (Date codec included by default).
@@ -106,18 +105,17 @@ const http = createHttpProxy({
 });
 ```
 
-- Auth setup now supports `dbTriggers` and `context` in both `createClient` and `createApi`.
+- Auth setup supports `triggers` + `context` in `createClient`, and `context` in `createApi`.
 
 ```ts
 const authClient = createClient({
   authFunctions,
   schema,
-  dbTriggers: triggers,
+  triggers,
   context: getOrmCtx,
 });
 
 const authApi = createApi(schema, getAuth, {
-  dbTriggers: triggers,
   context: getOrmCtx,
 });
 ```

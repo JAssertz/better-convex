@@ -45,7 +45,7 @@ Relation loading currently pulls a fixed 10,000 rows per target/through table an
 ### Option 2: Streaming + Pagination
 
 **Approach:**
-- Use `convex-helpers/server/stream` to iterate index-backed queries with `filterWith` for complex cases.
+- Use `better-convex/orm/stream` to iterate index-backed queries with `filterWith` for complex cases.
 - Paginate through results to limit memory use.
 
 **Pros:**

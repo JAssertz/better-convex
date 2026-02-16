@@ -487,7 +487,7 @@ Function examples use the ORM (`ctx.orm`).
 import '../lib/polar-polyfills';
 
 import { CRPCError } from 'better-convex/server';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { z } from 'zod';
 import { privateAction, privateMutation } from '../lib/crpc';
 import { getPolarClient } from '../lib/polar-client';
@@ -559,7 +559,7 @@ export const updateUserPolarCustomerId = privateMutation
 import '../lib/polar-polyfills';
 
 import { CRPCError } from 'better-convex/server';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { z } from 'zod';
 import { authAction, privateMutation, privateQuery } from '../lib/crpc';
 import { getPolarClient } from '../lib/polar-client';

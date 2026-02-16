@@ -13,6 +13,7 @@ import {
   type OrmWriter,
 } from './database';
 import { extractRelationsConfig } from './extractRelationsConfig';
+import { createOrmDbLifecycle, type OrmDbLifecycle } from './lifecycle';
 import type { TablesRelationalConfig } from './relations';
 import { scheduledDeleteFactory } from './scheduled-delete';
 import { scheduledMutationBatchFactory } from './scheduled-mutation-batch';
@@ -91,6 +92,10 @@ type OrmApiResult = {
 
 type OrmClientBase<TSchema extends TablesRelationalConfig> = {
   db: OrmFactory<TSchema>;
+  with: <TContext extends OrmReaderCtx | OrmWriterCtx>(
+    ctx: TContext,
+    options?: CreateOrmOptions
+  ) => GenericOrmCtx<TContext, TSchema>;
 };
 
 type OrmClientWithApi<TSchema extends TablesRelationalConfig> =
@@ -104,6 +109,7 @@ function isOrmCtx(source: OrmSource): source is OrmReaderCtx | OrmWriterCtx {
 
 function createDbFactory<TSchema extends TablesRelationalConfig>(
   schema: TSchema,
+  dbLifecycle: OrmDbLifecycle,
   ormFunctions?: OrmFunctions
 ): OrmFactory<TSchema> {
   const edgeMetadata = extractRelationsConfig(schema as TablesRelationalConfig);
@@ -122,8 +128,12 @@ function createDbFactory<TSchema extends TablesRelationalConfig>(
       options?.scheduledDelete ?? ormFunctions?.scheduledDelete;
     const scheduledMutationBatch =
       options?.scheduledMutationBatch ?? ormFunctions?.scheduledMutationBatch;
+    const lifecycleSource = (ctxSource ?? {
+      db: rawDb,
+    }) as OrmReaderCtx | OrmWriterCtx;
+    const wrappedCtx = dbLifecycle.wrapDB(lifecycleSource);
 
-    return createDatabase(rawDb, schema, edgeMetadata, {
+    return createDatabase(wrappedCtx.db, schema, edgeMetadata, {
       ...options,
       scheduler,
       vectorSearch,
@@ -144,18 +154,36 @@ export function createOrm<TSchema extends TablesRelationalConfig>(
     | CreateOrmConfigWithFunctions<TSchema>
     | CreateOrmConfigWithoutFunctions<TSchema>
 ): OrmClientBase<TSchema> | OrmClientWithApi<TSchema> {
+  const dbLifecycle = createOrmDbLifecycle(config.schema);
   const edgeMetadata = extractRelationsConfig(
     config.schema as TablesRelationalConfig
   );
-  const db = createDbFactory(config.schema, config.ormFunctions);
+  const db = createDbFactory(config.schema, dbLifecycle, config.ormFunctions);
+  const withContext = <TContext extends OrmReaderCtx | OrmWriterCtx>(
+    ctx: TContext,
+    options?: CreateOrmOptions
+  ): GenericOrmCtx<TContext, TSchema> => {
+    const lifecycleCtx = { ...ctx } as TContext;
+    const wrappedCtx = dbLifecycle.wrapDB(lifecycleCtx);
+    const orm = db(wrappedCtx, options);
+    (lifecycleCtx as Record<string, unknown>).orm = orm as unknown;
+    return {
+      ...wrappedCtx,
+      orm,
+    } as GenericOrmCtx<TContext, TSchema>;
+  };
 
   if (!config.ormFunctions) {
-    return { db };
+    return {
+      db,
+      with: withContext,
+    };
   }
 
   const mutationBuilder = config.internalMutation ?? internalMutationGeneric;
   return {
     db,
+    with: withContext,
     api: () => ({
       scheduledMutationBatch: mutationBuilder({
         args: v.any(),

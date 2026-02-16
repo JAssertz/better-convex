@@ -6,9 +6,9 @@
  */
 
 import type { FunctionReference, FunctionReturnType } from 'convex/server';
-import type { EmptyObject } from 'convex-helpers';
 import type { DataTransformerOptions } from '../crpc/transformer';
 import { getTransformer } from '../crpc/transformer';
+import type { EmptyObject } from '../internal/upstream';
 import { getFuncRef, getFunctionType } from '../shared/meta-utils';
 
 /** Metadata for a single function */

@@ -24,7 +24,7 @@ cd my-app
 ## Installation
 
 ```bash
-bun add convex better-convex convex-helpers zod @tanstack/react-query
+bun add convex better-convex zod @tanstack/react-query
 ```
 
 ## Configure Folder Structure
@@ -214,7 +214,7 @@ export const publicMutation = c.mutation;
 
 ```ts title="convex/functions/user.ts" showLineNumbers {1-4,6-27,29-40}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { publicQuery, publicMutation } from '../lib/crpc';
 import { user } from './schema';
 
@@ -404,7 +404,7 @@ You have a working Better Convex app. Add more features:
 
 <Cards>
   <Card title="Add Auth" href="/docs/auth/server" />
-  <Card title="Add Triggers" href="/docs/server/components/triggers" />
-  <Card title="Add Rate Limiting" href="/docs/server/rate-limiting" />
+  <Card title="Add Triggers" href="/docs/db/orm/triggers" />
+  <Card title="Add Rate Limiting" href="/docs/server/advanced/rate-limiting" />
   <Card title="Full Templates" href="/docs/templates" />
 </Cards>

@@ -3,11 +3,11 @@
  */
 
 export { convex } from '@convex-dev/better-auth/plugins';
-
 export * from './adapter';
 export * from './adapter-utils';
 export * from './create-api';
-export * from './create-client';
+export type { AuthFunctions } from './create-client';
+export { createClient } from './create-client';
 export * from './helpers';
 export * from './middleware';
 export * from './registerRoutes';

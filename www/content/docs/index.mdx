@@ -35,7 +35,7 @@ Instead of assembling these yourself with custom glue code, you get:
 | **Database** | Aggregates | O(log n) counts, sums, leaderboards |
 | **Client** | React | TanStack Query integration with real-time sync |
 | **Client** | Next.js | RSC prefetching, hydration, server caller |
-| **Auth** | Better Auth | Lifecycle hooks, session management, guards |
+| **Auth** | Better Auth | Triggers, session management, guards |
 | **CLI** | Codegen | Procedure metadata for auth-aware queries |
 
 ## Quick Look
@@ -57,6 +57,7 @@ const { data: posts } = useQuery(crpc.posts.list.queryOptions({ limit: 10 }));
 | Export | Description |
 |--------|-------------|
 | `better-convex/server` | cRPC builder, middleware, server caller |
+| `better-convex/orm` | Drizzle-style ORM schema and query helpers |
 | `better-convex/react` | React client, providers, auth hooks |
 | `better-convex/rsc` | RSC prefetching, hydration |
 | `better-convex/auth` | Better Auth adapter |
@@ -144,15 +145,15 @@ Complete reference for all documentation pages.
 | [Metadata](/docs/server/metadata) | Add procedure metadata with `.meta()`. Used by CLI for auth-aware query handling. |
 | [Error Handling](/docs/server/error-handling) | Throw `CRPCError` with codes like `UNAUTHORIZED`, `NOT_FOUND`, `BAD_REQUEST`. |
 | [Server-Side Calls](/docs/server/server-side-calls) | Call procedures from server with `createCallerFactory`. RSC data fetching. |
-| [Rate Limiting](/docs/server/rate-limiting) | Token bucket and fixed window rate limiting with `@convex-dev/rate-limiter`. |
+| [Rate Limiting](/docs/server/advanced/rate-limiting) | Token bucket and fixed window rate limiting with `@convex-dev/rate-limiter`. |
 
 ### Database
 
 | Page | When to Use |
 |------|-------------|
 | [ORM](/docs/db/orm) | Drizzle-style schema, queries, mutations, RLS, runtime constraints via `ctx.orm`. |
-| [Triggers](/docs/server/components/triggers) | Automatic side effects on insert/update/delete. Use `convex-helpers/server/triggers`. |
-| [Aggregates](/docs/server/components/aggregates) | O(log n) counts and sums with `@convex-dev/aggregate`. Leaderboards, running totals. |
+| [Triggers](/docs/db/orm/triggers) | Automatic side effects on insert/update/delete with schema triggers. |
+| [Aggregates](/docs/server/advanced/aggregates) | O(log n) counts and sums with `@convex-dev/aggregate`. Leaderboards, running totals. |
 
 ### React (Client)
 
@@ -179,7 +180,7 @@ Complete reference for all documentation pages.
 | [Auth Overview](/docs/auth) | Architecture overview. When to use Better Auth vs other auth solutions. |
 | [Auth Server](/docs/auth/server) | Complete Better Auth setup: schema, adapters, HTTP routes, helpers. |
 | [Auth Client](/docs/auth/client) | `useAuth`, `Authenticated`/`Unauthenticated` components. |
-| [Auth Triggers](/docs/auth/triggers) | User lifecycle hooks: `beforeCreate`, `onCreate`, `onDelete`. |
+| [Auth Triggers](/docs/auth/triggers) | User triggers: `beforeCreate`, `onCreate`, `onDelete`. |
 
 ### Reference
 
@@ -203,8 +204,8 @@ Complete reference for all documentation pages.
 
 **Add database features:**
 1. [ORM](/docs/db/orm) → schema + queries via `ctx.orm`
-2. [Triggers](/docs/server/components/triggers) → automatic side effects
-3. [Aggregates](/docs/server/components/aggregates) → counts and sums
+2. [Triggers](/docs/db/orm/triggers) → automatic side effects
+3. [Aggregates](/docs/server/advanced/aggregates) → counts and sums
 
 **Server components (RSC):**
 1. [Next.js Setup](/docs/nextjs) → configure caller

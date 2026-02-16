@@ -166,6 +166,33 @@ describe('stream compatibility', () => {
     });
   });
 
+  test('paginate supports maxScan', async () => {
+    const t = convexTest(schema);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('foo', { a: 1, b: 2, c: 3 });
+      await ctx.db.insert('foo', { a: 1, b: 3, c: 3 });
+      await ctx.db.insert('foo', { a: 1, b: 4, c: 3 });
+
+      const query = stream(ctx.db, schema)
+        .query('foo')
+        .withIndex('abc', (q) => q.eq('a', 1));
+
+      const page = await query.paginate({
+        cursor: null,
+        limit: 2,
+        maxScan: 2,
+      });
+
+      expect(page.page.map(stripSystemFields)).toEqual([
+        { a: 1, b: 2, c: 3 },
+        { a: 1, b: 3, c: 3 },
+      ]);
+      expect(page.pageStatus).toBe('SplitRequired');
+      expect(page.isDone).toBe(false);
+      expect(page.splitCursor).toBeTruthy();
+    });
+  });
+
   test('continueCursor respects stream order', async () => {
     const t = convexTest(schema);
     await t.run(async (ctx) => {

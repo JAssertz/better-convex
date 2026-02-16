@@ -52,7 +52,7 @@ export default {
 
 Now we'll create the auth client. This connects Better Auth to your Convex database and lets you add triggers for user lifecycle events:
 
-```ts title="convex/functions/auth.ts" showLineNumbers {8,11,14-16,24-29,45-49,54-57,62-69,72-84}
+```ts title="convex/functions/auth.ts" showLineNumbers {7,10-15,22-27,41-45,50-53,58-65,68-80}
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { admin } from 'better-auth/plugins';
 import { convex, createClient, createApi, type AuthFunctions } from 'better-convex/auth';
@@ -62,17 +62,14 @@ import type { DataModel } from './_generated/dataModel';
 import schema from './schema';
 import authConfig from './auth.config';
 import { withOrm } from '../lib/orm';
-import { registerTriggers } from '../lib/triggers';
 
 type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
 const authFunctions: AuthFunctions = internal.auth;
-const triggers = registerTriggers();
 
-// Create client with Convex adapter and triggers
+// Create client with Convex adapter and auth triggers
 export const authClient = createClient<DataModel, typeof schema>({
   authFunctions,
   schema,
-  dbTriggers: triggers, // Optional: wrap ctx.db with convex-helpers triggers
   context: withOrm, // Optional: enrich auth mutation + trigger ctx once
   triggers: {
     user: {
@@ -147,7 +144,6 @@ export const {
   getLatestJwks,
   rotateKeys,
 } = createApi(schema, getAuth, {
-  dbTriggers: triggers, // Optional: same db trigger wrapper
   context: withOrm, // Optional: same context enrichment
   skipValidation: true, // Smaller generated types
 });
@@ -482,50 +478,24 @@ export const someAction = publicAction.action(async ({ ctx }) => {
 **Performance:** In queries/mutations, the direct DB adapter is selected automatically, avoiding the extra `ctx.runQuery`/`ctx.runMutation` hop.
 </Callout>
 
-### Custom DB Triggers
+### Database Triggers
 
-Want auth CRUD to participate in your Convex DB triggers? Pass your trigger registry directly:
+Auth triggers (`triggers: { user, session }`) are independent from database triggers.
+If you also need DB-level side effects (aggregates, cascades, denormalized counters), define them in schema table configs:
 
-| Use Case | Description |
-|----------|-------------|
-| User aggregation | Maintain counts when users are created/deleted |
-| Custom trigger systems | Projects using convex-helpers triggers |
-| Middleware | Add logging, validation, or other cross-cutting concerns |
+```ts title="convex/functions/schema.ts" showLineNumbers {1-2,6-11}
+import { convexTable, onChange } from 'better-convex/orm';
+import { aggregateUsers } from './aggregates';
 
-```ts title="convex/lib/triggers.ts" showLineNumbers {1,4-8}
-import { eq } from 'better-convex/orm';
-import { Triggers } from 'convex-helpers/server/triggers';
-import { DataModel } from '../functions/_generated/dataModel';
-import { stats } from '../functions/schema';
-
-const triggers = new Triggers<DataModel>();
-
-// Maintain user count aggregate
-triggers.register('user', async (ctx, change) => {
-  if (change.operation !== 'insert' && change.operation !== 'delete') return;
-  // ... aggregate maintenance using ctx.db / ctx.orm
-});
-
-export { triggers };
+export const userTable = convexTable('user', {/* ... */}, () => [
+  aggregateUsers.trigger(),
+  onChange(async (ctx, change) => {
+    // Additional DB side effects
+  }),
+]);
 ```
 
-```ts title="convex/functions/auth.ts" showLineNumbers {1,7-8,13-14}
-import { triggers } from './lib/triggers';
-import { withOrm } from './lib/orm';
-
-export const authClient = createClient({
-  // ...
-  dbTriggers: triggers,
-  context: withOrm,
-});
-
-export const { ... } = createApi(schema, getAuth, {
-  dbTriggers: triggers,
-  context: withOrm,
-});
-```
-
-Without `dbTriggers`, auth operations use default `ctx.db` writes and won't run your trigger registry.
+Use `context: withOrm` in auth setup so auth handlers can call `ctx.orm` directly.
 
 ## Environment Variables
 

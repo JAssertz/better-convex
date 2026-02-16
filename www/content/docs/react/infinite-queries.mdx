@@ -184,7 +184,7 @@ Paginated queries use `.paginated({ limit, item })` to add pagination input auto
 
 ```ts title="convex/functions/session.ts" showLineNumbers {8,10-16}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { publicQuery } from './lib/crpc';
 
 const SessionSchema = z.object({

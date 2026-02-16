@@ -95,7 +95,7 @@ SEARCH(index):
   - Example updates tags via `todo.patch({ tags: { add/remove } })`.
   - ORM requires explicit join-table writes (`todoTags` insert/delete) instead.
 - **Triggers + aggregates coupling**:
-  - The app uses `convex-helpers/server/triggers` + `@convex-dev/aggregate`.
+  - The app uses `better-convex/auth` + `@convex-dev/aggregate`.
   - Triggers currently wrap `ctx.db` in cRPC mutation wiring; ORM writes must flow through the wrapped `db` to keep aggregates updating.
   - Migration must preserve this ordering: wrap DB first, then build `ctx.orm` from that ctx.
 
@@ -111,7 +111,7 @@ These aren’t necessarily ORM bugs, but are missing “migration mapping” gui
    - Migration docs mention join-table insert/delete, but many Ents users will specifically be using `patch({ tags: { add/remove } })`.
    - Add a section showing the rewrite to join table mutations (and the required indexes).
 
-3. `convex-helpers/server/stream` migration:
+3. `better-convex/orm/stream` migration:
    - `migrate-from-convex.mdx` doesn’t cover streams and async filters.
    - Add guidance: “Replace stream.filterWith(async ...) with precomputed IDs + predicate where + explicit index plan + `maximumRowsRead`”.
 

@@ -282,7 +282,6 @@ import { getSessionUser } from './auth/auth-helpers';
 import { getEnv } from './get-env';
 import { type OrmCtx, withOrm } from './orm';
 import { rateLimitGuard } from './rate-limiter';
-import { registerTriggers } from './triggers';
 
 /** Context with optional auth - user/userId may be null */
 export type MaybeAuthCtx<Ctx extends MutationCtx | QueryCtx = QueryCtx> =
@@ -306,8 +305,6 @@ export type AuthActionCtx = ActionCtx & {
   userId: string;
 };
 
-const triggers = registerTriggers();
-
 type Meta = {
   auth?: 'optional' | 'required';
   role?: 'admin';
@@ -322,7 +319,7 @@ const c = initCRPC
     mutation: (ctx) => withOrm(ctx),
   })
   .meta<Meta>()
-  .create({ triggers });
+  .create();
 
 const devMiddleware = c.middleware<object>(({ meta, next, ctx }) => {
   if (meta.dev && getEnv().DEPLOY_ENV === 'production') {
@@ -567,7 +564,6 @@ import {
 } from 'better-convex/auth';
 
 import { type OrmMutationCtx, withOrm } from '../lib/orm';
-import { registerTriggers } from '../lib/triggers';
 import { internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
@@ -577,7 +573,6 @@ import schema from './schema';
 type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
 
 const authFunctions: AuthFunctions = internal.auth;
-const dbTriggers = registerTriggers();
 
 export const authClient = createClient<
   DataModel,
@@ -586,7 +581,6 @@ export const authClient = createClient<
 >({
   authFunctions,
   schema,
-  dbTriggers,
   context: withOrm,
 });
 
@@ -630,7 +624,6 @@ export const {
   getLatestJwks,
   rotateKeys,
 } = createApi(schema, getAuth, {
-  dbTriggers,
   context: withOrm,
   skipValidation: true,
 });
@@ -1136,32 +1129,23 @@ export function HydrateClient({ children }: { children: React.ReactNode }) {
 
 Optional utilities for triggers and rate limiting.
 
-### triggers.ts
+### schema triggers
 
-Database triggers for automatic side effects.
+Define side effects directly in `convex/functions/schema.ts`.
 
-```ts title="convex/lib/triggers.ts" showLineNumbers {5-17}
-import { Triggers } from 'convex-helpers/server/triggers';
-import type { DataModel } from '../functions/_generated/dataModel';
+```ts title="convex/functions/schema.ts" showLineNumbers {1-2,6-7}
+import { convexTable, onChange } from 'better-convex/orm';
+import { aggregatePostCount } from './aggregates';
 
-export const registerTriggers = () => {
-  const triggers = new Triggers<DataModel>();
-
-  // Example: Auto-maintain counts with aggregates
-  // triggers.register('posts', aggregatePostCount.trigger());
-
-  // Example: Activity tracking
-  // triggers.register('posts', async (ctx, change) => {
-  //   if (change.operation === 'insert') {
-  //     console.log('Post created:', change.newDoc.title);
-  //   }
-  // });
-
-  return triggers;
-};
+export const postsTable = convexTable('posts', {/* columns */}, () => [
+  aggregatePostCount.trigger(),
+  onChange(async (_ctx, change) => {
+    console.log('Post changed:', change.operation, change.id);
+  }),
+]);
 ```
 
-See [Triggers documentation](/docs/server/components/triggers) for patterns.
+See [Triggers documentation](/docs/db/orm/triggers) for patterns.
 
 ### rate-limiter.ts
 
@@ -1234,7 +1218,7 @@ export async function rateLimitGuard(
 }
 ```
 
-See [Rate Limiting documentation](/docs/server/rate-limiting) for setup.
+See [Rate Limiting documentation](/docs/server/advanced/rate-limiting) for setup.
 
 ---
 

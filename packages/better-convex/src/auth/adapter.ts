@@ -13,9 +13,9 @@ import {
   type PaginationResult,
   type SchemaDefinition,
 } from 'convex/server';
-import { asyncMap } from 'convex-helpers';
 import { prop, sortBy, uniqueBy } from 'remeda';
 import type { SetOptional } from 'type-fest';
+import { asyncMap } from '../internal/upstream';
 import type { GenericCtx } from '../server/context-utils';
 import { isRunMutationCtx } from '../server/context-utils';
 import {

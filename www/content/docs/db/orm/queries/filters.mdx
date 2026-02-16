@@ -60,7 +60,7 @@ This example uses a union + interleave (internal merged-stream semantics), then 
 
 ```ts title="convex/functions/messages.ts" showLineNumbers {17-37}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { publicQuery } from '../lib/crpc';
 
 const MessageSchema = z.object({
@@ -136,7 +136,7 @@ Now let's implement a basic search query:
 
 ```ts title="convex/functions/articles.ts" showLineNumbers {7-11}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { publicQuery } from '../lib/crpc';
 
 export const search = publicQuery
@@ -452,7 +452,7 @@ That's it. You now have all the tools for full-text search, predicate filtering,
 
 <Cards>
   <Card title="ORM" href="/docs/db/orm" />
-  <Card title="Triggers" href="/docs/server/components/triggers" />
-  <Card title="Aggregates" href="/docs/server/components/aggregates" />
-  <Card title="convex-helpers" href="https://github.com/get-convex/convex-helpers" />
+  <Card title="Triggers" href="/docs/db/orm/triggers" />
+  <Card title="Aggregates" href="/docs/server/advanced/aggregates" />
+  <Card title="better-convex" href="https://github.com/get-convex/better-convex" />
 </Cards>

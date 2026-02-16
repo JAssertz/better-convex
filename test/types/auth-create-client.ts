@@ -1,4 +1,4 @@
-import type { Triggers } from 'better-convex/auth';
+import { createClient } from 'better-convex/auth';
 import {
   convexTable,
   defineSchema,
@@ -51,12 +51,14 @@ type DataModel = {
   };
 };
 
-type SessionTriggers = NonNullable<
-  Triggers<DataModel, typeof schema>['session']
+type AuthClientTriggers = NonNullable<
+  Parameters<typeof createClient<DataModel, typeof schema>>[0]['triggers']
 >;
 
+type SessionTriggers = NonNullable<AuthClientTriggers['session']>;
+
 {
-  const triggers: Triggers<DataModel, typeof schema> = {
+  const triggers: AuthClientTriggers = {
     // @ts-expect-error - unknown table names should be rejected (typo guard)
     sessoin: {},
   };

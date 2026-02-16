@@ -140,12 +140,10 @@ describe('createClient', () => {
     expect(result).toEqual({ email: 'a@b.com', usedOrm: true });
   });
 
-  test('applies dbTriggers, then context', async () => {
+  test('applies context transforms for trigger callbacks', async () => {
     const beforeCreate = mock(async (ctx: any, data: any) => ({
       ...data,
-      order: ctx.order,
       transformed: {
-        db: ctx.dbWrapped === true,
         context: ctx.contextWrapped === true,
       },
     }));
@@ -153,17 +151,9 @@ describe('createClient', () => {
     const client = createClient({
       authFunctions,
       schema: {} as any,
-      dbTriggers: {
-        wrapDB: (ctx: any) => ({
-          ...ctx,
-          dbWrapped: true,
-          order: [...(ctx.order ?? []), 'db'],
-        }),
-      },
       context: async (ctx: any) => ({
         ...ctx,
         contextWrapped: true,
-        order: [...ctx.order, 'context'],
       }),
       triggers: {
         user: {
@@ -181,9 +171,7 @@ describe('createClient', () => {
     expect(beforeCreate).toHaveBeenCalled();
     expect(result).toEqual({
       email: 'a@b.com',
-      order: ['db', 'context'],
       transformed: {
-        db: true,
         context: true,
       },
     });

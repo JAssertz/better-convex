@@ -260,38 +260,7 @@ describe('server/builder', () => {
     await expect((bad as any)._handler({}, {})).rejects.toBeTruthy();
   });
 
-  test('create({ triggers }) applies wrapDB to mutation/internalMutation only', async () => {
-    const wrapDB = mock((ctx: any) => ({ ...ctx, wrapped: true }));
-    const c = initCRPC
-      .context({
-        query: (ctx) => ({ wrapped: (ctx as any).wrapped === true }),
-        mutation: (ctx) => ({ wrapped: (ctx as any).wrapped === true }),
-      })
-      .create({
-        query: queryGeneric,
-        internalQuery: internalQueryGeneric,
-        mutation: mutationGeneric,
-        internalMutation: internalMutationGeneric,
-        triggers: { wrapDB },
-      } as any);
-
-    const queryFn = c.query.query(async ({ ctx }) => (ctx as any).wrapped);
-    const mutationFn = c.mutation.mutation(
-      async ({ ctx }) => (ctx as any).wrapped
-    );
-    const internalMutationFn = c.mutation
-      .internal()
-      .mutation(async ({ ctx }) => (ctx as any).wrapped);
-
-    await expect((queryFn as any)._handler({}, {})).resolves.toBe(false);
-    await expect((mutationFn as any)._handler({}, {})).resolves.toBe(true);
-    await expect((internalMutationFn as any)._handler({}, {})).resolves.toBe(
-      true
-    );
-    expect(wrapDB).toHaveBeenCalledTimes(2);
-  });
-
-  test('create({ triggers }) wraps DB before mutation context enrichment', async () => {
+  test('create() applies configured mutation context enrichment', async () => {
     const c = initCRPC
       .context({
         mutation: (ctx) => ({ stage: (ctx as any).stage }),
@@ -300,13 +269,14 @@ describe('server/builder', () => {
       .create({
         query: queryGeneric,
         mutation: mutationGeneric,
-        triggers: {
-          wrapDB: (ctx: any) => ({ ...ctx, stage: 'wrapped' }),
-        },
       } as any);
 
-    const fn = c.mutation.mutation(async ({ ctx }) => (ctx as any).stage);
-    await expect((fn as any)._handler({}, {})).resolves.toBe('wrapped');
+    const fn = c.mutation.mutation(
+      async ({ ctx }) => (ctx as any).stage ?? 'raw'
+    );
+    await expect((fn as any)._handler({ stage: 'wrapped' }, {})).resolves.toBe(
+      'wrapped'
+    );
   });
 
   test('action.internal() is available by default', async () => {

@@ -39,7 +39,7 @@ Use `findFirst()` to retrieve a single row matching your criteria. This example 
 
 ```ts title="convex/functions/users.ts" showLineNumbers
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { publicQuery } from '../lib/crpc';
 
 export const getFirstUser = publicQuery
@@ -159,7 +159,7 @@ const withoutPosts = await db.query.users.findMany({
 ### Aggregations (`count`, `sum`, `avg`, `max`, `min`)
 
 For query-builder aggregations, use Convex aggregates via `@convex-dev/aggregate`.
-See [/docs/server/components/aggregates](/docs/server/components/aggregates).
+See [/docs/server/advanced/aggregates](/docs/server/advanced/aggregates).
 
 ### Full-Scan Operators and Workarounds
 

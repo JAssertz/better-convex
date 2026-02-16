@@ -141,7 +141,7 @@ Use `.mutation()` for write operations. Mutations are transactional - if any par
 
 ```ts showLineNumbers {1-4,6-17}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { eq } from 'better-convex/orm';
 import { user } from './schema';
 
@@ -227,7 +227,7 @@ Here's a full CRUD example showing all the patterns together:
 
 ```ts title="convex/functions/user.ts" showLineNumbers
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
+import { zid } from 'better-convex/server';
 import { eq } from 'better-convex/orm';
 import { publicQuery, publicMutation } from '../lib/crpc';
 import { user } from './schema';
@@ -282,7 +282,7 @@ cRPC uses Zod for validation instead of Convex's `v` validators. Here's a quick 
 | `zid('tablename')` | `v.id('tablename')` |
 
 <Callout icon={<InfoIcon />}>
-  **Note:** `zid` is imported from `convex-helpers/server/zod4` and validates Convex document IDs with full type safety.
+  **Note:** `zid` is imported from `better-convex/server` and validates Convex document IDs with full type safety.
 </Callout>
 
 ## Migrate from Convex
@@ -315,7 +315,7 @@ If you're coming from vanilla Convex, here's what changes.
   <CompareItem title="After (cRPC)">
     ```ts showLineNumbers {5-7}
     import { z } from 'zod';
-    import { zid } from 'convex-helpers/server/zod4';
+    import { zid } from 'better-convex/server';
     import { publicQuery } from '../lib/crpc';
 
     export const getById = publicQuery

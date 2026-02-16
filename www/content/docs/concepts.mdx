@@ -140,7 +140,7 @@ const user = await ctx.orm.query.user.findFirst({
 
 ### Triggers
 
-Automatic side effects when data changes. Use [convex-helpers](https://github.com/get-convex/convex-helpers) triggers for:
+Automatic side effects when data changes. Use schema triggers for:
 
 - Maintaining denormalized counts
 - Cascade deletes
@@ -148,10 +148,10 @@ Automatic side effects when data changes. Use [convex-helpers](https://github.co
 - Syncing to external systems
 
 ```ts showLineNumbers {1-2,4-8}
-import { eq } from 'better-convex/orm';
+import { eq, onChange } from 'better-convex/orm';
 import { post } from './schema';
 
-triggers.register('user', async (ctx, change) => {
+onChange(async (ctx, change) => {
   if (change.operation === 'delete') {
     // Cascade delete user's posts
     // Index post.authorId.
@@ -195,7 +195,6 @@ convex/
 ├── lib/                 # Shared helpers (not deployed)
 │   ├── crpc.ts          # cRPC builder and middleware
 │   ├── orm.ts           # ORM context attachment
-│   ├── triggers.ts      # Database triggers
 │   └── rate-limiter.ts  # Rate limiting logic
 └── shared/              # Client-importable code
     ├── types.ts         # Shared TypeScript types

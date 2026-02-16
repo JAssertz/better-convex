@@ -1,6 +1,6 @@
 - In all interactions and commit messages, be extremely concise and sacrifice grammar for the sake of concision.
 - ALWAYS read and understand relevant files before proposing edits. Do not speculate about code you have not inspected.
-- Your primary method for interacting with GitHub should be the GitHub CLI.
+- Never browse GitHub, use `gh` instead. Use `dig` skill when the user asks a question about a library, needs to understand a library's API, or when you need information about a library that you don't know about.
 - Dirty workspace: Never pause to ask about unrelated local changes. Continue work and ignore unrelated diffs.
 - Proactively use Skill(tdd) when it adds value; skip TDD for high-friction tests (hard setup or slow React/UI flows).
 - After any package modification, run `bun --cwd packages/better-convex build`, then touch `example/convex/functions/schema.ts` to trigger a re-build
@@ -18,7 +18,7 @@
 
 ## Compound Engineering Overrides
 
-- **Git:** Never git add, commit, push, or create PR. AskUserQuestion before DONE: "Ready to commit?" → if yes, git ops. Ask to create a branch only from main.
+- **Git:** Never git add, commit, push, or create PR.
 - **plan:** Include test-browser in acceptance criteria for browser features
 - **deepen-plan:** Context7 only when not covered by skills
 - **work:** UI tasks require test-browser BEFORE marking complete. Never guess.

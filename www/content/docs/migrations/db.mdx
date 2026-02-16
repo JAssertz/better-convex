@@ -132,7 +132,7 @@ Now we'll migrate the read paths you use every day: single-row lookups, lists, a
   <CompareItem title="After (ORM + cRPC)">
     ```ts title="convex/functions/users.ts" showLineNumbers {2-4,7-11}
     import { z } from 'zod';
-    import { zid } from 'convex-helpers/server/zod4';
+    import { zid } from 'better-convex/server';
     import { publicQuery } from '../lib/crpc';
 
     export const getById = publicQuery
@@ -472,7 +472,7 @@ Vector search in native Convex is action-only. The migration keeps that shape: r
   <CompareItem title="After (ORM + cRPC)">
     ```ts title="convex/functions/posts.ts" showLineNumbers {2-7,16-28}
     import { z } from 'zod';
-    import { zid } from 'convex-helpers/server/zod4';
+    import { zid } from 'better-convex/server';
     import { internal } from './_generated/api';
     import { publicAction, privateQuery } from '../lib/crpc';
 

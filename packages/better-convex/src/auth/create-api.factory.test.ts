@@ -280,7 +280,7 @@ describe('auth/create-api createApi()', () => {
     expect(calls.length).toBe(5);
   });
 
-  test('dbTriggers.wrapDB runs before context for CRUD mutations', async () => {
+  test('context runs for CRUD mutations', async () => {
     const getAuth = (_ctx: any) => ({
       options: {
         plugins: [
@@ -302,14 +302,8 @@ describe('auth/create-api createApi()', () => {
 
     const order: string[] = [];
     const api = createApi(schema, getAuth as any, {
-      dbTriggers: {
-        wrapDB: (ctx: any) => {
-          order.push('db');
-          return { ...ctx, dbWrapped: true };
-        },
-      },
       context: async (ctx: any) => {
-        order.push(ctx.dbWrapped ? 'context:wrapped' : 'context:raw');
+        order.push('context');
         return { ...ctx, mutationWrapped: true };
       },
       skipValidation: true,
@@ -335,7 +329,7 @@ describe('auth/create-api createApi()', () => {
       },
     });
 
-    expect(order).toEqual(['db', 'context:wrapped']);
+    expect(order).toEqual(['context']);
   });
 
   describe('ORM-first writes', () => {

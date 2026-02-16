@@ -8,12 +8,12 @@ import {
   type SchemaDefinition,
 } from 'convex/server';
 import { type GenericId, v } from 'convex/values';
-import { asyncMap } from 'convex-helpers';
+import { asyncMap } from '../internal/upstream';
 import {
   customCtx,
   customMutation,
-} from 'convex-helpers/server/customFunctions';
-import { partial } from 'convex-helpers/validators';
+} from '../internal/upstream/server/customFunctions';
+import { partial } from '../internal/upstream/validators';
 import { eq, unsetToken } from '../orm';
 import {
   adapterWhereValidator,
@@ -630,28 +630,20 @@ export const createApi = <Schema extends SchemaDefinition<any, any>>(
   getAuth: GetAuth,
   options?: {
     internalMutation?: typeof internalMutationGeneric;
-    dbTriggers?: {
-      wrapDB: (ctx: any) => any;
-    };
     context?: (ctx: any) => any | Promise<any>;
     /** Skip input validation for smaller generated types. Since these are internal functions, validation is optional. */
     skipValidation?: boolean;
   }
 ) => {
   const betterAuthSchema = getAuthTables(getAuth({} as any).options);
-  const { internalMutation, skipValidation, dbTriggers, context } =
-    options ?? {};
+  const { internalMutation, skipValidation, context } = options ?? {};
   const mutationBuilderBase = internalMutation ?? internalMutationGeneric;
-  const mutationBuilder =
-    dbTriggers || context
-      ? customMutation(
-          mutationBuilderBase,
-          customCtx(async (ctx) => {
-            const wrappedCtx = dbTriggers?.wrapDB(ctx) ?? ctx;
-            return (await context?.(wrappedCtx)) ?? wrappedCtx;
-          })
-        )
-      : mutationBuilderBase;
+  const mutationBuilder = context
+    ? customMutation(
+        mutationBuilderBase,
+        customCtx(async (ctx) => (await context?.(ctx)) ?? ctx)
+      )
+    : mutationBuilderBase;
 
   // Generic validators for skipValidation mode (much smaller generated types)
   const anyInput = v.object({

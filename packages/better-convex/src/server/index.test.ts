@@ -16,5 +16,6 @@ describe('server public exports', () => {
     expect(typeof server.requireMutationCtx).toBe('function');
     expect(typeof server.requireQueryCtx).toBe('function');
     expect(typeof server.requireRunMutationCtx).toBe('function');
+    expect(typeof server.zid).toBe('function');
   });
 });

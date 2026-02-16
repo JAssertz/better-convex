@@ -48,17 +48,13 @@ Run after the database write. Use for side effects.
 
 Pass triggers to `createClient`:
 
-```ts title="convex/functions/auth.ts" showLineNumbers {2-4,8-11,14-25}
+```ts title="convex/functions/auth.ts" showLineNumbers {1-2,6-20}
 import { createClient } from 'better-convex/auth';
 import { withOrm } from '../lib/orm';
-import { registerTriggers } from '../lib/triggers';
-
-const dbTriggers = registerTriggers();
 
 export const authClient = createClient({
   authFunctions: internal.auth,
   schema,
-  dbTriggers, // Optional: apply trigger-wrapped db writes to auth CRUD internals
   context: withOrm, // inject ctx.orm once for auth mutation + trigger handlers
   triggers: {
     user: {
@@ -77,7 +73,7 @@ export const authClient = createClient({
 ```
 
 <Callout icon={<InfoIcon />}>
-Context order is `ctx -> dbTriggers.wrapDB(ctx) -> context(ctx)`.
+Use `context: withOrm` so auth trigger handlers can use `ctx.orm`.
 </Callout>
 
 ## User Triggers
