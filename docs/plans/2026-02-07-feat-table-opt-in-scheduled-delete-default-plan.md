@@ -147,28 +147,28 @@ GREEN:
 ## Documentation Plan
 
 ### 1) API + behavior docs
-- `www/content/docs/db/orm/api-reference.mdx`
+- `www/content/docs/orm/api-reference.mdx`
   - add `deletion(...)` helper
   - add `.hard()` override
   - add precedence section
 
 ### 2) Delete guide
-- `www/content/docs/db/orm/delete.mdx`
+- `www/content/docs/orm/delete.mdx`
   - add table-level scheduled default examples
   - add “when to use table default vs executeAsync” guidance
   - add explicit precedence matrix
 
 ### 3) Schema guide
-- `www/content/docs/db/orm/schema.mdx`
+- `www/content/docs/orm/schema.mdx`
   - document table-level deletion config in `convexTable` extra config
 
 ### 4) Migration guide
-- `www/content/docs/db/orm/migrate-from-ents.mdx`
+- `www/content/docs/orm/migrate-from-ents.mdx`
   - map Ents `.deletion("scheduled")` to ORM `deletion('scheduled', ...)`
   - clarify behavioral differences from async hard-delete path
 
 ### 5) Limitations page
-- `www/content/docs/db/orm/limitations.mdx`
+- `www/content/docs/orm/limitations.mdx`
   - clarify `executeAsync()` incompatibility with resolved scheduled mode
   - show `.hard().executeAsync()` escape hatch for scheduled-default tables
 

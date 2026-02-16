@@ -410,7 +410,7 @@ test('queries use defined indexes')
    - Follow convex-test-orm patterns
 
 5. **Documentation** (Phase 3)
-   - Update `www/content/docs/db/orm/schema.mdx`
+   - Update `www/content/docs/orm/schema.mdx`
    - Create migration guide
    - Add examples to quickstart
 

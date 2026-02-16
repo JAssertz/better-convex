@@ -274,9 +274,9 @@ Recommended for v1 stabilization: Option 2 (documented explicit bypass), unless 
 
 Update ORM docs only for scoped behavior changes:
 
-- `www/content/docs/db/orm/queries.mdx`
-- `www/content/docs/db/orm/limitations.mdx`
-- `www/content/docs/db/orm/rls.mdx`
+- `www/content/docs/orm/queries.mdx`
+- `www/content/docs/orm/limitations.mdx`
+- `www/content/docs/orm/rls.mdx`
 
 ## References
 
@@ -312,7 +312,7 @@ Update ORM docs only for scoped behavior changes:
 - [x] `packages/better-convex/src/orm/mutation-utils.ts` codify selected cascade-RLS contract.
 - [x] `convex/orm/pagination.test.ts` add strict post-filter/full-scan path assertions.
 - [x] `test/types/select.ts` adjust type-level strict-gating assertions if needed (no additional changes required after runtime/compile validation).
-- [x] `www/content/docs/db/orm/{queries,limitations,rls}.mdx` document only scoped behavior updates.
+- [x] `www/content/docs/orm/{queries,limitations,rls}.mdx` document only scoped behavior updates.
 
 ## Final Review Checklist
 

@@ -392,26 +392,26 @@ export type RequiredKeyOnly<TKey extends string, T extends Column> =
 
 ### Phase 7: Documentation Files
 
-- [ ] www/content/docs/db/orm/schema.mdx
+- [ ] www/content/docs/orm/schema.mdx
   - Remove all `v.*` validator examples
   - Show only builder syntax
 
-- [ ] www/content/docs/db/orm/quickstart.mdx
+- [ ] www/content/docs/orm/quickstart.mdx
   - Update getting started examples
 
-- [ ] www/content/docs/db/orm/type-safety.mdx
+- [ ] www/content/docs/orm/type-safety.mdx
   - Update type inference examples
 
-- [ ] www/content/docs/db/orm/api-reference.mdx
+- [ ] www/content/docs/orm/api-reference.mdx
   - Remove validator API references
 
-- [ ] www/content/docs/db/orm/from-drizzle.mdx
+- [ ] www/content/docs/orm/from-drizzle.mdx
   - Update migration examples (no validator path)
 
-- [ ] www/content/docs/db/orm/from-prisma.mdx
+- [ ] www/content/docs/orm/from-prisma.mdx
   - Update migration examples
 
-- [ ] www/content/docs/db/orm/from-ents.mdx
+- [ ] www/content/docs/orm/from-ents.mdx
   - Show builder API only
 
 ---
@@ -533,7 +533,7 @@ export function convexTable<
 **Goal**: Remove all validator examples, document migration
 
 **Tasks**:
-1. Update all MDX files in `www/content/docs/db/orm/`
+1. Update all MDX files in `www/content/docs/orm/`
 2. Create migration guide (validators → builders)
 3. Update README examples
 4. Update package.json description

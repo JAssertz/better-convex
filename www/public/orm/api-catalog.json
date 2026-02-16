@@ -15,7 +15,7 @@
       },
       "returns": "ConvexTable instance with full type inference",
       "example": "const users = convexTable('users', { name: text().notNull(), email: text().notNull() });",
-      "docUrl": "/docs/db/orm/schema#table-definition",
+      "docUrl": "/docs/orm/schema#table-definition",
       "category": "schema"
     },
     "relations": {
@@ -27,7 +27,7 @@
       },
       "returns": "Table relations configuration",
       "example": "const usersRelations = relations(users, ({ many }) => ({ posts: many(posts) }));",
-      "docUrl": "/docs/db/orm/schema#relations",
+      "docUrl": "/docs/orm/schema#relations",
       "category": "schema"
     }
   },
@@ -48,7 +48,7 @@
       },
       "returns": "Promise resolving to array of records with inferred types",
       "example": "const users = await db(ctx).query.users.findMany({ where: eq(users.role, 'admin'), limit: 10 });",
-      "docUrl": "/docs/db/orm/queries#findmany",
+      "docUrl": "/docs/orm/queries#findmany",
       "category": "queries"
     },
     "findFirst": {
@@ -63,7 +63,7 @@
       },
       "returns": "Promise resolving to first record or null",
       "example": "const user = await db(ctx).query.users.findFirst({ where: eq(users.email, 'alice@example.com') });",
-      "docUrl": "/docs/db/orm/queries#findfirst",
+      "docUrl": "/docs/orm/queries#findfirst",
       "category": "queries"
     },
     "vectorSearch": {
@@ -83,7 +83,7 @@
       ],
       "returns": "Promise resolving to rows in similarity order",
       "example": "const rows = await db(ctx).query.posts.findMany({ vectorSearch: { index: 'embedding_vec', vector: args.embedding, limit: 10, filter: (q) => q.eq('type', 'news') } });",
-      "docUrl": "/docs/db/orm/queries#vector-search",
+      "docUrl": "/docs/orm/queries#vector-search",
       "category": "queries"
     },
     "where": {
@@ -94,7 +94,7 @@
       },
       "returns": "Filtered query",
       "example": "{ where: and(eq(users.role, 'admin'), gt(users.age, 18)) }",
-      "docUrl": "/docs/db/orm/queries#filtering-with-where",
+      "docUrl": "/docs/orm/queries#filtering-with-where",
       "category": "queries"
     },
     "with": {
@@ -107,7 +107,7 @@
       },
       "workaround": "Use native Convex queries to load related data manually",
       "example": "// NOT YET IMPLEMENTED - Use native Convex queries for now",
-      "docUrl": "/docs/db/orm/queries",
+      "docUrl": "/docs/orm/queries",
       "category": "queries"
     }
   },
@@ -124,7 +124,7 @@
       "returns": "Promise resolving to inserted record ID(s)",
       "workaround": "Use ctx.db.insert('tableName', data) for now",
       "example": "// NOT YET IMPLEMENTED - Use ctx.db.insert() for now",
-      "docUrl": "/docs/db/orm/mutations",
+      "docUrl": "/docs/orm/mutations",
       "category": "mutations"
     },
     "update": {
@@ -139,7 +139,7 @@
       "returns": "Promise resolving when update complete",
       "workaround": "Use ctx.db.patch(id, data) for now",
       "example": "// NOT YET IMPLEMENTED - Use ctx.db.patch() for now",
-      "docUrl": "/docs/db/orm/mutations",
+      "docUrl": "/docs/orm/mutations",
       "category": "mutations"
     },
     "delete": {
@@ -153,7 +153,7 @@
       "returns": "Promise resolving when delete complete",
       "workaround": "Use ctx.db.delete(id) for now",
       "example": "await db(ctx).delete.users.where(eq(users.id, userId));",
-      "docUrl": "/docs/db/orm/mutations#delete",
+      "docUrl": "/docs/orm/mutations#delete",
       "category": "mutations"
     }
   },
@@ -163,77 +163,77 @@
       "signature": "eq<T>(field: Field<T>, value: T): FilterCondition",
       "description": "Equal to operator",
       "example": "eq(users.role, 'admin')",
-      "docUrl": "/docs/db/orm/queries#available-operators",
+      "docUrl": "/docs/orm/queries#available-operators",
       "category": "operators"
     },
     "ne": {
       "signature": "ne<T>(field: Field<T>, value: T): FilterCondition",
       "description": "Not equal to operator",
       "example": "ne(users.status, 'banned')",
-      "docUrl": "/docs/db/orm/queries#available-operators",
+      "docUrl": "/docs/orm/queries#available-operators",
       "category": "operators"
     },
     "gt": {
       "signature": "gt<T>(field: Field<T>, value: T): FilterCondition",
       "description": "Greater than operator",
       "example": "gt(users.age, 18)",
-      "docUrl": "/docs/db/orm/queries#available-operators",
+      "docUrl": "/docs/orm/queries#available-operators",
       "category": "operators"
     },
     "gte": {
       "signature": "gte<T>(field: Field<T>, value: T): FilterCondition",
       "description": "Greater than or equal operator",
       "example": "gte(users.credits, 100)",
-      "docUrl": "/docs/db/orm/queries#available-operators",
+      "docUrl": "/docs/orm/queries#available-operators",
       "category": "operators"
     },
     "lt": {
       "signature": "lt<T>(field: Field<T>, value: T): FilterCondition",
       "description": "Less than operator",
       "example": "lt(users.age, 65)",
-      "docUrl": "/docs/db/orm/queries#available-operators",
+      "docUrl": "/docs/orm/queries#available-operators",
       "category": "operators"
     },
     "lte": {
       "signature": "lte<T>(field: Field<T>, value: T): FilterCondition",
       "description": "Less than or equal operator",
       "example": "lte(users.loginCount, 10)",
-      "docUrl": "/docs/db/orm/queries#available-operators",
+      "docUrl": "/docs/orm/queries#available-operators",
       "category": "operators"
     },
     "and": {
       "signature": "and(...conditions: FilterCondition[]): FilterCondition",
       "description": "Logical AND operator",
       "example": "and(eq(users.role, 'admin'), gt(users.age, 18))",
-      "docUrl": "/docs/db/orm/queries#available-operators",
+      "docUrl": "/docs/orm/queries#available-operators",
       "category": "operators"
     },
     "or": {
       "signature": "or(...conditions: FilterCondition[]): FilterCondition",
       "description": "Logical OR operator",
       "example": "or(eq(users.role, 'admin'), eq(users.role, 'moderator'))",
-      "docUrl": "/docs/db/orm/queries#available-operators",
+      "docUrl": "/docs/orm/queries#available-operators",
       "category": "operators"
     },
     "not": {
       "signature": "not(condition: FilterCondition): FilterCondition",
       "description": "Logical NOT operator",
       "example": "not(eq(users.banned, true))",
-      "docUrl": "/docs/db/orm/queries#available-operators",
+      "docUrl": "/docs/orm/queries#available-operators",
       "category": "operators"
     },
     "isNull": {
       "signature": "isNull(field: Field): FilterCondition",
       "description": "Check if field is undefined/null",
       "example": "isNull(users.deletedAt)",
-      "docUrl": "/docs/db/orm/queries#available-operators",
+      "docUrl": "/docs/orm/queries#available-operators",
       "category": "operators"
     },
     "isNotNull": {
       "signature": "isNotNull(field: Field): FilterCondition",
       "description": "Check if field is not undefined/null",
       "example": "isNotNull(users.email)",
-      "docUrl": "/docs/db/orm/queries#available-operators",
+      "docUrl": "/docs/orm/queries#available-operators",
       "category": "operators"
     }
   },
@@ -247,7 +247,7 @@
         "config": "{ fields: [...], references: [...] }"
       },
       "example": "one(users, { fields: [posts.userId], references: [users.id] })",
-      "docUrl": "/docs/db/orm/relations-deep-dive#one-to-one-relations",
+      "docUrl": "/docs/orm/relations-deep-dive#one-to-one-relations",
       "category": "relations"
     },
     "many": {
@@ -257,28 +257,28 @@
         "target": "Target table"
       },
       "example": "many(posts)",
-      "docUrl": "/docs/db/orm/relations-deep-dive#one-to-many-relations",
+      "docUrl": "/docs/orm/relations-deep-dive#one-to-many-relations",
       "category": "relations"
     },
     "nestedLoading": {
       "signature": "{ with: { relation: { with: { nestedRelation: true } } } }",
       "description": "Load nested relations up to 3 levels deep",
       "example": "{ with: { posts: { with: { comments: { with: { author: true } } } } } }",
-      "docUrl": "/docs/db/orm/relations-deep-dive#nested-loading",
+      "docUrl": "/docs/orm/relations-deep-dive#nested-loading",
       "category": "relations"
     },
     "selfReferencing": {
       "signature": "one(sameTable, { fields: [...], references: [...] })",
       "description": "Self-referencing relations (e.g., parent/child)",
       "example": "one(categories, { fields: [categories.parentId], references: [categories.id] })",
-      "docUrl": "/docs/db/orm/relations-deep-dive#self-referencing-relations",
+      "docUrl": "/docs/orm/relations-deep-dive#self-referencing-relations",
       "category": "relations"
     },
     "manyToMany": {
       "signature": "Junction table pattern with two many() relations",
       "description": "Many-to-many using junction table",
       "example": "const userGroups = convexTable('user_groups', { userId: v.id('users'), groupId: v.id('groups') });",
-      "docUrl": "/docs/db/orm/relations-deep-dive#many-to-many-relations",
+      "docUrl": "/docs/orm/relations-deep-dive#many-to-many-relations",
       "category": "relations"
     }
   },
@@ -291,21 +291,21 @@
         "field": "Single field or array of fields with asc/desc"
       },
       "example": "{ orderBy: [desc(users.createdAt), asc(users.name)] }",
-      "docUrl": "/docs/db/orm/ordering-pagination#basic-ordering",
+      "docUrl": "/docs/orm/ordering-pagination#basic-ordering",
       "category": "ordering"
     },
     "asc": {
       "signature": "asc(field: Field): SortOrder",
       "description": "Ascending sort order",
       "example": "asc(users.name)",
-      "docUrl": "/docs/db/orm/ordering-pagination#basic-ordering",
+      "docUrl": "/docs/orm/ordering-pagination#basic-ordering",
       "category": "ordering"
     },
     "desc": {
       "signature": "desc(field: Field): SortOrder",
       "description": "Descending sort order",
       "example": "desc(users.createdAt)",
-      "docUrl": "/docs/db/orm/ordering-pagination#basic-ordering",
+      "docUrl": "/docs/orm/ordering-pagination#basic-ordering",
       "category": "ordering"
     }
   },
@@ -323,7 +323,7 @@
       },
       "returns": "{ page: T[], continueCursor: string | null, isDone: boolean }",
       "example": "const result = await db(ctx).query.users.findMany({ cursor: args.cursor ?? null, limit: 20 });",
-      "docUrl": "/docs/db/orm/pagination#cursor-based-pagination",
+      "docUrl": "/docs/orm/pagination#cursor-based-pagination",
       "category": "pagination"
     },
     "offset": {
@@ -334,14 +334,14 @@
         "limit": "Maximum records to return"
       },
       "example": "{ offset: page * 20, limit: 20 }",
-      "docUrl": "/docs/db/orm/pagination#offset-pagination",
+      "docUrl": "/docs/orm/pagination#offset-pagination",
       "category": "pagination"
     },
     "limit": {
       "signature": "{ limit: number }",
       "description": "Limit number of results (renamed from Drizzle's 'take')",
       "example": "{ limit: 10 }",
-      "docUrl": "/docs/db/orm/pagination#offset-pagination",
+      "docUrl": "/docs/orm/pagination#offset-pagination",
       "category": "pagination"
     }
   },
@@ -351,42 +351,42 @@
       "signature": "typeof table.$inferSelect",
       "description": "Infer TypeScript type for selected records",
       "example": "type User = typeof users.$inferSelect;",
-      "docUrl": "/docs/db/orm/type-safety#type-extraction",
+      "docUrl": "/docs/orm/type-safety#type-extraction",
       "category": "types"
     },
     "$inferInsert": {
       "signature": "typeof table.$inferInsert",
       "description": "Infer TypeScript type for insert operations",
       "example": "type NewUser = typeof users.$inferInsert;",
-      "docUrl": "/docs/db/orm/type-safety#type-extraction",
+      "docUrl": "/docs/orm/type-safety#type-extraction",
       "category": "types"
     },
     "InferSelectModel": {
       "signature": "type InferSelectModel<T extends Table>",
       "description": "Extract select type from table (utility type)",
       "example": "type User = InferSelectModel<typeof users>;",
-      "docUrl": "/docs/db/orm/type-safety#type-extraction",
+      "docUrl": "/docs/orm/type-safety#type-extraction",
       "category": "types"
     },
     "InferInsertModel": {
       "signature": "type InferInsertModel<T extends Table>",
       "description": "Extract insert type from table (utility type)",
       "example": "type NewUser = InferInsertModel<typeof users>;",
-      "docUrl": "/docs/db/orm/type-safety#type-extraction",
+      "docUrl": "/docs/orm/type-safety#type-extraction",
       "category": "types"
     },
     "QueryResult": {
       "signature": "type QueryResult<T> = Awaited<ReturnType<T>>",
       "description": "Extract type from query function return",
       "example": "type UsersResult = QueryResult<typeof getUsersWithPosts>;",
-      "docUrl": "/docs/db/orm/type-safety#generic-helper-types",
+      "docUrl": "/docs/orm/type-safety#generic-helper-types",
       "category": "types"
     },
     "TypeNarrowing": {
       "signature": "Automatic type narrowing from filters",
       "description": "TypeScript narrows types based on where clauses",
       "example": "where: eq(users.role, 'admin') narrows role to literal 'admin'",
-      "docUrl": "/docs/db/orm/type-safety#type-narrowing-from-filters",
+      "docUrl": "/docs/orm/type-safety#type-narrowing-from-filters",
       "category": "types"
     }
   },
@@ -408,20 +408,20 @@
       "realTime": "Built-in subscriptions with no additional setup"
     },
     "resources": {
-      "docs": "/docs/db/orm",
+      "docs": "/docs/orm",
       "quickstart": "/docs/quickstart#orm-setup",
       "migration": {
-        "fromDrizzle": "/docs/db/orm/from-drizzle",
-        "fromPrisma": "/docs/db/orm/from-prisma",
-        "fromEnts": "/docs/db/orm/from-ents"
+        "fromDrizzle": "/docs/orm/from-drizzle",
+        "fromPrisma": "/docs/orm/from-prisma",
+        "fromEnts": "/docs/orm/from-ents"
       },
       "advanced": {
-        "relations": "/docs/db/orm/relations-deep-dive",
-        "orderingPagination": "/docs/db/orm/ordering-pagination",
-        "typeSafety": "/docs/db/orm/type-safety"
+        "relations": "/docs/orm/relations-deep-dive",
+        "orderingPagination": "/docs/orm/ordering-pagination",
+        "typeSafety": "/docs/orm/type-safety"
       },
       "agentNative": {
-        "llmsIndex": "/docs/db/orm/llms-index.md",
+        "llmsIndex": "/docs/orm/llms-index.md",
         "errorCatalog": "/orm/error-catalog.json",
         "apiCatalog": "/orm/api-catalog.json",
         "examplesRegistry": "/orm/examples-registry.json"

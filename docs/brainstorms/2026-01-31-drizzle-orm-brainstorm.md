@@ -1678,16 +1678,16 @@ Run this checklist **after each milestone is complete** (when code is merged to 
 
 **Documentation Files** (current as of M6):
 
-- [www/content/docs/db/orm/index.mdx](www/content/docs/db/orm/index.mdx) - Overview + feature list (lines 29-56)
-- [www/content/docs/db/orm/quickstart.mdx](www/content/docs/db/orm/quickstart.mdx) - 5-min tutorial
-- [www/content/docs/db/orm/schema.mdx](www/content/docs/db/orm/schema.mdx) - Table definitions
-- [www/content/docs/db/orm/relations.mdx](www/content/docs/db/orm/relations.mdx) - Relation patterns
-- [www/content/docs/db/orm/queries.mdx](www/content/docs/db/orm/queries.mdx) - Query operations
-- [www/content/docs/db/orm/mutations.mdx](www/content/docs/db/orm/mutations.mdx) - Insert/update/delete
-- [www/content/docs/db/orm/api-reference.mdx](www/content/docs/db/orm/api-reference.mdx) - Complete API surface
-- [www/content/docs/db/orm/comparison.mdx](www/content/docs/db/orm/comparison.mdx) - Drizzle migration guide
-- [www/content/docs/db/orm/limitations.mdx](www/content/docs/db/orm/limitations.mdx) - Constraints
-- [www/content/docs/db/orm/llms-index.md](www/content/docs/db/orm/llms-index.md) - AI assistant index
+- [www/content/docs/orm/index.mdx](www/content/docs/orm/index.mdx) - Overview + feature list (lines 29-56)
+- [www/content/docs/orm/quickstart.mdx](www/content/docs/orm/quickstart.mdx) - 5-min tutorial
+- [www/content/docs/orm/schema.mdx](www/content/docs/orm/schema.mdx) - Table definitions
+- [www/content/docs/orm/relations.mdx](www/content/docs/orm/relations.mdx) - Relation patterns
+- [www/content/docs/orm/queries.mdx](www/content/docs/orm/queries.mdx) - Query operations
+- [www/content/docs/orm/mutations.mdx](www/content/docs/orm/mutations.mdx) - Insert/update/delete
+- [www/content/docs/orm/api-reference.mdx](www/content/docs/orm/api-reference.mdx) - Complete API surface
+- [www/content/docs/orm/comparison.mdx](www/content/docs/orm/comparison.mdx) - Drizzle migration guide
+- [www/content/docs/orm/limitations.mdx](www/content/docs/orm/limitations.mdx) - Constraints
+- [www/content/docs/orm/llms-index.md](www/content/docs/orm/llms-index.md) - AI assistant index
 
 #### 4. Update Agent-Native Artifacts
 
@@ -1759,21 +1759,21 @@ Run this checklist **after each milestone is complete** (when code is merged to 
 - [ ] **Link validation**: All internal links work
 
   ```bash
-  grep -r "](/" www/content/docs/db/orm/
+  grep -r "](/" www/content/docs/orm/
   # Manually verify cross-references
   ```
 
 - [ ] **Syntax verification**: No validator syntax remains (M6+)
 
   ```bash
-  grep -r "v\.string\|v\.number\|v\.boolean\|v\.id" www/content/docs/db/orm/*.mdx
+  grep -r "v\.string\|v\.number\|v\.boolean\|v\.id" www/content/docs/orm/*.mdx
   # Should return 0 matches for M6+ docs
   ```
 
 - [ ] **Import check**: No old imports remain
 
   ```bash
-  grep -r "from 'convex/values'" www/content/docs/db/orm/*.mdx
+  grep -r "from 'convex/values'" www/content/docs/orm/*.mdx
   # Should return 0 matches (builders import from better-convex/orm)
   ```
 

@@ -115,12 +115,12 @@ Best when:
    - Coverage and documentation added:
      - `convex/orm/foreign-key-actions.test.ts`
      - `packages/better-convex/src/orm/mutation-utils.ts`
-     - `www/content/docs/db/orm/rls.mdx`
-     - `www/content/docs/db/orm/limitations.mdx`
+     - `www/content/docs/orm/rls.mdx`
+     - `www/content/docs/orm/limitations.mdx`
 
 4. **[P1] Strict full-scan semantics for risky post-filter paths**: made explicit and test-backed.
    - Non-leading compound usage requires explicit `allowFullScan: true` opt-in.
-   - Docs updated in `www/content/docs/db/orm/queries.mdx` and `www/content/docs/db/orm/limitations.mdx`.
+   - Docs updated in `www/content/docs/orm/queries.mdx` and `www/content/docs/orm/limitations.mdx`.
 
 ### Remaining from ranked list
 

@@ -32,7 +32,7 @@ await ctx.orm.delete(users).allowFullScan();
 ```
 
 <Callout icon={<AlertTriangle />}>
-**Important:** `delete()` without `.where(...)` throws unless you call `.allowFullScan()`. See [Querying Data](/docs/db/orm/queries) for details on `allowFullScan`.
+**Important:** `delete()` without `.where(...)` throws unless you call `.allowFullScan()`. See [Querying Data](/docs/orm/queries) for details on `allowFullScan`.
 </Callout>
 
 ## Returning
@@ -70,7 +70,7 @@ export default defineSchema({ users, posts }, {
 });
 ```
 
-For the full list of configurable defaults, see [Schema Definition -- Runtime Defaults](/docs/db/orm/schema#runtime-defaults).
+For the full list of configurable defaults, see [Schema Definition -- Runtime Defaults](/docs/orm/schema#runtime-defaults).
 
 ## Paginated Delete Execution
 
@@ -135,7 +135,7 @@ Key behaviors to keep in mind:
 - FK/cascade async fan-out uses `mutationBatchSize` for recursive delete cascade (`onDelete: 'cascade'`) and `mutationLeafBatchSize` for non-recursive actions (`set null`, `set default`)
 
 <Callout icon={<AlertTriangle />}>
-**Important:** Async execution requires wiring `ormFunctions` and `scheduledMutationBatch` in your ORM setup. See [Mutations -- Async Wiring Setup](/docs/db/orm/mutations#wiring-setup) for the setup steps.
+**Important:** Async execution requires wiring `ormFunctions` and `scheduledMutationBatch` in your ORM setup. See [Mutations -- Async Wiring Setup](/docs/orm/mutations#wiring-setup) for the setup steps.
 </Callout>
 
 ## Table Default Delete Mode
@@ -189,16 +189,16 @@ You now have everything you need to delete data -- hard, soft, and scheduled mod
 ## Next Steps
 
 <Cards>
-  <Card title="Mutations Overview" href="/docs/db/orm/mutations">
+  <Card title="Mutations Overview" href="/docs/orm/mutations">
     Shared mutation concepts: returning, where, atomicity, and async wiring
   </Card>
-  <Card title="Insert" href="/docs/db/orm/mutations/insert">
+  <Card title="Insert" href="/docs/orm/mutations/insert">
     Insert rows, multi-row inserts, and upserts
   </Card>
-  <Card title="Update" href="/docs/db/orm/mutations/update">
+  <Card title="Update" href="/docs/orm/mutations/update">
     Update rows with set/where/returning
   </Card>
-  <Card title="Schema Definition" href="/docs/db/orm/schema">
+  <Card title="Schema Definition" href="/docs/orm/schema">
     Configure delete modes and runtime defaults
   </Card>
 </Cards>

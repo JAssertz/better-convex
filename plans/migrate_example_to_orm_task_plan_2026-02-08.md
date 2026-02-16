@@ -93,7 +93,7 @@ Phase 6 (Complete)
 - [ ] Smoke-test key flows (dev init, seed, basic CRUD) if feasible.
 - [ ] If migration uncovered:
   - ORM parity gaps: implement in `packages/better-convex/src/orm/**` + add tests.
-  - Docs gaps: update ORM docs (`www/content/docs/db/orm/migrate-from-ents.mdx` / `migrate-from-convex.mdx`) with the missing mapping.
+  - Docs gaps: update ORM docs (`www/content/docs/orm/migrate-from-ents.mdx` / `migrate-from-convex.mdx`) with the missing mapping.
 - **Status:** complete
 
 ## Key Questions

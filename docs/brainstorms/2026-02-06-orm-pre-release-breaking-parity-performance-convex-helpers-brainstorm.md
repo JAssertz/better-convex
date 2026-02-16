@@ -14,7 +14,7 @@ Scope reviewed in this brainstorm:
 
 - ORM source surface: `packages/better-convex/src/orm` (43 files, ~16k LOC)
 - ORM tests: `convex/orm` + `test/orm` (20 files, 212 runtime tests)
-- ORM docs: `www/content/docs/db/orm` (18 docs pages)
+- ORM docs: `www/content/docs/orm` (18 docs pages)
 - Related upstream helpers: `/tmp/cc-repos/convex-helpers/packages/convex-helpers` (especially `stream`, `pagination`, `filter`, `relationships`, `rowLevelSecurity`, `customFunctions`, `zod4`, `cors`)
 
 Problem framing:

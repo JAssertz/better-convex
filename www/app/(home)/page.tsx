@@ -18,7 +18,7 @@ const features = [
     description:
       'Drizzle v1-style schema, relations, queries, and mutations for Convex. Performance guardrails built in.',
     color: 'bg-emerald-500/10 text-emerald-500',
-    href: '/docs/db/orm',
+    href: '/docs/orm',
   },
   {
     icon: Shield,

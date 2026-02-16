@@ -129,7 +129,7 @@ Adopt a v1-only API surface that mirrors the `drizzle-v1` repo as canonical refe
 **Files**
 - `docs/learn-drizzle.md`
 - `docs/brainstorms/2026-01-31-drizzle-orm-brainstorm.md`
-- `www/content/docs/db/orm/*`
+- `www/content/docs/orm/*`
 - `example/convex/schema.ts`
 
 ## Alternative Approaches Considered
@@ -190,7 +190,7 @@ Adopt a v1-only API surface that mirrors the `drizzle-v1` repo as canonical refe
 - **Convex schema integration breaks**: keep convex-ents pattern (TableDefinition duck typing).
 - **Unimplemented features tested too early**: defer tests until feature runtime is complete.
 - **Relation filtering mismatch**: document divergences and test them explicitly.
-- **Docs drift**: update `docs/learn-drizzle.md` and `www/content/docs/db/orm` in same PR.
+- **Docs drift**: update `docs/learn-drizzle.md` and `www/content/docs/orm` in same PR.
 
 ## Resource Requirements
 - TypeScript expert review for typing parity.
@@ -203,7 +203,7 @@ Adopt a v1-only API surface that mirrors the `drizzle-v1` repo as canonical refe
 
 ## 📚 Documentation Plan
 - Update `docs/learn-drizzle.md` to v1-only guidance and mark breaking changes.
-- Update `www/content/docs/db/orm/*` to match v1 syntax.
+- Update `www/content/docs/orm/*` to match v1 syntax.
 - Add a dedicated migration guide: `docs/orm/drizzle-v1-migration.md`.
 - Update example schema + queries in `example/convex/schema.ts` and `example/convex/functions/*`.
 

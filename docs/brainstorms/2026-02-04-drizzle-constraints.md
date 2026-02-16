@@ -194,11 +194,11 @@ age: integer().default(0)
 ### Phase 2: Documentation
 
 **Update docs:**
-- `www/content/docs/db/orm/schema.mdx`
+- `www/content/docs/orm/schema.mdx`
   - Document `uniqueIndex()` enforcement
   - Clarify that other constraints are deferred until enforced
 
-- Create `www/content/docs/db/orm/constraints.mdx`
+- Create `www/content/docs/orm/constraints.mdx`
   - Unique index enforcement reference
   - Performance considerations for uniqueIndex
   - Migration guide from SQL ORMs

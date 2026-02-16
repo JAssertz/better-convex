@@ -195,11 +195,11 @@ describe('OrderBy', () => {
 #### Phase 5: Documentation Updates
 
 **Tasks:**
-- [ ] Update `www/content/docs/db/orm/queries.mdx` with orderBy examples
+- [ ] Update `www/content/docs/orm/queries.mdx` with orderBy examples
 - [ ] Update string operators section in queries.mdx
-- [ ] Update `www/content/docs/db/orm/api-reference.mdx` with new operators
-- [ ] Update `www/content/docs/db/orm/limitations.mdx` status (M5 complete)
-- [ ] Update feature compatibility table in `www/content/docs/db/orm/index.mdx`
+- [ ] Update `www/content/docs/orm/api-reference.mdx` with new operators
+- [ ] Update `www/content/docs/orm/limitations.mdx` status (M5 complete)
+- [ ] Update feature compatibility table in `www/content/docs/orm/index.mdx`
 - [ ] Sync `www/public/orm/api-catalog.json` to M5 version
 - [ ] Sync `www/public/orm/examples-registry.json` with new examples
 

@@ -15,7 +15,7 @@ Relation loading via `with:` works end-to-end. Nested `with` has a depth limit, 
 
 Relation loading requires indexes on relation fields (e.g. `posts.userId`). Missing indexes throw unless you opt in with `allowFullScan`. You can use `defineSchema(..., { strict: false })` to downgrade throws to warnings when `allowFullScan` is set.
 
-Relations are about **loading** related rows. They do **not** enforce referential integrity. If you want runtime checks / cascades, define foreign keys separately with `.references()` / `foreignKey()` (see [/docs/db/orm/indexes-constraints](/docs/db/orm/indexes-constraints)).
+Relations are about **loading** related rows. They do **not** enforce referential integrity. If you want runtime checks / cascades, define foreign keys separately with `.references()` / `foreignKey()` (see [/docs/orm/indexes-constraints](/docs/orm/indexes-constraints)).
 
 <Callout icon={<AlertTriangle />}>
 Loading `many()` relations requires explicit sizing: provide `with.<relation>.limit`, a schema `defaults.defaultLimit`, or `allowFullScan` on the parent query.
@@ -569,10 +569,10 @@ You now know how to define every kind of relation and load them eagerly with `wi
 ## Next Steps
 
 <Cards>
-  <Card title="Querying Data" href="/docs/db/orm/queries">
+  <Card title="Querying Data" href="/docs/orm/queries">
     Learn findMany(), findFirst(), and filtering
   </Card>
-  <Card title="Schema Definition" href="/docs/db/orm/schema">
+  <Card title="Schema Definition" href="/docs/orm/schema">
     Deep dive into table definitions and type inference
   </Card>
   <Card title="Limitations" href="/docs/comparison/drizzle#not-available-in-convex">

@@ -58,9 +58,9 @@ Users should not choose between many similar APIs. Drizzle parity favors one que
 
 ## 4) Docs
 - Replace `.paginate()` usage in:
-  - `www/content/docs/db/orm/queries.mdx`
-  - `www/content/docs/db/orm/api-reference.mdx`
-  - `www/content/docs/db/orm/limitations.mdx`
+  - `www/content/docs/orm/queries.mdx`
+  - `www/content/docs/orm/api-reference.mdx`
+  - `www/content/docs/orm/limitations.mdx`
   - `docs/analysis/2026-02-05-orm-performance-checklist.md`
 - Add explicit note: `.paginate()` removed; use `findMany({ paginate })`.
 

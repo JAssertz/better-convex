@@ -68,16 +68,16 @@ Migrate 10 MDX files from validators to column builders:
 
 | File | Current Syntax | Target Syntax | Complexity | Estimated Changes |
 |------|---------------|---------------|------------|-------------------|
-| [www/content/docs/db/orm/index.mdx](www/content/docs/db/orm/index.mdx) | Mixed | Builders only | Low | 5-10 examples |
-| [www/content/docs/db/orm/quickstart.mdx](www/content/docs/db/orm/quickstart.mdx) | Validators | Builders only | Low | 10-15 examples |
-| [www/content/docs/db/orm/schema.mdx](www/content/docs/db/orm/schema.mdx) | Validators | Builders only | High | 20-30 examples |
-| [www/content/docs/db/orm/relations.mdx](www/content/docs/db/orm/relations.mdx) | Validators | Builders only | Medium | 15-20 examples |
-| [www/content/docs/db/orm/queries.mdx](www/content/docs/db/orm/queries.mdx) | Validators | Builders only | Low | 10-15 examples |
-| [www/content/docs/db/orm/mutations.mdx](www/content/docs/db/orm/mutations.mdx) | Validators | Builders only | Low | 5-10 examples (M5-M6) |
-| [www/content/docs/db/orm/api-reference.mdx](www/content/docs/db/orm/api-reference.mdx) | Validators | Builders only | High | 30-40 signatures |
-| [www/content/docs/db/orm/comparison.mdx](www/content/docs/db/orm/comparison.mdx) | Mixed | Builders only | Medium | 10-15 examples |
-| [www/content/docs/db/orm/limitations.mdx](www/content/docs/db/orm/limitations.mdx) | Validators | Builders only | Low | 5-10 examples |
-| [www/content/docs/db/orm/llms-index.md](www/content/docs/db/orm/llms-index.md) | N/A (index) | Update paths | Low | 0-5 updates |
+| [www/content/docs/orm/index.mdx](www/content/docs/orm/index.mdx) | Mixed | Builders only | Low | 5-10 examples |
+| [www/content/docs/orm/quickstart.mdx](www/content/docs/orm/quickstart.mdx) | Validators | Builders only | Low | 10-15 examples |
+| [www/content/docs/orm/schema.mdx](www/content/docs/orm/schema.mdx) | Validators | Builders only | High | 20-30 examples |
+| [www/content/docs/orm/relations.mdx](www/content/docs/orm/relations.mdx) | Validators | Builders only | Medium | 15-20 examples |
+| [www/content/docs/orm/queries.mdx](www/content/docs/orm/queries.mdx) | Validators | Builders only | Low | 10-15 examples |
+| [www/content/docs/orm/mutations.mdx](www/content/docs/orm/mutations.mdx) | Validators | Builders only | Low | 5-10 examples (M5-M6) |
+| [www/content/docs/orm/api-reference.mdx](www/content/docs/orm/api-reference.mdx) | Validators | Builders only | High | 30-40 signatures |
+| [www/content/docs/orm/comparison.mdx](www/content/docs/orm/comparison.mdx) | Mixed | Builders only | Medium | 10-15 examples |
+| [www/content/docs/orm/limitations.mdx](www/content/docs/orm/limitations.mdx) | Validators | Builders only | Low | 5-10 examples |
+| [www/content/docs/orm/llms-index.md](www/content/docs/orm/llms-index.md) | N/A (index) | Update paths | Low | 0-5 updates |
 
 #### Syntax Transformation Rules
 
@@ -143,13 +143,13 @@ Update 3 JSON files in [www/public/orm/](www/public/orm/):
 
 ### Phase 4: Maintain Critical Sections
 
-**[www/content/docs/db/orm/index.mdx](www/content/docs/db/orm/index.mdx) Lines 29-56 (Feature Compatibility List)**:
+**[www/content/docs/orm/index.mdx](www/content/docs/orm/index.mdx) Lines 29-56 (Feature Compatibility List)**:
 - Update milestone status (M4 → M5 as features complete)
 - Add new features to Category 1 (Compatible) as implemented
 - Move deferred features to appropriate categories
 - Keep 4-category badge system consistent
 
-**[www/content/docs/db/orm/limitations.mdx](www/content/docs/db/orm/limitations.mdx)**:
+**[www/content/docs/orm/limitations.mdx](www/content/docs/orm/limitations.mdx)**:
 - Update "Current Status" section with M5-M6 progress
 - Document any new limitations discovered
 - Update "Not Yet Implemented" list as features complete
@@ -160,11 +160,11 @@ Update 3 JSON files in [www/public/orm/](www/public/orm/):
 Cross-reference with Drizzle ORM docs at `/tmp/cc-repos/drizzle-orm/`:
 
 **Core Features (✅ Complete)**:
-- Schema declaration - [schema.mdx](www/content/docs/db/orm/schema.mdx)
-- Querying - [queries.mdx](www/content/docs/db/orm/queries.mdx)
-- Relations - [relations.mdx](www/content/docs/db/orm/relations.mdx)
-- Mutations - [mutations.mdx](www/content/docs/db/orm/mutations.mdx)
-- API reference - [api-reference.mdx](www/content/docs/db/orm/api-reference.mdx)
+- Schema declaration - [schema.mdx](www/content/docs/orm/schema.mdx)
+- Querying - [queries.mdx](www/content/docs/orm/queries.mdx)
+- Relations - [relations.mdx](www/content/docs/orm/relations.mdx)
+- Mutations - [mutations.mdx](www/content/docs/orm/mutations.mdx)
+- API reference - [api-reference.mdx](www/content/docs/orm/api-reference.mdx)
 
 **Gaps to Address (Optional, defer to later milestone)**:
 - **Guides section**: Performance optimization, testing patterns, type-safety
@@ -378,7 +378,7 @@ bun run build
 ```bash
 # Manual check of all cross-references
 # Look for [broken](link) patterns
-grep -r "](/" www/content/docs/db/orm/
+grep -r "](/" www/content/docs/orm/
 ```
 
 ### JSON Validation
@@ -394,7 +394,7 @@ cat www/public/orm/examples-registry.json | jq .
 
 ```bash
 # Ensure no validator syntax remains
-grep -r "v\.string\|v\.number\|v\.boolean\|v\.id" www/content/docs/db/orm/*.mdx
+grep -r "v\.string\|v\.number\|v\.boolean\|v\.id" www/content/docs/orm/*.mdx
 # Should return 0 matches
 ```
 
@@ -402,7 +402,7 @@ grep -r "v\.string\|v\.number\|v\.boolean\|v\.id" www/content/docs/db/orm/*.mdx
 
 ```bash
 # Verify imports use builder syntax
-grep -r "from 'convex/values'" www/content/docs/db/orm/*.mdx
+grep -r "from 'convex/values'" www/content/docs/orm/*.mdx
 # Should return 0 matches (builders come from better-convex/orm)
 ```
 
@@ -412,7 +412,7 @@ grep -r "from 'convex/values'" www/content/docs/db/orm/*.mdx
 
 **Current Documentation**:
 - Brainstorm roadmap: [docs/brainstorms/2026-01-31-drizzle-orm-brainstorm.md](docs/brainstorms/2026-01-31-drizzle-orm-brainstorm.md)
-- ORM documentation: [www/content/docs/db/orm/](www/content/docs/db/orm/)
+- ORM documentation: [www/content/docs/orm/](www/content/docs/orm/)
 - Agent artifacts: [www/public/orm/](www/public/orm/)
 
 **Implementation Files**:

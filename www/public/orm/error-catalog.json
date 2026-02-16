@@ -11,7 +11,7 @@
         "message": "Convex uses undefined for optional fields, not null",
         "example_wrong": "age: null",
         "example_correct": "age: undefined",
-        "doc_url": "/docs/db/orm/schema#optional-fields",
+        "doc_url": "/docs/orm/schema#optional-fields",
         "severity": "error"
       },
       "nullable_field_type_error": {
@@ -19,7 +19,7 @@
         "message": "Column builders are nullable by default - use .notNull() for required fields",
         "example_wrong": "age: integer() | null",
         "example_correct": "age: integer() // Already nullable",
-        "doc_url": "/docs/db/orm/schema#nullable-fields",
+        "doc_url": "/docs/orm/schema#nullable-fields",
         "severity": "error"
       },
       "wrong_field_type": {
@@ -27,7 +27,7 @@
         "message": "Field type mismatch - check schema definition",
         "example_wrong": "age: '25'",
         "example_correct": "age: 25",
-        "doc_url": "/docs/db/orm/type-safety#type-mismatch-in-filters",
+        "doc_url": "/docs/orm/type-safety#type-mismatch-in-filters",
         "severity": "error"
       },
       "nonexistent_field": {
@@ -35,7 +35,7 @@
         "message": "Field does not exist in schema - check spelling or schema definition",
         "example_wrong": "eq(users.nonExistent, 'value')",
         "example_correct": "eq(users.name, 'value')",
-        "doc_url": "/docs/db/orm/type-safety#wrong-field-name",
+        "doc_url": "/docs/orm/type-safety#wrong-field-name",
         "severity": "error"
       },
       "missing_required_field": {
@@ -43,7 +43,7 @@
         "message": "All required fields must be provided",
         "example_wrong": "{ name: 'Alice' }",
         "example_correct": "{ name: 'Alice', email: 'alice@example.com' }",
-        "doc_url": "/docs/db/orm/type-safety#missing-required-fields",
+        "doc_url": "/docs/orm/type-safety#missing-required-fields",
         "severity": "error"
       },
       "wrong_relation_type": {
@@ -51,7 +51,7 @@
         "message": "Relation configuration mismatch - check fields and references",
         "example_wrong": "fields: [posts.userId], references: [users.email]",
         "example_correct": "fields: [posts.userId], references: [users.id]",
-        "doc_url": "/docs/db/orm/schema#defining-relations",
+        "doc_url": "/docs/orm/schema#defining-relations",
         "severity": "error"
       }
     },
@@ -60,7 +60,7 @@
         "pattern": "Cannot read property 'findMany' of undefined",
         "message": "Table not found in database schema - check exports",
         "solution": "Ensure table is exported in schema and passed to db() setup",
-        "doc_url": "/docs/db/orm/schema#exporting-schema",
+        "doc_url": "/docs/orm/schema#exporting-schema",
         "severity": "error"
       },
       "missing_context": {
@@ -74,14 +74,14 @@
         "pattern": "Cannot read property '...' of undefined",
         "message": "Relation not loaded - use 'with' to include",
         "solution": "Add relation to 'with' clause: { with: { posts: true } }",
-        "doc_url": "/docs/db/orm/queries#loading-relations",
+        "doc_url": "/docs/orm/queries#loading-relations",
         "severity": "error"
       },
       "invalid_cursor": {
         "pattern": "Invalid cursor format",
         "message": "Cursor must be string from previous page or null",
         "solution": "Use result.continueCursor from previous paginate() call",
-        "doc_url": "/docs/db/orm/ordering-pagination#cursor-pagination",
+        "doc_url": "/docs/orm/ordering-pagination#cursor-pagination",
         "severity": "error"
       }
     },
@@ -91,7 +91,7 @@
         "message": "findUnique not available - use findFirst with where",
         "drizzle_code": "findUnique({ where: { id: userId } })",
         "convex_code": "findFirst({ where: eq(users.id, userId) })",
-        "doc_url": "/docs/db/orm/from-drizzle#find-operations",
+        "doc_url": "/docs/orm/from-drizzle#find-operations",
         "severity": "error"
       },
       "drizzle_include": {
@@ -99,7 +99,7 @@
         "message": "Use 'with' instead of 'include' for relations",
         "drizzle_code": "include: { posts: true }",
         "convex_code": "with: { posts: true }",
-        "doc_url": "/docs/db/orm/from-drizzle#relation-loading",
+        "doc_url": "/docs/orm/from-drizzle#relation-loading",
         "severity": "error"
       },
       "drizzle_take": {
@@ -107,7 +107,7 @@
         "message": "Use 'limit' instead of 'take'",
         "drizzle_code": "take: 10",
         "convex_code": "limit: 10",
-        "doc_url": "/docs/db/orm/from-drizzle#complete-api-mapping",
+        "doc_url": "/docs/orm/from-drizzle#complete-api-mapping",
         "severity": "error"
       },
       "drizzle_skip": {
@@ -115,7 +115,7 @@
         "message": "Use 'offset' instead of 'skip'",
         "drizzle_code": "skip: 20",
         "convex_code": "offset: 20",
-        "doc_url": "/docs/db/orm/from-drizzle#complete-api-mapping",
+        "doc_url": "/docs/orm/from-drizzle#complete-api-mapping",
         "severity": "error"
       },
       "prisma_create": {
@@ -123,7 +123,7 @@
         "message": "Use values() instead of create() for inserts",
         "prisma_code": "prisma.user.create({ data: {...} })",
         "convex_code": "db(ctx).insert.users.values({...})",
-        "doc_url": "/docs/db/orm/from-prisma#create",
+        "doc_url": "/docs/orm/from-prisma#create",
         "severity": "error"
       },
       "prisma_null": {
@@ -131,7 +131,7 @@
         "message": "Prisma uses null, Convex uses undefined",
         "prisma_code": "age: null",
         "convex_code": "age: undefined",
-        "doc_url": "/docs/db/orm/from-prisma#null-vs-undefined",
+        "doc_url": "/docs/orm/from-prisma#null-vs-undefined",
         "severity": "error"
       }
     },
@@ -140,21 +140,21 @@
         "pattern": "Multiple queries detected for relation",
         "message": "Potential N+1 query - use 'with' for eager loading",
         "solution": "Load relations with 'with' instead of separate queries",
-        "doc_url": "/docs/db/orm/queries#n1-prevention",
+        "doc_url": "/docs/orm/queries#n1-prevention",
         "severity": "warning"
       },
       "deep_offset_warning": {
         "pattern": "Offset pagination beyond 1000 records",
         "message": "Deep offset pagination is slow - use cursor pagination",
         "solution": "Switch to paginate() for better performance",
-        "doc_url": "/docs/db/orm/ordering-pagination#performance-comparison",
+        "doc_url": "/docs/orm/ordering-pagination#performance-comparison",
         "severity": "warning"
       },
       "missing_index_warning": {
         "pattern": "Query without index on field",
         "message": "Non-indexed field in where clause - may be slow",
         "solution": "Add Convex index or use indexed field",
-        "doc_url": "/docs/db/orm/queries#performance-considerations",
+        "doc_url": "/docs/orm/queries#performance-considerations",
         "severity": "warning"
       }
     },
@@ -163,21 +163,21 @@
         "issue": "Providing id or createdAt in insert",
         "message": "These fields are auto-generated by Convex",
         "solution": "Remove id and createdAt from values()",
-        "doc_url": "/docs/db/orm/schema#auto-generated-fields",
+        "doc_url": "/docs/orm/schema#auto-generated-fields",
         "severity": "info"
       },
       "relation_field_name": {
         "issue": "Relation field name mismatch",
         "message": "Foreign key field must match relation config",
         "example": "If relation uses posts.userId, field must be userId not authorId",
-        "doc_url": "/docs/db/orm/schema#relation-field-naming",
+        "doc_url": "/docs/orm/schema#relation-field-naming",
         "severity": "info"
       },
       "circular_relations": {
         "issue": "Circular dependency in schema imports",
         "message": "Define tables and relations in same file or use forward refs",
         "solution": "Keep table definitions and relations together",
-        "doc_url": "/docs/db/orm/schema#schema-organization",
+        "doc_url": "/docs/orm/schema#schema-organization",
         "severity": "info"
       }
     }

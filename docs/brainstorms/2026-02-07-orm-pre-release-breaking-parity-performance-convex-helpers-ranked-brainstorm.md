@@ -13,7 +13,7 @@ A final pre-release product decision for `better-convex/orm` that prioritizes lo
 
 Coverage used for this brainstorm:
 - ORM source API and internals (`packages/better-convex/src/orm/*`)
-- ORM docs (`www/content/docs/db/orm/*`)
+- ORM docs (`www/content/docs/orm/*`)
 - Convex docs (`/tmp/cc-repos/convex-backend/npm-packages/docs/docs`)
 - convex-helpers docs and source (`/tmp/cc-repos/convex-helpers/packages/convex-helpers/*`)
 

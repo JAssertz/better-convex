@@ -12,13 +12,13 @@ In this guide, we'll cover how to write data with the ORM -- inserting rows, upd
 Each mutation type has its own detailed page:
 
 <Cards>
-  <Card title="Insert" href="/docs/db/orm/mutations/insert">
+  <Card title="Insert" href="/docs/orm/mutations/insert">
     Insert rows, returning, and onConflict upserts
   </Card>
-  <Card title="Update" href="/docs/db/orm/mutations/update">
+  <Card title="Update" href="/docs/orm/mutations/update">
     Update rows with set/where/returning
   </Card>
-  <Card title="Delete" href="/docs/db/orm/mutations/delete">
+  <Card title="Delete" href="/docs/orm/mutations/delete">
     Delete rows with where/returning
   </Card>
 </Cards>
@@ -77,7 +77,7 @@ await ctx.orm.update(users).set({ name: 'Updated' }).where(eq(users.id, userId))
 await ctx.orm.delete(users).allowFullScan();
 ```
 
-For more on `allowFullScan` and index compilation, see [Querying Data](/docs/db/orm/queries).
+For more on `allowFullScan` and index compilation, see [Querying Data](/docs/orm/queries).
 
 ### Atomicity
 
@@ -93,7 +93,7 @@ The ORM enforces runtime limits on how many rows a single mutation can touch. Th
 - `mutationMaxRows`: `1000` (sync-mode hard cap)
 - `mutationLeafBatchSize`: `900` (async FK fan-out batch size)
 
-You can customize these in your schema definition. For the full list of configurable defaults, see [Schema Definition -- Runtime Defaults](/docs/db/orm/schema#runtime-defaults).
+You can customize these in your schema definition. For the full list of configurable defaults, see [Schema Definition -- Runtime Defaults](/docs/orm/schema#runtime-defaults).
 
 ## Insert
 
@@ -124,7 +124,7 @@ await ctx.orm
   });
 ```
 
-For more options including `onConflictDoNothing` and multi-row inserts, see [Insert](/docs/db/orm/insert).
+For more options including `onConflictDoNothing` and multi-row inserts, see [Insert](/docs/orm/insert).
 
 ## Update
 
@@ -141,7 +141,7 @@ export const updateUserName = publicMutation
   });
 ```
 
-For paginated updates, async batching, and more, see [Update](/docs/db/orm/update).
+For paginated updates, async batching, and more, see [Update](/docs/orm/update).
 
 ## Delete
 
@@ -155,7 +155,7 @@ export const deleteUser = publicMutation
   });
 ```
 
-For soft deletes, scheduled deletes, and async batching, see [Delete](/docs/db/orm/delete).
+For soft deletes, scheduled deletes, and async batching, see [Delete](/docs/orm/delete).
 
 ## Paginated Mutation Batches
 
@@ -234,16 +234,16 @@ You now have all the building blocks for writing data. Dive into the sub-pages b
 ## Next Steps
 
 <Cards>
-  <Card title="Insert" href="/docs/db/orm/mutations/insert">
+  <Card title="Insert" href="/docs/orm/mutations/insert">
     Multi-row inserts, upserts, and conflict handling
   </Card>
-  <Card title="Update" href="/docs/db/orm/mutations/update">
+  <Card title="Update" href="/docs/orm/mutations/update">
     Paginated updates, async batching, and safety limits
   </Card>
-  <Card title="Delete" href="/docs/db/orm/mutations/delete">
+  <Card title="Delete" href="/docs/orm/mutations/delete">
     Soft deletes, scheduled deletes, and cascades
   </Card>
-  <Card title="Schema Definition" href="/docs/db/orm/schema">
+  <Card title="Schema Definition" href="/docs/orm/schema">
     Configure runtime defaults and table-level settings
   </Card>
 </Cards>

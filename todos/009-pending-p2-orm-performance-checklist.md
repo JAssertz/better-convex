@@ -22,7 +22,7 @@ There is no single, operation-by-operation performance checklist for the ORM. Th
 ### Option 1: Add Checklist Table To Limitations Doc (Preferred)
 
 **Approach:**
-- Extend `www/content/docs/db/orm/limitations.mdx` with a table listing each ORM operation, its query strategy, index expectations, and failure modes.
+- Extend `www/content/docs/orm/limitations.mdx` with a table listing each ORM operation, its query strategy, index expectations, and failure modes.
 - Include flags for: index required, post-fetch behavior, pagination behavior, and scalability notes.
 
 **Pros:**
@@ -41,7 +41,7 @@ There is no single, operation-by-operation performance checklist for the ORM. Th
 ### Option 2: New "ORM Performance Checklist" Doc
 
 **Approach:**
-- Create a dedicated doc (e.g., `docs/analysis/orm-performance-checklist.md` or `www/content/docs/db/orm/performance.mdx`).
+- Create a dedicated doc (e.g., `docs/analysis/orm-performance-checklist.md` or `www/content/docs/orm/performance.mdx`).
 - Link from `limitations.mdx`, `queries.mdx`, `relations.mdx`.
 
 **Pros:**
@@ -88,9 +88,9 @@ There is no single, operation-by-operation performance checklist for the ORM. Th
 - Preferred alternatives (e.g., `paginate`, `better-convex/orm/stream`)
 
 **Candidate files:**
-- `www/content/docs/db/orm/limitations.mdx`
-- `www/content/docs/db/orm/queries.mdx`
-- `www/content/docs/db/orm/relations.mdx`
+- `www/content/docs/orm/limitations.mdx`
+- `www/content/docs/orm/queries.mdx`
+- `www/content/docs/orm/relations.mdx`
 
 ## Resources
 

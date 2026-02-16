@@ -11,12 +11,12 @@ scope: better-convex/orm only
 
 A final pre-release decision set for `better-convex/orm` that uses remaining breaking-change budget on correctness and long-term API trust, while still shipping targeted parity improvements.
 
-This is scoped to ORM only (`packages/better-convex/src/orm/*` and `www/content/docs/db/orm/*`). It intentionally excludes `crpc`, `auth`, and other packages.
+This is scoped to ORM only (`packages/better-convex/src/orm/*` and `www/content/docs/orm/*`). It intentionally excludes `crpc`, `auth`, and other packages.
 
 Coverage used for this brainstorm:
 
 - ORM runtime and types: `index.ts`, `query-builder.ts`, `query.ts`, `where-clause-compiler.ts`, `database.ts`, `create-orm.ts`, `insert.ts`, `update.ts`, `delete.ts`, `mutation-utils.ts`, `stream.ts`, `pagination.ts`, `schema.ts`.
-- ORM docs: all pages under `www/content/docs/db/orm/*`.
+- ORM docs: all pages under `www/content/docs/orm/*`.
 - Convex parity references: `/tmp/cc-repos/convex-backend/npm-packages/docs/docs` (query/index/search/vector/system-table behavior).
 - convex-helpers surface + guidance: `/tmp/cc-repos/convex-helpers/packages/convex-helpers/README.md`, `/tmp/cc-repos/convex-helpers/packages/convex-helpers/package.json`, and `server/*.ts`.
 

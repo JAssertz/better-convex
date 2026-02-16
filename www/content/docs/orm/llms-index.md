@@ -11,44 +11,44 @@ This file provides a structured index of the ORM documentation for AI assistants
 
 **Getting Started:**
 
-- `/docs/db/orm` - Overview, installation, and value proposition
+- `/docs/orm` - Overview, installation, and value proposition
 - `/docs/quickstart#orm-setup` - ORM setup section in the main quickstart
 
 **Schema Definition:**
 
-- `/docs/db/orm/schema` - Table definitions, field types, indexes, and type inference
-- `/docs/db/orm/schema/column-types` - Column builders and TypeScript type mapping
-- `/docs/db/orm/schema/indexes-constraints` - Indexes, unique constraints, and foreign keys
+- `/docs/orm/schema` - Table definitions, field types, indexes, and type inference
+- `/docs/orm/schema/column-types` - Column builders and TypeScript type mapping
+- `/docs/orm/schema/indexes-constraints` - Indexes, unique constraints, and foreign keys
 
 **Relations:**
 
-- `/docs/db/orm/schema/relations` - One‑to‑one, one‑to‑many, many‑to‑many relations
+- `/docs/orm/schema/relations` - One‑to‑one, one‑to‑many, many‑to‑many relations
 
 **Querying Data:**
 
-- `/docs/db/orm/queries` - findMany(), findFirst(), cursor pagination (`cursor` + `limit`), filters, orderBy
-- `/docs/db/orm/queries/operators` - All supported `where` operators (query + mutation)
+- `/docs/orm/queries` - findMany(), findFirst(), cursor pagination (`cursor` + `limit`), filters, orderBy
+- `/docs/orm/queries/operators` - All supported `where` operators (query + mutation)
 
 **Mutations:**
 
-- `/docs/db/orm/mutations` - insert(), update(), delete(), returning(), onConflictDoUpdate()
-- `/docs/db/orm/mutations/insert` - insert() builder details
-- `/docs/db/orm/mutations/update` - update() builder details
-- `/docs/db/orm/mutations/delete` - delete() builder details
+- `/docs/orm/mutations` - insert(), update(), delete(), returning(), onConflictDoUpdate()
+- `/docs/orm/mutations/insert` - insert() builder details
+- `/docs/orm/mutations/update` - update() builder details
+- `/docs/orm/mutations/delete` - delete() builder details
 
 **Row-Level Security:**
 
-- `/docs/db/orm/rls` - rlsPolicy, rlsRole, and runtime enforcement
+- `/docs/orm/rls` - rlsPolicy, rlsRole, and runtime enforcement
 
 ## Migration & Comparison
 
-- `/docs/db/orm/migrate-from-convex` - Native Convex (`ctx.db`) → ORM migration guide
-- `/docs/db/orm/migrate-from-ents` - Convex Ents → ORM migration guide
+- `/docs/orm/migrate-from-convex` - Native Convex (`ctx.db`) → ORM migration guide
+- `/docs/orm/migrate-from-ents` - Convex Ents → ORM migration guide
 - `/docs/comparison/drizzle` - Drizzle v1 mapping and migration guidance
 
 ## Reference
 
-- `/docs/db/orm/api-reference` - Full API surface and TypeScript helpers
+- `/docs/orm/api-reference` - Full API surface and TypeScript helpers
 - `/docs/comparison/drizzle` - Differences, limitations, and performance guidance
 
 ## Quick Reference

@@ -8,7 +8,7 @@ dependencies: []
 
 # Sync ORM docs with Drizzle parity and current API
 
-Align all ORM docs in `www/content/docs/db/orm` with current Better-Convex API and Drizzle-compatible semantics. Ensure examples compile, feature compatibility is accurate, and SQL is not referenced.
+Align all ORM docs in `www/content/docs/orm` with current Better-Convex API and Drizzle-compatible semantics. Ensure examples compile, feature compatibility is accurate, and SQL is not referenced.
 
 ## Problem Statement
 
@@ -26,7 +26,7 @@ ORM documentation is out of sync with recent API changes and Drizzle parity deci
 
 ### Option 1: Full line-by-line sync (Recommended)
 
-**Approach:** Review each file in `www/content/docs/db/orm` sequentially, cross-check examples against current API/types and Drizzle docs/tests. Update code snippets, feature compatibility, and limitations to match implementation and intentional gaps (no SQL).
+**Approach:** Review each file in `www/content/docs/orm` sequentially, cross-check examples against current API/types and Drizzle docs/tests. Update code snippets, feature compatibility, and limitations to match implementation and intentional gaps (no SQL).
 
 **Pros:**
 - Eliminates doc drift comprehensively
@@ -64,16 +64,16 @@ Proceed with Option 1. Read and update each of the following files: `index.mdx`,
 ## Technical Details
 
 **Affected files:**
-- `www/content/docs/db/orm/index.mdx`
-- `www/content/docs/db/orm/quickstart.mdx`
-- `www/content/docs/db/orm/schema.mdx`
-- `www/content/docs/db/orm/relations.mdx`
-- `www/content/docs/db/orm/queries.mdx`
-- `www/content/docs/db/orm/mutations.mdx`
-- `www/content/docs/db/orm/limitations.mdx`
-- `www/content/docs/db/orm/api-reference.mdx`
-- `www/content/docs/db/orm/comparison.mdx`
-- `www/content/docs/db/orm/llms-index.md`
+- `www/content/docs/orm/index.mdx`
+- `www/content/docs/orm/quickstart.mdx`
+- `www/content/docs/orm/schema.mdx`
+- `www/content/docs/orm/relations.mdx`
+- `www/content/docs/orm/queries.mdx`
+- `www/content/docs/orm/mutations.mdx`
+- `www/content/docs/orm/limitations.mdx`
+- `www/content/docs/orm/api-reference.mdx`
+- `www/content/docs/orm/comparison.mdx`
+- `www/content/docs/orm/llms-index.md`
 
 **Related components:**
 - ORM package APIs in `packages/better-convex/src/orm`
@@ -101,7 +101,7 @@ Proceed with Option 1. Read and update each of the following files: `index.mdx`,
 **By:** Codex
 
 **Actions:**
-- Inventoried ORM docs in `www/content/docs/db/orm`
+- Inventoried ORM docs in `www/content/docs/orm`
 - Noted mismatches in `index.mdx` and `quickstart.mdx`
 - Created plan to fully sync docs with Drizzle parity and current API
 
@@ -114,7 +114,7 @@ Proceed with Option 1. Read and update each of the following files: `index.mdx`,
 **By:** Codex
 
 **Actions:**
-- Updated all ORM docs in `www/content/docs/db/orm` to reflect current API
+- Updated all ORM docs in `www/content/docs/orm` to reflect current API
 - Replaced `db(ctx)` usage with `createDatabase` + `defineRelations`/`extractRelationsConfig`
 - Fixed `where` examples to use callback form and updated orderBy examples
 - Updated relations examples (explicit FK fields, join table for many-to-many)

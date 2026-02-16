@@ -671,7 +671,7 @@ vitest run --coverage --coverage.reporter=text
 **Documentation**:
 
 - [ ] Update [brainstorm milestone M4.5](../brainstorms/2026-01-31-drizzle-orm-brainstorm.md#milestone-45-type-testing-audit) with completion status
-- [ ] Add testing methodology to [llms-index.md](../../www/content/docs/db/orm/llms-index.md)
+- [ ] Add testing methodology to [llms-index.md](../../www/content/docs/orm/llms-index.md)
 - [ ] Update project status in [3-project-status.mdc](../../.claude/skills/3-project-status/3-project-status.mdc)
 
 ## Acceptance Criteria

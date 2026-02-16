@@ -729,9 +729,9 @@ paginate(config: { cursor: string | null; numItems: number }) {
 **Goal:** Update docs to reflect M6.5 completion
 
 **Files to modify:**
-- [www/content/docs/db/orm/limitations.mdx](../../www/content/docs/db/orm/limitations.mdx) - Move features from "Coming Soon" to "Implemented"
-- [www/content/docs/db/orm/index.mdx](../../www/content/docs/db/orm/index.mdx) - Update feature compatibility list
-- Create [www/content/docs/db/orm/pagination.mdx](../../www/content/docs/db/orm/pagination.mdx) - Cursor vs offset guide
+- [www/content/docs/orm/limitations.mdx](../../www/content/docs/orm/limitations.mdx) - Move features from "Coming Soon" to "Implemented"
+- [www/content/docs/orm/index.mdx](../../www/content/docs/orm/index.mdx) - Update feature compatibility list
+- Create [www/content/docs/orm/pagination.mdx](../../www/content/docs/orm/pagination.mdx) - Cursor vs offset guide
 - [convex/test-types/README.md](../../convex/test-types/README.md) - Reference M6.5 completion
 
 **Content updates:**
@@ -1144,16 +1144,16 @@ Total: 50 posts (correct - 5 per user)
 
 ### Documentation
 
-**www/content/docs/db/orm/limitations.mdx:**
+**www/content/docs/orm/limitations.mdx:**
 - Move relation loading from "Coming Soon" to "Implemented (M6.5)"
 - Move cursor pagination from "Coming Soon" to "Implemented (M6.5)"
 - Update "Current Status" section
 
-**www/content/docs/db/orm/index.mdx:**
+**www/content/docs/orm/index.mdx:**
 - Update feature compatibility list (Category 1 + Category 3)
 - Add cursor pagination to Convex-Native Advantages section
 
-**www/content/docs/db/orm/pagination.mdx:** (new file)
+**www/content/docs/orm/pagination.mdx:** (new file)
 - Explain cursor vs offset pagination
 - Code examples for both approaches
 - Performance characteristics (O(1) vs O(n))

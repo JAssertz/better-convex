@@ -29,7 +29,7 @@ export const renameUser = publicMutation
 ```
 
 <Callout icon={<AlertTriangle />}>
-**Important:** `update()` without `.where(...)` throws unless you call `.allowFullScan()`. See [Querying Data](/docs/db/orm/queries) for details on `allowFullScan`.
+**Important:** `update()` without `.where(...)` throws unless you call `.allowFullScan()`. See [Querying Data](/docs/orm/queries) for details on `allowFullScan`.
 </Callout>
 
 ## Returning
@@ -69,7 +69,7 @@ export default defineSchema({ users, posts }, {
 });
 ```
 
-For the full list of configurable defaults, see [Schema Definition -- Runtime Defaults](/docs/db/orm/schema#runtime-defaults).
+For the full list of configurable defaults, see [Schema Definition -- Runtime Defaults](/docs/orm/schema#runtime-defaults).
 
 ## Paginated Update Execution
 
@@ -139,7 +139,7 @@ Key behaviors to keep in mind:
 - Async FK update fan-out (`onUpdate: 'cascade'`, `set null`, `set default`) uses `mutationLeafBatchSize`
 
 <Callout icon={<AlertTriangle />}>
-**Important:** Async execution requires wiring `ormFunctions` and `scheduledMutationBatch` in your ORM setup. See [Mutations -- Async Wiring Setup](/docs/db/orm/mutations#wiring-setup) for the setup steps.
+**Important:** Async execution requires wiring `ormFunctions` and `scheduledMutationBatch` in your ORM setup. See [Mutations -- Async Wiring Setup](/docs/orm/mutations#wiring-setup) for the setup steps.
 </Callout>
 
 ## Drizzle Differences
@@ -159,16 +159,16 @@ You now have everything you need to update data, from simple field changes to la
 ## Next Steps
 
 <Cards>
-  <Card title="Mutations Overview" href="/docs/db/orm/mutations">
+  <Card title="Mutations Overview" href="/docs/orm/mutations">
     Shared mutation concepts: returning, where, atomicity, and async wiring
   </Card>
-  <Card title="Insert" href="/docs/db/orm/mutations/insert">
+  <Card title="Insert" href="/docs/orm/mutations/insert">
     Insert rows, multi-row inserts, and upserts
   </Card>
-  <Card title="Delete" href="/docs/db/orm/mutations/delete">
+  <Card title="Delete" href="/docs/orm/mutations/delete">
     Delete rows with soft/scheduled/hard modes
   </Card>
-  <Card title="Schema Definition" href="/docs/db/orm/schema">
+  <Card title="Schema Definition" href="/docs/orm/schema">
     Configure runtime defaults and safety limits
   </Card>
 </Cards>

@@ -208,7 +208,7 @@ import { InfoIcon, AlertTriangle, CheckCircle } from "lucide-react"
 ## Next Steps
 
 <Cards>
-  <Card title="Related Topic" href="/docs/db/orm/{page}" />
+  <Card title="Related Topic" href="/docs/orm/{page}" />
 </Cards>
 ```
 
@@ -326,8 +326,8 @@ const users = db.query.users.where({ age: 25 });
 **Cards** - For navigation:
 ```mdx
 <Cards>
-  <Card title="Relations" href="/docs/db/orm/schema/relations" />
-  <Card title="Filtering" href="/docs/db/orm/queries/filtering" />
+  <Card title="Relations" href="/docs/orm/schema/relations" />
+  <Card title="Filtering" href="/docs/orm/queries/filtering" />
 </Cards>
 ```
 
@@ -444,13 +444,13 @@ Create machine-readable indexes alongside human docs:
 # Better-Convex ORM Documentation Index
 
 ## Core Concepts
-- /docs/db/orm/schema - Table definitions, relations, types
-- /docs/db/orm/queries - Reading data with type-safe queries
-- /docs/db/orm/mutations - Creating, updating, deleting records
+- /docs/orm/schema - Table definitions, relations, types
+- /docs/orm/queries - Reading data with type-safe queries
+- /docs/orm/mutations - Creating, updating, deleting records
 
 ## Migration Guides
-- /docs/db/orm/from-drizzle - Drizzle ORM → Better-Convex mappings
-- /docs/db/orm/from-prisma - Prisma → Better-Convex patterns
+- /docs/orm/from-drizzle - Drizzle ORM → Better-Convex mappings
+- /docs/orm/from-prisma - Prisma → Better-Convex patterns
 
 ## Quick Reference
 - convexTable() - Define table schema
@@ -466,14 +466,14 @@ Create machine-readable indexes alongside human docs:
     "convexTable": {
       "signature": "convexTable<T>(name: string, fields: T): ConvexTable<T>",
       "example": "convexTable('users', { name: v.string() })",
-      "docUrl": "/docs/db/orm/schema#convextable"
+      "docUrl": "/docs/orm/schema#convextable"
     }
   },
   "queries": {
     "findMany": {
       "signature": "findMany<T>(): QueryBuilder<T[]>",
       "example": "db.query.users.findMany()",
-      "docUrl": "/docs/db/orm/queries#findmany"
+      "docUrl": "/docs/orm/queries#findmany"
     }
   }
 }
@@ -485,7 +485,7 @@ Create machine-readable indexes alongside human docs:
   "Type 'string' is not assignable to type 'number'": {
     "cause": "Filter value type mismatch",
     "solution": "Check schema field type and use matching value",
-    "docUrl": "/docs/db/orm/queries#type-safety",
+    "docUrl": "/docs/orm/queries#type-safety",
     "example": "where({ age: 25 }) // not where({ age: '25' })"
   }
 }
@@ -498,13 +498,13 @@ Create machine-readable indexes alongside human docs:
     "title": "User has many posts",
     "code": "...",
     "tags": ["relations", "one-to-many"],
-    "docUrl": "/docs/db/orm/schema#relations"
+    "docUrl": "/docs/orm/schema#relations"
   }
 }
 ```
 
 **Files to Create**:
-- `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/llms-index.md`
+- `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/llms-index.md`
 - `/Users/zbeyens/GitHub/better-convex/www/public/orm/api-catalog.json`
 - `/Users/zbeyens/GitHub/better-convex/www/public/orm/error-catalog.json`
 - `/Users/zbeyens/GitHub/better-convex/www/public/orm/examples-registry.json`
@@ -865,7 +865,7 @@ Create ESLint-style rules for MDX documentation:
 #### 🔬 Updated Documentation Plan
 
 **What needs creating**:
-- [ ] Create `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/` directory
+- [ ] Create `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/` directory
 - [ ] Create all **20 MDX files** following phase order (reduced from 26)
 - [ ] Create **4 agent-native artifacts**: llms-index.md, api-catalog.json, error-catalog.json, examples-registry.json
 - [ ] Create **3 custom components**: DrizzleComparison.tsx, GotchasTable.tsx, PerformanceMatrix.tsx
@@ -925,24 +925,24 @@ Create ESLint-style rules for MDX documentation:
 
 ### Phase 1 Files (6 MDX + 2 agent-native)
 **MDX Documentation**:
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/index.mdx` (Overview + Getting Started)
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/quickstart.mdx`
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/schema.mdx` (tables + relations + types combined)
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/queries.mdx` (findMany + select + filtering combined)
-- [x] `/Users/zbeynes/GitHub/better-convex/www/content/docs/db/orm/mutations.mdx` (insert + update + delete combined)
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/from-drizzle.mdx` (ELEVATED: Migration guide)
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/index.mdx` (Overview + Getting Started)
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/quickstart.mdx`
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/schema.mdx` (tables + relations + types combined)
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/queries.mdx` (findMany + select + filtering combined)
+- [x] `/Users/zbeynes/GitHub/better-convex/www/content/docs/orm/mutations.mdx` (insert + update + delete combined)
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/from-drizzle.mdx` (ELEVATED: Migration guide)
 
 **Agent-Native Artifacts**:
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/llms-index.md`
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/llms-index.md`
 - [x] `/Users/zbeyens/GitHub/better-convex/www/public/orm/api-catalog.json`
 
 ### Phase 2 Files (5 MDX + 2 agent-native) ✅ COMPLETE
 **MDX Documentation**:
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/relations-deep-dive.mdx`
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/ordering-pagination.mdx` (orderBy + pagination combined)
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/type-safety.mdx`
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/from-prisma.mdx`
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/from-ents.mdx`
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/relations-deep-dive.mdx`
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/ordering-pagination.mdx` (orderBy + pagination combined)
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/type-safety.mdx`
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/from-prisma.mdx`
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/from-ents.mdx`
 
 **Agent-Native Artifacts**:
 - [x] `/Users/zbeyens/GitHub/better-convex/www/public/orm/error-catalog.json`
@@ -950,13 +950,13 @@ Create ESLint-style rules for MDX documentation:
 
 ### Phase 3 Files (3 MDX + 2 agent-native) ✅ COMPLETE
 **MDX Documentation**:
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/real-time.mdx`
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/api-reference.mdx` (API + operators combined)
-- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/limitations.mdx` (Category 2/4 + Performance)
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/real-time.mdx`
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/api-reference.mdx` (API + operators combined)
+- [x] `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/limitations.mdx` (Category 2/4 + Performance)
 
 **Agent-Native Artifacts**:
 - [x] `/Users/zbeyens/GitHub/better-convex/www/public/orm/examples-registry.json`
-- [x] Finalize `/Users/zbeyens/GitHub/better-convex/www/content/docs/db/orm/llms-index.md`
+- [x] Finalize `/Users/zbeyens/GitHub/better-convex/www/content/docs/orm/llms-index.md`
 
 ### Phase 4 Files (Infrastructure + Components)
 **Navigation & Config**:

@@ -5,8 +5,8 @@
 - Migrate `example/` so it does not use `ctx.db` or `ctx.table` anywhere in application code.
 - Uninstall `convex-ents` from `example/`.
 - Track any gaps/parity issues discovered vs:
-  - `www/content/docs/db/orm/migrate-from-ents.mdx`
-  - `www/content/docs/db/orm/migrate-from-convex.mdx`
+  - `www/content/docs/orm/migrate-from-ents.mdx`
+  - `www/content/docs/orm/migrate-from-convex.mdx`
 - If gaps exist, improve ORM and/or docs.
 
 ## Current State (Post-Migration Verification)
@@ -121,7 +121,7 @@ These aren’t necessarily ORM bugs, but are missing “migration mapping” gui
 5. Native methods still exist on `ctx.orm`:
    - Because ORM DB extends Convex DB, `ctx.orm` still has native `insert/patch/delete`.
    - Migration docs don’t explicitly call out “don’t use `ctx.orm.patch`” (it bypasses ORM constraints and keeps native `undefined`=unset semantics).
-   - Resolved: added an explicit callout in `www/content/docs/db/orm/migrate-from-convex.mdx` and clarified the warning in `www/content/docs/db/orm/update.mdx`.
+   - Resolved: added an explicit callout in `www/content/docs/orm/migrate-from-convex.mdx` and clarified the warning in `www/content/docs/orm/update.mdx`.
 
 ## Possible ORM Parity Gaps (To Confirm During Implementation)
 
@@ -150,8 +150,8 @@ These aren’t necessarily ORM bugs, but are missing “migration mapping” gui
 ## Resources / Key Files
 
 - ORM migration docs:
-  - `www/content/docs/db/orm/migrate-from-ents.mdx`
-  - `www/content/docs/db/orm/migrate-from-convex.mdx`
+  - `www/content/docs/orm/migrate-from-ents.mdx`
+  - `www/content/docs/orm/migrate-from-convex.mdx`
 - Example app:
   - Schema: `example/convex/functions/schema.ts`
   - cRPC context: `example/convex/lib/crpc.ts`
