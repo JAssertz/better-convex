@@ -1,32 +1,44 @@
 # Better Convex
 
-A complete framework for building type-safe, real-time applications with Convex.
+Type-safe Convex framework with a tRPC-style server API, Drizzle-style ORM, and TanStack Query client integration.
 
-### <a href="https://better-convex.com">Read the docs →</b></a>
+## Docs
 
-## What's Included
+[better-convex.com](https://better-convex.com)
 
-| Layer        | Feature     | Description                                                        |
-| ------------ | ----------- | ------------------------------------------------------------------ |
-| **Server**   | cRPC        | tRPC-style procedure builder with `.input()`, `.use()`, middleware |
-| **Database** | Ents        | Relationships, fluent queries, `ctx.table()`                       |
-| **Database** | Triggers    | Automatic side effects on data changes                             |
-| **Database** | Aggregates  | O(log n) counts, sums, leaderboards                                |
-| **Client**   | React       | TanStack Query integration with real-time sync                     |
-| **Client**   | Next.js     | RSC prefetching, hydration, server caller                          |
-| **Auth**     | Better Auth | Lifecycle hooks, session management, guards                        |
-| **CLI**      | Codegen     | Procedure metadata for auth-aware queries                          |
+## What You Get
 
-## Quick Look
+- cRPC procedure builder (`better-convex/server`)
+- Drizzle-style ORM for Convex (`better-convex/orm`)
+- React + TanStack Query integration with real-time updates (`better-convex/react`)
+- Next.js server helpers for RSC/auth (`better-convex/auth-nextjs`, `better-convex/rsc`)
+- Better Auth adapter utilities (`better-convex/auth`, `better-convex/auth-client`, `better-convex/auth-config`)
+- CLI metadata/codegen helpers (`better-convex` bin)
 
-```tsx
-// Server: Define a procedure
-export const list = authQuery
-  .input(z.object({ limit: z.number().optional() }))
-  .query(async ({ ctx, input }) => {
-    return ctx.table("posts").take(input.limit ?? 10);
-  });
+## Quick Start
 
-// Client: Use it with TanStack Query
-const { data: posts } = useQuery(crpc.posts.list.queryOptions({ limit: 10 }));
+```bash
+bun add convex better-convex zod @tanstack/react-query
 ```
+
+Then follow:
+
+- [Quickstart](https://better-convex.com/docs/quickstart)
+- [Templates](https://better-convex.com/docs/templates)
+
+## Local Dev
+
+```bash
+bun install
+bun typecheck
+bun run test
+bun run lint
+```
+
+## Example App
+
+The canonical reference app lives in:
+
+- [example](./example)
+
+It demonstrates current best-practice usage across auth, cRPC, ORM, HTTP routes, and TanStack Query.

@@ -152,27 +152,28 @@ If you're coming from vanilla Convex, here's what changes.
 
 ### What's new
 
-**Before (vanilla Convex):**
-
-```tsx showLineNumbers
-try {
-  await mutation(args);
-} catch (error) {
-  if (error instanceof ConvexError) {
-    console.log(error.data); // unknown shape
-  }
-}
-```
-
-**After (cRPC):**
-
-```tsx showLineNumbers {1-4}
-mutation.mutate(args, {
-  onError: (error) => {
-    toast.error(error.data?.message ?? 'Failed');
-  },
-});
-```
+<Compare>
+  <CompareItem title="Before (vanilla Convex)">
+    ```tsx showLineNumbers
+    try {
+      await mutation(args);
+    } catch (error) {
+      if (error instanceof ConvexError) {
+        console.log(error.data); // unknown shape
+      }
+    }
+    ```
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```tsx showLineNumbers {1-4}
+    mutation.mutate(args, {
+      onError: (error) => {
+        toast.error(error.data?.message ?? 'Failed');
+      },
+    });
+    ```
+  </CompareItem>
+</Compare>
 
 **Key differences:**
 

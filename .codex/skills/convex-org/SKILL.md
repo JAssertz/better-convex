@@ -1,0 +1,858 @@
+---
+name: convex-org
+description: Use when implementing multi-tenant organization features with Better Auth and Convex - organization management, member roles, invitations, and access control
+---
+
+# Convex Organizations with Better Auth
+
+## Architecture
+
+**Multi-tenant System:** Organizations → Members with role-based access control
+**Schema:** Better Auth tables (organization, member, invitation) extended with app fields
+
+## Setup
+
+### Server-Side Configuration
+
+**Edit:** `convex/functions/auth.ts`
+
+```typescript
+import { organization } from "better-auth/plugins";
+import type { ActionCtx } from "./_generated/server";
+
+export const auth = betterAuth({
+  plugins: [
+    convex(),
+    organization({
+      ac,
+      roles,
+      allowUserToCreateOrganization: true,
+      organizationLimit: 5,
+      membershipLimit: 100,
+      creatorRole: "owner",
+      invitationExpiresIn: 48 * 60 * 60, // 48 hours
+      teams: {
+        enabled: true,
+        maximumTeams: 10,
+      },
+      sendInvitationEmail: async (data: {
+        id: string;
+        inviter: { user: { email: string; name?: string | null } };
+        organization: { name: string; slug: string };
+        role: string;
+        email: string;
+      }) => {
+        await (ctx as ActionCtx).scheduler.runAfter(
+          0,
+          internal.email.sendOrganizationInviteEmail,
+          {
+            acceptUrl: `${process.env.SITE_URL!}/w/${data.organization.slug}?invite=${data.id}`,
+            invitationId: data.id,
+            inviterEmail: data.inviter.user.email,
+            inviterName: data.inviter.user.name || "Team Admin",
+            organizationName: data.organization.name,
+            role: data.role,
+            to: data.email,
+          }
+        );
+      },
+    }),
+  ],
+});
+```
+
+### Client-Side Configuration
+
+**Edit:** `src/lib/auth-client.ts`
+
+```typescript
+import { organizationClient } from "better-auth/client/plugins";
+import { ac, roles } from "@/convex/shared/auth-shared";
+
+export const authClient = createAuthClient({
+  plugins: [
+    organizationClient({
+      ac,
+      roles,
+      teams: { enabled: true },
+    }),
+  ],
+});
+```
+
+## Schema
+
+Organization tables can be extended with custom fields.
+
+**Edit:** `convex/functions/schema.ts`
+
+```typescript
+user: defineEnt({
+  // ... existing fields
+})
+  .edges('members', { to: 'member', ref: 'userId' })
+  .edges('invitations', { to: 'invitation', ref: 'inviterId' }),
+
+organization: defineEnt({
+  logo: v.optional(v.union(v.null(), v.string())),
+  createdAt: v.number(),
+  metadata: v.optional(v.union(v.null(), v.string())),
+  // Add custom fields as needed
+})
+  .field('slug', v.string(), { unique: true })
+  .field('name', v.string(), { index: true })
+  .edges('members', { to: 'member', ref: true })
+  .edges('invitations', { to: 'invitation', ref: true }),
+
+member: defineEnt({
+  createdAt: v.number(),
+})
+  .field('role', v.string(), { index: true })
+  .edge('organization', { to: 'organization', field: 'organizationId' })
+  .edge('user', { to: 'user', field: 'userId' })
+  .index('organizationId_userId', ['organizationId', 'userId'])
+  .index('organizationId_role', ['organizationId', 'role']),
+
+invitation: defineEnt({
+  role: v.optional(v.union(v.null(), v.string())),
+  expiresAt: v.number(),
+  createdAt: v.number(),
+})
+  .field('email', v.string(), { index: true })
+  .field('status', v.string(), { index: true })
+  .edge('organization', { to: 'organization', field: 'organizationId' })
+  .edge('inviter', { to: 'user', field: 'inviterId' })
+  .index('email_organizationId_status', ['email', 'organizationId', 'status'])
+  .index('organizationId_status', ['organizationId', 'status']),
+
+// Teams (optional)
+team: defineEnt({
+  createdAt: v.number(),
+  name: v.string(),
+  updatedAt: v.optional(v.union(v.null(), v.number())),
+})
+  .edge('organization', { to: 'organization', field: 'organizationId' })
+  .index('organizationId', ['organizationId']),
+
+teamMember: defineEnt({
+  createdAt: v.optional(v.union(v.null(), v.number())),
+})
+  .edge('team', { to: 'team', field: 'teamId' })
+  .edge('user', { to: 'user', field: 'userId' })
+  .index('userId', ['userId']),
+
+// Session needs activeOrganizationId (and activeTeamId if using teams)
+session: defineEnt({
+  // ... existing fields
+  activeOrganizationId: v.optional(v.union(v.null(), v.string())),
+  activeTeamId: v.optional(v.union(v.null(), v.string())),
+})
+```
+
+## Access Control
+
+**Create:** `convex/shared/auth-shared.ts`
+
+```typescript
+import { createAccessControl } from "better-auth/plugins/access";
+import {
+  defaultStatements,
+  memberAc,
+  ownerAc,
+} from "better-auth/plugins/organization/access";
+
+const statement = {
+  ...defaultStatements,
+  // Add custom resources as needed
+} as const;
+
+export const ac = createAccessControl(statement);
+
+const member = ac.newRole({
+  ...memberAc.statements,
+});
+
+const owner = ac.newRole({
+  ...ownerAc.statements,
+});
+
+export const roles = { member, owner };
+```
+
+### Permission Helper
+
+**Create:** `convex/lib/auth/auth-helpers.ts`
+
+```typescript
+import { CRPCError } from "better-convex/server";
+import type { AuthCtx } from "../crpc";
+
+export const hasPermission = async (
+  ctx: AuthCtx,
+  body: { permissions: Record<string, string[]> },
+  shouldThrow = true
+) => {
+  const result = await ctx.auth.api.hasPermission({
+    body,
+    headers: ctx.auth.headers,
+  });
+
+  if (shouldThrow && !result.success) {
+    throw new CRPCError({
+      code: "FORBIDDEN",
+      message: "Insufficient permissions",
+    });
+  }
+
+  return result.success;
+};
+```
+
+## Organization Management
+
+**Edit:** `convex/functions/organization.ts`
+
+**Pattern:** Use Better Auth API for multi-table operations (create, delete, invitations). Use direct table operations for simple reads/updates.
+
+### Helper Functions
+
+**Create:** `convex/lib/organization-helpers.ts`
+
+```typescript
+import { asyncMap } from "convex-helpers";
+import type { AuthCtx } from "./crpc";
+
+// List all organizations for a user (direct table queries)
+export const listUserOrganizations = async (
+  ctx: AuthCtx,
+  userId: Id<"user">
+) => {
+  const members = await ctx.table("member", "userId", (q) =>
+    q.eq("userId", userId)
+  );
+
+  if (!members || members.length === 0) return [];
+
+  return asyncMap(members, async (member) => {
+    const org = await member.edgeX("organization");
+    return {
+      ...org.doc(),
+      _id: org._id,
+      _creationTime: org._creationTime,
+      role: member.role || "member",
+    };
+  });
+};
+
+// Create personal organization (direct table inserts - bypasses Better Auth)
+export const createPersonalOrganization = async (
+  ctx: MutationCtx,
+  args: {
+    email: string;
+    image: string | null;
+    name: string;
+    userId: Id<"user">;
+  }
+) => {
+  const table = entsTableFactory(ctx, entDefinitions);
+  const user = await table("user").getX(args.userId);
+
+  if (user.personalOrganizationId) return null;
+
+  const slug = `personal-${args.userId.slice(-8)}`;
+
+  const orgId = await table("organization").insert({
+    createdAt: Date.now(),
+    logo: args.image || undefined,
+    name: `${args.name}'s Organization`,
+    slug,
+  });
+
+  await table("member").insert({
+    createdAt: Date.now(),
+    organizationId: orgId,
+    role: "owner",
+    userId: args.userId,
+  });
+
+  await table("user").getX(args.userId).patch({
+    lastActiveOrganizationId: orgId,
+    personalOrganizationId: orgId,
+  });
+
+  return { id: orgId, slug };
+};
+```
+
+### List Organizations
+
+```typescript
+import { CRPCError } from "better-convex/server";
+import { zid } from "convex-helpers/server/zod4";
+import { z } from "zod";
+import { authQuery } from "../lib/crpc";
+import { listUserOrganizations } from "../lib/organization-helpers";
+
+export const listOrganizations = authQuery
+  .output(
+    z.object({
+      organizations: z.array(
+        z.object({
+          id: zid("organization"),
+          name: z.string(),
+          slug: z.string(),
+          logo: z.string().nullish(),
+          isPersonal: z.boolean(),
+        })
+      ),
+    })
+  )
+  .query(async ({ ctx }) => {
+    // Use helper with direct table queries
+    const orgs = await listUserOrganizations(ctx, ctx.user._id);
+
+    return {
+      organizations: orgs.map((org) => ({
+        id: org._id,
+        name: org.name,
+        slug: org.slug,
+        logo: org.logo || null,
+        isPersonal: org._id === ctx.user.personalOrganizationId,
+      })),
+    };
+  });
+```
+
+### Create Organization
+
+```typescript
+import { authMutation } from "../lib/crpc";
+
+export const createOrganization = authMutation
+  .input(
+    z.object({
+      name: z.string().min(1).max(100),
+    })
+  )
+  .output(
+    z.object({
+      id: zid("organization"),
+      slug: z.string(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    // Generate unique slug
+    const slug = generateSlug(input.name);
+
+    // Use Better Auth API (handles org + member creation)
+    const org = await ctx.auth.api.createOrganization({
+      body: {
+        name: input.name,
+        slug,
+      },
+      headers: ctx.auth.headers,
+    });
+
+    if (!org) {
+      throw new CRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to create organization",
+      });
+    }
+
+    // Set as active
+    await ctx.auth.api.setActiveOrganization({
+      body: { organizationId: org.id },
+      headers: ctx.auth.headers,
+    });
+
+    return { id: org.id, slug: org.slug };
+  });
+```
+
+### Update Organization
+
+```typescript
+// Direct table patch (NOT Better Auth API - simpler for single-table updates)
+export const updateOrganization = authMutation
+  .input(
+    z.object({
+      name: z.string().min(1).max(100).optional(),
+      logo: z.string().url().optional(),
+      slug: z.string().optional(),
+    })
+  )
+  .output(z.null())
+  .mutation(async ({ ctx, input }) => {
+    await hasPermission(ctx, { permissions: { organization: ["update"] } });
+
+    await ctx
+      .table("organization")
+      .getX(ctx.user.activeOrganization!.id)
+      .patch({
+        name: input.name,
+        logo: input.logo,
+        ...(input.slug ? { slug: input.slug } : {}),
+      });
+
+    return null;
+  });
+```
+
+### Delete Organization
+
+```typescript
+// Use Better Auth API (handles cleanup of members, invitations, etc.)
+export const deleteOrganization = authMutation
+  .output(z.null())
+  .mutation(async ({ ctx }) => {
+    await hasPermission(ctx, { permissions: { organization: ["delete"] } });
+
+    const organizationId = ctx.user.activeOrganization!.id;
+
+    // Prevent deletion of personal organizations
+    if (organizationId === ctx.user.personalOrganizationId) {
+      throw new CRPCError({
+        code: "FORBIDDEN",
+        message:
+          "Personal organizations can only be deleted by deleting your account.",
+      });
+    }
+
+    // Switch to personal org first
+    await ctx.auth.api.setActiveOrganization({
+      body: { organizationId: ctx.user.personalOrganizationId! },
+      headers: ctx.auth.headers,
+    });
+
+    await ctx.auth.api.deleteOrganization({
+      body: { organizationId },
+      headers: ctx.auth.headers,
+    });
+
+    return null;
+  });
+```
+
+### Set Active Organization
+
+```typescript
+export const setActiveOrganization = authMutation
+  .input(z.object({ organizationId: zid("organization") }))
+  .output(z.null())
+  .mutation(async ({ ctx, input }) => {
+    await ctx.auth.api.setActiveOrganization({
+      body: { organizationId: input.organizationId },
+      headers: ctx.auth.headers,
+    });
+
+    return null;
+  });
+```
+
+### Get Organization
+
+```typescript
+// Direct table queries (more efficient than Better Auth API for reads)
+export const getOrganization = authQuery
+  .input(z.object({ slug: z.string() }))
+  .output(
+    z
+      .object({
+        id: zid("organization"),
+        name: z.string(),
+        slug: z.string(),
+        logo: z.string().nullish(),
+        isPersonal: z.boolean(),
+        membersCount: z.number(),
+        role: z.string().optional(),
+      })
+      .nullable()
+  )
+  .query(async ({ ctx, input }) => {
+    const org = await ctx.table("organization").get("slug", input.slug);
+    if (!org) return null;
+
+    // Get members count and current user's role
+    const members = await ctx
+      .table("member", "organizationId_userId", (q) =>
+        q.eq("organizationId", org._id)
+      )
+      .take(100);
+
+    const currentMember = members.find((m) => m.userId === ctx.user._id);
+
+    return {
+      id: org._id,
+      name: org.name,
+      slug: org.slug,
+      logo: org.logo,
+      isPersonal: org._id === ctx.user.personalOrganizationId,
+      membersCount: members.length,
+      role: currentMember?.role,
+    };
+  });
+```
+
+## Invitation System
+
+### Send Invitation
+
+```typescript
+export const inviteMember = authMutation
+  .input(
+    z.object({
+      email: z.string().email(),
+      role: z.enum(["owner", "member"]),
+    })
+  )
+  .output(z.null())
+  .mutation(async ({ ctx, input }) => {
+    await hasPermission(ctx, { permissions: { invitation: ["create"] } });
+
+    await ctx.auth.api.createInvitation({
+      body: {
+        email: input.email,
+        role: input.role,
+        organizationId: ctx.user.activeOrganization!.id,
+      },
+      headers: ctx.auth.headers,
+    });
+
+    return null;
+  });
+```
+
+### Accept Invitation
+
+```typescript
+export const acceptInvitation = authMutation
+  .input(
+    z.object({
+      invitationId: zid("invitation"),
+    })
+  )
+  .output(z.null())
+  .mutation(async ({ ctx, input }) => {
+    const invitation = await ctx.table("invitation").get(input.invitationId);
+
+    if (!invitation || invitation.email !== ctx.user.email) {
+      throw new CRPCError({
+        code: "FORBIDDEN",
+        message: "Invitation not found",
+      });
+    }
+
+    if (invitation.status !== "pending") {
+      throw new CRPCError({
+        code: "BAD_REQUEST",
+        message: "Invitation already processed",
+      });
+    }
+
+    await ctx.auth.api.acceptInvitation({
+      body: { invitationId: input.invitationId },
+      headers: ctx.auth.headers,
+    });
+
+    return null;
+  });
+```
+
+### Cancel Invitation
+
+```typescript
+export const cancelInvitation = authMutation
+  .input(
+    z.object({
+      invitationId: zid("invitation"),
+    })
+  )
+  .output(z.null())
+  .mutation(async ({ ctx, input }) => {
+    await hasPermission(ctx, { permissions: { invitation: ["cancel"] } });
+
+    await ctx.auth.api.cancelInvitation({
+      body: { invitationId: input.invitationId },
+      headers: ctx.auth.headers,
+    });
+
+    return null;
+  });
+```
+
+### List Pending Invitations
+
+```typescript
+export const listPendingInvitations = authQuery
+  .input(z.object({ slug: z.string() }))
+  .output(
+    z.array(
+      z.object({
+        id: zid("invitation"),
+        email: z.string(),
+        role: z.string(),
+        expiresAt: z.number(),
+      })
+    )
+  )
+  .query(async ({ ctx, input }) => {
+    const org = await ctx.table("organization").get("slug", input.slug);
+    if (!org || ctx.user.activeOrganization?.id !== org._id) return [];
+
+    const invitations = await ctx
+      .table("invitation", "organizationId_status", (q) =>
+        q.eq("organizationId", org._id).eq("status", "pending")
+      )
+      .take(100);
+
+    return invitations.map((inv) => ({
+      id: inv._id,
+      email: inv.email,
+      role: inv.role || "member",
+      expiresAt: inv.expiresAt,
+    }));
+  });
+```
+
+## Member Management
+
+### List Members
+
+```typescript
+export const listMembers = authQuery
+  .input(z.object({ slug: z.string() }))
+  .output(
+    z.object({
+      members: z.array(
+        z.object({
+          id: zid("member"),
+          role: z.string(),
+          user: z.object({
+            id: zid("user"),
+            name: z.string().nullable(),
+            email: z.string(),
+            image: z.string().nullish(),
+          }),
+        })
+      ),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    const org = await ctx.table("organization").get("slug", input.slug);
+    if (!org) return { members: [] };
+
+    const members = await org.edge("members").take(100);
+
+    const enrichedMembers = await Promise.all(
+      members.map(async (member) => {
+        const user = await member.edgeX("user");
+        return {
+          id: member._id,
+          role: member.role,
+          user: {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            image: user.image,
+          },
+        };
+      })
+    );
+
+    return { members: enrichedMembers };
+  });
+```
+
+### Update Member Role
+
+```typescript
+export const updateMemberRole = authMutation
+  .input(
+    z.object({
+      memberId: zid("member"),
+      role: z.enum(["owner", "member"]),
+    })
+  )
+  .output(z.null())
+  .mutation(async ({ ctx, input }) => {
+    await hasPermission(ctx, { permissions: { member: ["update"] } });
+
+    await ctx.table("member").getX(input.memberId).patch({ role: input.role });
+
+    return null;
+  });
+```
+
+### Remove Member
+
+```typescript
+export const removeMember = authMutation
+  .input(z.object({ memberId: zid("member") }))
+  .output(z.null())
+  .mutation(async ({ ctx, input }) => {
+    await hasPermission(ctx, { permissions: { member: ["delete"] } });
+
+    await ctx.auth.api.removeMember({
+      body: {
+        memberIdOrEmail: input.memberId,
+        organizationId: ctx.user.activeOrganization?.id,
+      },
+      headers: ctx.auth.headers,
+    });
+
+    return null;
+  });
+```
+
+### Leave Organization
+
+```typescript
+export const leaveOrganization = authMutation
+  .output(z.null())
+  .mutation(async ({ ctx }) => {
+    // Prevent last owner from leaving
+    if (ctx.user.activeOrganization?.role === "owner") {
+      const owners = await ctx
+        .table("member", "organizationId_role", (q) =>
+          q
+            .eq("organizationId", ctx.user.activeOrganization!.id)
+            .eq("role", "owner")
+        )
+        .take(2);
+
+      if (owners.length <= 1) {
+        throw new CRPCError({
+          code: "FORBIDDEN",
+          message: "Cannot leave as the only owner",
+        });
+      }
+    }
+
+    await ctx.auth.api.leaveOrganization({
+      body: { organizationId: ctx.user.activeOrganization!.id },
+      headers: ctx.auth.headers,
+    });
+
+    return null;
+  });
+```
+
+## Teams (Optional)
+
+Teams allow grouping members within an organization.
+
+### Create Team
+
+```typescript
+export const createTeam = authMutation
+  .input(
+    z.object({
+      name: z.string().min(1).max(100),
+    })
+  )
+  .output(zid("team"))
+  .mutation(async ({ ctx, input }) => {
+    const team = await ctx.auth.api.createTeam({
+      body: {
+        name: input.name,
+        organizationId: ctx.user.activeOrganization!.id,
+      },
+      headers: ctx.auth.headers,
+    });
+
+    return team.id;
+  });
+```
+
+### List Teams
+
+```typescript
+export const listTeams = authQuery
+  .output(
+    z.array(
+      z.object({
+        id: zid("team"),
+        name: z.string(),
+      })
+    )
+  )
+  .query(async ({ ctx }) => {
+    const teams = await ctx.auth.api.listTeams({
+      query: { organizationId: ctx.user.activeOrganization!.id },
+      headers: ctx.auth.headers,
+    });
+
+    return teams.map((t) => ({ id: t.id, name: t.name }));
+  });
+```
+
+### Team Members
+
+```typescript
+// Add member to team
+await ctx.auth.api.addTeamMember({
+  body: { teamId, userId },
+  headers: ctx.auth.headers,
+});
+
+// Remove member from team
+await ctx.auth.api.removeTeamMember({
+  body: { teamId, userId },
+  headers: ctx.auth.headers,
+});
+
+// List team members
+const members = await ctx.auth.api.listTeamMembers({
+  body: { teamId },
+  headers: ctx.auth.headers,
+});
+```
+
+## Hooks
+
+Configure organization lifecycle hooks in auth.ts:
+
+```typescript
+organization({
+  organizationCreation: {
+    afterCreate: async ({ organization, member, user }) => {
+      // Setup default resources for new org
+    },
+  },
+  organizationDeletion: {
+    beforeDelete: async (data) => {
+      // Cleanup related resources
+    },
+  },
+}),
+```
+
+## Client Integration
+
+### React Hooks
+
+```typescript
+// Active organization
+const { data: activeOrg } = authClient.useActiveOrganization();
+
+// List organizations
+const { data: orgs } = authClient.useListOrganizations();
+
+// Set active organization
+await authClient.organization.setActive({ organizationId });
+
+// Create organization
+await authClient.organization.create({ name, slug });
+
+// Invite member (client-side)
+await authClient.organization.inviteMember({ email, role });
+```
+
+### Permission Check (Client)
+
+```typescript
+const canDelete = await authClient.organization.hasPermission({
+  permissions: { organization: ["delete"] },
+});
+```

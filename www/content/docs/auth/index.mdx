@@ -29,27 +29,24 @@ Let's understand the key concepts.
 | Approach | Schema Location | Database Access |
 |----------|-----------------|-----------------|
 | Component (`@convex-dev/better-auth`) | Component schema | Via `ctx.runQuery`/`ctx.runMutation` |
-| **Local** (`better-convex/auth`) | Your app schema | Direct `ctx.db` access |
+| **Local** (`better-convex/auth`) | Your app schema | ORM (`ctx.orm`) |
 
 better-convex uses the **local approach**:
 - Auth tables live in your app schema
 - Triggers can directly access and modify your app tables
 - Single transaction for complex operations
 
-### Two Adapters
+### Context-Aware Adapter
 
-| Adapter | Used In | Access |
-|---------|---------|--------|
-| `adapter` via `getAuth(ctx)` | Queries, mutations | Direct DB access |
-| `httpAdapter` via `createAuth(ctx)` | HTTP routes, actions | HTTP context |
+Use one entrypoint everywhere:
 
-```ts showLineNumbers {2,5}
-// Queries/mutations: direct DB access
+```ts showLineNumbers {2}
 const auth = getAuth(ctx);
-
-// HTTP routes/actions: HTTP adapter
-const auth = createAuth(ctx);
 ```
+
+`authClient.adapter(ctx, getAuthOptions)` automatically chooses:
+- direct DB adapter for queries/mutations (`ctx.db` available)
+- HTTP adapter for actions/HTTP contexts (`ctx.runQuery`/`ctx.runMutation`)
 
 ## Authentication Flow
 
@@ -80,7 +77,7 @@ Let's understand how authentication works. Every request - whether from SSR or c
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  STEP 2: Session Lookup (database)                                      │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ Query: session._id = sessionId AND expiresAt > now                │  │
+│  │ Query: session.id = sessionId AND expiresAt > now                │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │  • Session found & valid    → ✅ Request proceeds                       │
 │  • Session not found        → ❌ 401 (revoked or never existed)         │
@@ -245,7 +242,7 @@ When you call `caller.posts.list()` on the server:
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  4. Session Lookup (Step 2 from above)                                   │
-│     Query: session._id = sessionId AND expiresAt > now                  │
+│     Query: session.id = sessionId AND expiresAt > now                  │
 │     ├─ Session valid → ✅ Query executes                                │
 │     └─ Session invalid → ❌ 401 Unauthorized                            │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -323,7 +320,7 @@ When you use `useCRPC().posts.list.useQuery()` in client components:
 **Key difference from REST APIs:** REST queries fire immediately and validate auth inline. Convex WebSocket queries are **blocked until the auth handshake completes**. With Static JWKS, this handshake is instant. With Dynamic JWKS, it adds 100-400ms blocking time on page load.
 </Callout>
 
-That's the complete authentication flow. You now understand how JWT validation (Step 1) and session lookup (Step 2) work together—and why revoking a session immediately invalidates access, even with a valid JWT.
+That's the complete authentication flow. You now understand how JWT validation (Step 1) and session lookup (Step 2) work together - and why revoking a session immediately invalidates access, even with a valid JWT.
 
 ## Next Steps
 
@@ -331,5 +328,5 @@ That's the complete authentication flow. You now understand how JWT validation (
   <Card title="Server" href="/docs/auth/server" />
   <Card title="Client" href="/docs/auth/client" />
   <Card title="Triggers" href="/docs/auth/triggers" />
-  <Card title="Organizations" href="/docs/auth/organizations" />
+  <Card title="Organizations" href="/docs/auth/plugins/organizations" />
 </Cards>

@@ -190,30 +190,31 @@ If you're coming from vanilla Convex, here's what changes.
 
 ### What's new
 
-**Before (vanilla Convex):**
+<Compare>
+  <CompareItem title="Before (vanilla Convex)">
+    ```tsx showLineNumbers
+    import { useMutation } from 'convex/react';
+    import { api } from '@convex/_generated/api';
 
-```tsx showLineNumbers
-import { useMutation } from 'convex/react';
-import { api } from '@convex/_generated/api';
+    const createUser = useMutation(api.user.create);
 
-const createUser = useMutation(api.user.create);
+    // Execute mutation
+    await createUser({ name: 'John', email: 'john@example.com' });
+    ```
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```tsx showLineNumbers {1-2,4-5,8}
+    import { useMutation } from '@tanstack/react-query';
+    import { useCRPC } from '@/lib/convex/crpc';
 
-// Execute mutation
-await createUser({ name: 'John', email: 'john@example.com' });
-```
+    const crpc = useCRPC();
+    const createUser = useMutation(crpc.user.create.mutationOptions());
 
-**After (cRPC):**
-
-```tsx showLineNumbers {1-2,4-5,8}
-import { useMutation } from '@tanstack/react-query';
-import { useCRPC } from '@/lib/convex/crpc';
-
-const crpc = useCRPC();
-const createUser = useMutation(crpc.user.create.mutationOptions());
-
-// Execute mutation
-await createUser.mutateAsync({ name: 'John', email: 'john@example.com' });
-```
+    // Execute mutation
+    await createUser.mutateAsync({ name: 'John', email: 'john@example.com' });
+    ```
+  </CompareItem>
+</Compare>
 
 **Key differences:**
 

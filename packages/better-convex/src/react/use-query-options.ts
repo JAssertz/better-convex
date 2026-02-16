@@ -22,12 +22,16 @@ import type {
   FunctionReturnType,
 } from 'convex/server';
 import { getFunctionName } from 'convex/server';
-
+import { CRPCClientError } from '../crpc/error';
 import {
   convexAction,
   convexInfiniteQueryOptions,
   convexQuery,
 } from '../crpc/query-options';
+import {
+  type DataTransformerOptions,
+  getTransformer,
+} from '../crpc/transformer';
 import type {
   ConvexActionOptions,
   ConvexInfiniteQueryOptions,
@@ -258,7 +262,8 @@ export function useConvexMutationOptions<
       FunctionArgs<Mutation>
     >,
     ReservedMutationOptions
-  >
+  >,
+  transformer?: DataTransformerOptions
 ): UseMutationOptions<
   FunctionReturnType<Mutation>,
   DefaultError,
@@ -270,16 +275,22 @@ export function useConvexMutationOptions<
   const [namespace, fnName] = name.split(':');
   const authType = getMeta(namespace, fnName)?.auth as AuthType;
   const convexMutation = useConvexMutationBase(mutation);
+  const resolvedTransformer = getTransformer(transformer);
 
   return {
     ...options, // Spread user options FIRST
     mutationFn: async (args) => {
       // Only guard if auth is required
       if (authType === 'required' && guard()) {
-        return undefined as FunctionReturnType<Mutation>;
+        throw new CRPCClientError({
+          code: 'UNAUTHORIZED',
+          functionName: name,
+        });
       }
 
-      return convexMutation(args);
+      return convexMutation(
+        resolvedTransformer.input.serialize(args) as FunctionArgs<Mutation>
+      );
     },
   };
 }
@@ -311,7 +322,8 @@ export function useConvexActionOptions<
       FunctionArgs<Action>
     >,
     ReservedMutationOptions
-  >
+  >,
+  transformer?: DataTransformerOptions
 ): UseMutationOptions<
   FunctionReturnType<Action>,
   DefaultError,
@@ -323,16 +335,22 @@ export function useConvexActionOptions<
   const [namespace, fnName] = name.split(':');
   const authType = getMeta(namespace, fnName)?.auth as AuthType;
   const convexAction = useConvexActionBase(action);
+  const resolvedTransformer = getTransformer(transformer);
 
   return {
     ...options, // Spread user options FIRST
     mutationFn: async (args) => {
       // Only guard if auth is required
       if (authType === 'required' && guard()) {
-        return undefined as FunctionReturnType<Action>;
+        throw new CRPCClientError({
+          code: 'UNAUTHORIZED',
+          functionName: name,
+        });
       }
 
-      return convexAction(args);
+      return convexAction(
+        resolvedTransformer.input.serialize(args) as FunctionArgs<Action>
+      );
     },
   };
 }

@@ -1,0 +1,293 @@
+---
+title: Columns
+description: ORM column builders (Drizzle-style) and their TypeScript types
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+In this guide, we'll learn how to define document fields using Drizzle-style column builders. You'll master string, number, boolean, and reference fields, column hooks like `$defaultFn`, and advanced types like `custom()` and `json<T>()`.
+
+<Callout icon={<AlertTriangle />}>
+The ORM documents a **Convex subset** of Drizzle's PostgreSQL column types. Temporal fields are supported with `date()` and `timestamp()`. For Convex-native arbitrary values, use `custom()` / `json()` and validate shape with `convex/values` validators.
+</Callout>
+
+## Temporal Semantics
+
+Use temporal builders intentionally:
+
+- `timestamp()` is for point-in-time values (`createdAt`, `updatedAt`, `expiresAt`).
+- `date()` is for calendar dates (`YYYY-MM-DD`) with no time component.
+- In ORM APIs, `createdAt` is the public field name. Convex internals (`_creationTime`) stay internal.
+
+For most tables, use:
+
+```ts showLineNumbers
+createdAt: timestamp().notNull().defaultNow()
+```
+
+This gives `createdAt: Date` in ORM types while keeping Convex storage numeric.
+
+## Column Names
+
+In Drizzle, you can optionally provide a database column name (`text('email')`) that can differ from the TypeScript key. In the ORM, the **TypeScript key is the document field name**.
+
+Here's how to define a simple table with a required email field:
+
+```ts showLineNumbers
+import { convexTable, text } from 'better-convex/orm';
+
+export const users = convexTable('users', {
+  email: text().notNull(),
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Note:** Column builders still accept an optional `name` parameter for Drizzle parity, but it's usually unnecessary in Convex schemas.
+</Callout>
+
+## Type Rules (Select vs Insert)
+
+The ORM mirrors Drizzle's core inference rules:
+
+- **Select** (`Select<'table'>`, `$inferSelect`, `InferSelectModel`): fields are `T | null` unless `.notNull()` is set
+- **Insert** (`Insert<'table'>`, `$inferInsert`, `InferInsertModel`): required if `.notNull()` and **no** `.default()`, `$defaultFn()`, or `$onUpdateFn()`, otherwise optional
+
+Let's see how these rules work in practice:
+
+```ts showLineNumbers {3-5}
+import { convexTable, text, integer, InferInsertModel, InferSelectModel } from 'better-convex/orm';
+
+const posts = convexTable('posts', {
+  title: text().notNull(),
+  status: text().notNull().default('draft'),
+  viewCount: integer(),
+});
+
+const tables = { posts };
+type TableName = keyof typeof tables;
+type Select<T extends TableName> = InferSelectModel<(typeof tables)[T]>;
+type Insert<T extends TableName> = InferInsertModel<(typeof tables)[T]>;
+
+type Post = Select<'posts'>;
+//   ^? { id, createdAt, title: string, status: string, viewCount: number | null }
+
+type NewPost = Insert<'posts'>;
+//   ^? { title: string; status?: string | undefined; viewCount?: number | undefined }
+```
+
+<Callout icon={<InfoIcon />}>
+**Tip:** Fields are nullable by default. Use `.notNull()` to make a field required on select, and add `.default()` to make it optional on insert.
+</Callout>
+
+## Column Hooks (Defaults and Type Overrides)
+
+The ORM supports Drizzle-style column hooks for common patterns like timestamps and JSON blobs.
+
+Here's how to use `$defaultFn`, `$onUpdateFn`, and `json<T>()` together:
+
+```ts showLineNumbers {4-6}
+import { convexTable, json, text, timestamp } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  email: text().notNull(),
+  createdAt: timestamp().notNull().defaultNow(),
+  updatedAt: timestamp().notNull().$onUpdateFn(() => new Date()),
+  metadata: json<Record<string, unknown>>(),
+});
+```
+
+The available hooks are:
+
+- `$type<T>()` -- a type-only override (no runtime validation)
+- `$defaultFn(fn)` / `$default(fn)` -- runs on insert when the value is omitted
+- `$onUpdateFn(fn)` / `$onUpdate(fn)` -- runs on update when the field is not explicitly set (and can also fill missing values on insert)
+
+<Callout icon={<AlertTriangle />}>
+**Important:** These hooks run only through ORM mutations. Direct `ctx.db` writes bypass them.
+</Callout>
+
+## Builder Reference
+
+### `text()`
+
+Represents a string field.
+
+```ts showLineNumbers
+import { convexTable, text } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  name: text().notNull(), // string
+  bio: text(),            // string | null
+});
+```
+
+### `textEnum(values)`
+
+Defines an enum-like string field, validated at runtime and inferred as a string union in TypeScript.
+
+```ts showLineNumbers
+import { convexTable, textEnum } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  role: textEnum(['admin', 'member'] as const).notNull(),
+});
+```
+
+### `integer()`
+
+Represents a numeric field. In Convex, `integer()` maps to `v.number()` (Float64).
+
+```ts showLineNumbers
+import { convexTable, integer } from 'better-convex/orm';
+
+const events = convexTable('events', {
+  retries: integer().notNull(),
+  score: integer(),
+});
+```
+
+### `date()`
+
+Calendar date column (`YYYY-MM-DD` semantics).
+
+```ts showLineNumbers
+import { convexTable, date } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  birthday: date(), // string | null (default mode)
+  anniversary: date({ mode: 'date' }), // Date | null
+});
+```
+
+### `timestamp()`
+
+Point-in-time column for event and audit timestamps.
+
+```ts showLineNumbers
+import { convexTable, timestamp } from 'better-convex/orm';
+
+const users = convexTable('users', {
+  createdAt: timestamp().notNull().defaultNow(), // Date
+  startedAtText: timestamp({ mode: 'string' }), // string | null
+});
+```
+
+### `boolean()`
+
+Represents a boolean field.
+
+```ts showLineNumbers
+import { convexTable, boolean } from 'better-convex/orm';
+
+const flags = convexTable('flags', {
+  enabled: boolean().notNull(),
+  beta: boolean(),
+});
+```
+
+### `bigint()`
+
+Represents a 64-bit integer field. In Convex, `bigint()` maps to `v.int64()` and uses JavaScript `bigint`.
+
+```ts showLineNumbers
+import { convexTable, bigint } from 'better-convex/orm';
+
+const ledger = convexTable('ledger', {
+  balance: bigint().notNull(),
+});
+```
+
+### `bytes()`
+
+Represents a binary field (`ArrayBuffer`).
+
+```ts showLineNumbers
+import { bytes, convexTable } from 'better-convex/orm';
+
+const files = convexTable('files', {
+  data: bytes().notNull(),
+});
+```
+
+### `id('table')`
+
+Represents a reference to another table (`Id<'table'>`).
+
+```ts showLineNumbers
+import { convexTable, id, text } from 'better-convex/orm';
+
+const posts = convexTable('posts', {
+  title: text().notNull(),
+  authorId: id('users').notNull(),
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Note:** `id('users')` is a typed reference. It does **not** create a SQL foreign key constraint. Use `.references()` or `foreignKey()` for ORM-enforced foreign keys.
+</Callout>
+
+### `vector(dimensions)`
+
+Represents an embedding vector (`number[]`) and is used with `vectorIndex()`.
+
+```ts showLineNumbers
+import { convexTable, vector } from 'better-convex/orm';
+
+const posts = convexTable('posts', {
+  embedding: vector(1536).notNull(),
+});
+```
+
+### `custom(validator)`
+
+Use `custom()` to wrap any Convex validator and get end-to-end TypeScript inference.
+
+```ts showLineNumbers
+import { convexTable, custom } from 'better-convex/orm';
+import { v } from 'convex/values';
+
+const events = convexTable('events', {
+  payload: custom(
+    v.object({
+      type: v.string(),
+      data: v.any(),
+    })
+  ),
+});
+```
+
+### `json<T>()`
+
+`json<T>()` is a convenience wrapper around `custom(v.any()).$type<T>()`.
+
+```ts showLineNumbers
+import { convexTable, json } from 'better-convex/orm';
+
+const posts = convexTable('posts', {
+  metadata: json<{ tags: string[] }>(),
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Note:** `json()` is **not** SQL `jsonb`. It's a Convex `v.any()` value with a TypeScript type annotation.
+</Callout>
+
+## Not Supported
+
+These Drizzle (SQL) column type categories don't map to Convex documents and are not supported:
+
+- SQL database-side timezone/precision semantics for timestamp/date types
+- SQL decimals/numerics
+- SQL database enums (use `textEnum(...)`)
+- SQL arrays (beyond `vector(...)` embeddings)
+- Custom SQL types
+
+You now know every column builder available in the ORM. From basic primitives to typed references and custom validators, these builders give you full control over your document shape with end-to-end TypeScript inference.
+
+## Next Steps
+
+<Cards>
+  <Card title="Indexes & Constraints" href="/docs/orm/schema/indexes-constraints" />
+  <Card title="Operators (Filters)" href="/docs/orm/queries/operators" />
+  <Card title="Schema" href="/docs/orm/schema" />
+</Cards>

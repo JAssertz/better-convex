@@ -1,0 +1,447 @@
+---
+title: Queries
+description: Query tables with findMany, findFirst, filtering, and relation loading
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+In this guide, we'll learn how to query your Convex database with the ORM. You'll master `findMany()`, `findFirst()`, filtering with `where`, ordering, pagination, full-text search, vector search, and eager relation loading with `with:`.
+
+## Setup
+
+These examples assume you attached ORM to `ctx.orm` once in your context (see [/docs/quickstart#orm-setup](/docs/quickstart#orm-setup)):
+
+```ts title="convex/queries.ts"
+await ctx.orm.query.users.findMany({ limit: 10 });
+```
+
+## Basic Queries
+
+### findMany
+
+Use `findMany()` to retrieve multiple rows. Here's a simple query that fetches up to 50 users:
+
+```ts title="convex/functions/users.ts" showLineNumbers
+import { publicQuery } from '../lib/crpc';
+
+export const getAllUsers = publicQuery.query(async ({ ctx }) => {
+  return ctx.orm.query.users.findMany({ limit: 50 });
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Note**: Non-paginated `findMany()` requires explicit sizing: provide `limit`, use cursor pagination (`cursor` + `limit`), set `allowFullScan`, or configure `defineSchema(..., { defaults: { defaultLimit } })`.
+</Callout>
+
+### findFirst
+
+Use `findFirst()` to retrieve a single row matching your criteria. This example uses `id` which has a built-in index:
+
+```ts title="convex/functions/users.ts" showLineNumbers
+import { z } from 'zod';
+import { publicQuery } from '../lib/crpc';
+
+export const getFirstUser = publicQuery
+  .input(z.object({ userId: z.string() }))
+  .query(async ({ ctx, input }) => {
+    return ctx.orm.query.users.findFirst({
+      where: { id: input.userId },
+    });
+  });
+```
+
+If you expect a row to exist, use `findFirstOrThrow()`:
+
+```ts showLineNumbers
+const user = await ctx.orm.query.users.findFirstOrThrow({
+  where: { id: input.userId },
+});
+```
+
+## Filtering With `where`
+
+Use object filters (Drizzle style) to narrow results. The shape mirrors Drizzle but is executed in Convex:
+
+```ts showLineNumbers {2-5}
+// Schema: index('by_role').on(t.role) on users table
+const admins = await db.query.users.findMany({
+  where: {
+    role: 'admin',
+    age: { gt: 18 },
+  },
+});
+```
+
+Callback `where` is also supported for Drizzle-style operator syntax:
+
+```ts showLineNumbers {2-3}
+const admins = await db.query.users.findMany({
+  where: (users, { eq }) => eq(users.role, 'admin'),
+});
+```
+
+There are a few important differences from SQL-based Drizzle to keep in mind. SQL-only RQB features like `RAW` filters and `sql.placeholder(...)` are not supported in Convex. The `extras` option is supported, but computed post-fetch (no SQL computed fields).
+
+Predicate `where` (function form) runs via stream filtering and requires an explicit `.withIndex(name, range?)` on the query. There is no implicit full-scan fallback.
+
+<Callout icon={<AlertTriangle />}>
+**Important**: When using `ops.predicate(...)`, call `.withIndex(...)` first. Without it, the query fails rather than silently scanning every document.
+</Callout>
+
+<Callout icon={<InfoIcon />}>
+**Disclaimer:** Use predicate filters while prototyping, or when result volume is known to stay small.  
+For scalable paths, prefer index-compiled filters and index-first query design.
+</Callout>
+
+### Core Operators
+
+Here's the full set of comparison and logical operators you can use in `where`:
+
+| Operator | Example | Description |
+|---|---|---|
+| `eq` | `{ role: 'admin' }` or `{ role: { eq: 'admin' } }` | Equals |
+| `ne` | `{ role: { ne: 'banned' } }` | Not equal (index-compiled when indexed) |
+| `gt` | `{ age: { gt: 18 } }` | Greater than |
+| `gte` | `{ age: { gte: 18 } }` | Greater than or equal |
+| `lt` | `{ age: { lt: 65 } }` | Less than |
+| `lte` | `{ age: { lte: 65 } }` | Less than or equal |
+| `between` | `{ age: { between: [18, 65] } }` | Inclusive range (`>= min` and `<= max`) |
+| `notBetween` | `{ age: { notBetween: [18, 65] } }` | Strict outside range (`< min` or `> max`) |
+| `in` | `{ role: { in: ['admin', 'member'] } }` | Value in array (index-compiled when indexed) |
+| `notIn` | `{ role: { notIn: ['banned'] } }` | Value not in array (index-compiled when indexed) |
+| `isNull` | `{ role: { isNull: true } }` | Null/undefined (index-compiled when indexed) |
+| `isNotNull` | `{ email: { isNotNull: true } }` | Not null/undefined (index-compiled when indexed) |
+| `AND` | `{ AND: [ ... ] }` | Logical AND |
+| `OR` | `{ OR: [ ... ] }` | Logical OR (same-field equality OR is index-compiled) |
+| `NOT` | `{ NOT: { ... } }` | Logical NOT |
+
+### String Operators
+
+The ORM supports familiar string matching operators. Most run post-fetch, but a few can leverage indexes:
+
+| Operator | Example | Notes |
+|---|---|---|
+| `like` | `{ title: { like: '%JavaScript%' } }` | Post-fetch, except `'prefix%'` is index-compiled when indexed |
+| `ilike` | `{ title: { ilike: '%javascript%' } }` | Post-fetch |
+| `notLike` | `{ title: { notLike: '%draft%' } }` | Post-fetch |
+| `notIlike` | `{ title: { notIlike: '%draft%' } }` | Post-fetch |
+| `startsWith` | `{ title: { startsWith: 'Intro' } }` | Index range when indexed |
+| `endsWith` | `{ title: { endsWith: 'Guide' } }` | Post-fetch |
+| `contains` | `{ title: { contains: 'ORM' } }` | Post-fetch |
+
+For large datasets, prefer indexed filters first. `startsWith` and `like('prefix%')` use index ranges when the field is indexed. `between` and `notBetween` are also index-compiled when the field is indexed.
+
+Compound indexes follow Convex prefix rules for index compilation. For an index on `[type, numLikes]`, `where: { numLikes: 10 }` can run, but it won't use that compound index prefix unless you also constrain the leading field (`type`) or explicitly anchor the query with `.withIndex(...)`. Reversed `AND` equality order is normalized to index field order before query execution.
+
+<Callout icon={<InfoIcon />}>
+**Tip**: Always constrain leading index fields first. For compound indexes, you must include earlier fields before later ones can be index-compiled.
+</Callout>
+
+### SQL Subquery Operators (`exists`, `notExists`)
+
+Drizzle exposes `exists(query)` and `notExists(query)` as SQL subquery operators. The ORM does not support SQL subqueries at runtime, so these operators are unavailable.
+
+Use relation filters to model existence checks instead:
+
+```ts showLineNumbers {3,8}
+// Users with at least one post
+const withPosts = await db.query.users.findMany({
+  where: { posts: true },
+});
+
+// Users with no posts
+const withoutPosts = await db.query.users.findMany({
+  where: { NOT: { posts: true } },
+});
+```
+
+### Aggregations (`count`, `sum`, `avg`, `max`, `min`)
+
+For query-builder aggregations, use Convex aggregates via `@convex-dev/aggregate`.
+See [/docs/server/advanced/aggregates](/docs/server/advanced/aggregates).
+
+### Full-Scan Operators and Workarounds
+
+These operators are post-fetch. In the typed API, they currently require explicit `.withIndex(...)` so scan scope is deliberate. Here are scalable workarounds for each:
+
+| Operator | Scalable workaround |
+|---|---|
+| `arrayContains`, `arrayContained`, `arrayOverlaps` | Use an inverted/join table keyed by each element and query that index first |
+| `contains` | Use `withSearchIndex` or maintain a tokenized denormalized field/table |
+| `endsWith` | Store a reversed value column (for example `reversedEmail`) and use `startsWith` on that indexed column |
+| `ilike`, `notIlike` | Store a normalized lowercase column and query with `startsWith`/`like('prefix%')` where possible |
+| `notLike` | Use an indexed positive pre-filter, then apply `notLike` post-fetch |
+| `NOT` (general) | Rewrite to positive indexable predicates when possible; otherwise use `.withIndex(...)` and cap cursor scans with `maxScan` |
+| callback `where` + `predicate(...)` | Use `.withIndex(name, range?)`; add `maxScan` (cursor pagination only) to cap scan cost |
+
+### Logical Filters
+
+Combine operators with `OR` and `NOT` for complex conditions:
+
+```ts showLineNumbers {3-4}
+const users = await db.query.users.findMany({
+  where: {
+    OR: [{ role: 'admin' }, { role: 'premium' }],
+    NOT: { email: { isNull: true } },
+  },
+});
+```
+
+### Relation Filters
+
+You can filter by relation existence or by nested relation conditions:
+
+```ts showLineNumbers {3,8}
+// Users with at least one post
+const users = await db.query.users.findMany({
+  where: { posts: true },
+});
+
+// Users with posts whose title starts with "A"
+const users2 = await db.query.users.findMany({
+  where: { posts: { title: { like: 'A%' } } },
+});
+```
+
+## Ordering
+
+Control the sort order of your results with `orderBy`. You can use object syntax:
+
+```ts showLineNumbers {2}
+const posts = await db.query.posts.findMany({
+  orderBy: { createdAt: 'desc', title: 'asc' },
+});
+```
+
+You can also use callback syntax (Drizzle-style) with `asc`/`desc` helpers:
+
+```ts showLineNumbers {2-5}
+const posts2 = await db.query.posts.findMany({
+  orderBy: (posts, { desc, asc }) => [
+    desc(posts.createdAt),
+    asc(posts.title),
+  ],
+});
+```
+
+**Notes:**
+- The first `orderBy` field should have an index for stable ordering
+- Secondary sort fields are applied post-fetch
+- When post-fetch sorting is required (multi-field or non-indexable sort), the ORM sorts before applying `offset`/`limit`, which requires reading the full filtered candidate set first
+- `findMany({ cursor, limit })` uses only the first `orderBy` field for cursor ordering
+
+## Pagination
+
+### Limit / Offset
+
+For simple pagination, use `limit` and `offset`:
+
+```ts showLineNumbers {2-3}
+const posts = await db.query.posts.findMany({
+  limit: 10,
+  offset: 20,
+});
+```
+
+### Cursor Pagination
+
+For efficient pagination over large datasets, use cursor-based pagination:
+
+```ts showLineNumbers {3-4}
+return db.query.posts.findMany({
+  where: { published: true },
+  orderBy: { createdAt: 'desc' },
+  cursor: args.cursor ?? null,
+  limit: 20,
+});
+```
+
+For cursor queries that need scan fallback paths (for example index-union/multi-probe or post-filter-only plans), use `maxScan`.
+`allowFullScan` is non-cursor only.
+With `strict: true`, missing `maxScan` on these fallback paths throws; with `strict: false`, it warns and runs uncapped.
+
+## Full-Text Search
+
+Use `search` on `findMany()` / `findFirst()` when your table defines a `searchIndex`:
+
+```ts showLineNumbers {2-6}
+const posts = await db.query.posts.findMany({
+  search: {
+    index: 'text_search',
+    query: 'galaxy',
+    filters: { type: 'news' },
+  },
+  cursor: null,
+  limit: 20,
+});
+```
+
+`search.filters` is typed from the selected index `filterFields`. `search` is only available on tables that declare at least one `searchIndex`.
+
+**Search mode constraints**
+- `orderBy` is not allowed (Convex relevance ordering is used)
+- callback `where` (`(table, ops) => ...`) is not allowed
+- relation-based `where` is not allowed
+- object `where` on base table fields is allowed (post-search filter)
+- `with:` is allowed for eager loading
+
+## System Tables (`db.system` passthrough)
+
+Use `db.system` for Convex system tables (`_storage`, `_scheduled_functions`). This is raw Convex access, not ORM query-builder behavior:
+
+```ts showLineNumbers
+const job = await db.system.get(jobId);
+
+const files = await db.system
+  .query('_storage')
+  .take(20);
+
+const pendingJobs = await db.system
+  .query('_scheduled_functions')
+  .collect();
+```
+
+<Callout icon={<AlertTriangle />}>
+**Important**: `db.system` supports raw Convex reader methods like `get` and `query`. ORM features such as `findMany`/`findFirst`, relation loading (`with:`), and ORM-specific rule helpers do not apply.
+</Callout>
+
+## Vector Search
+
+Use `vectorSearch` on `findMany()` when your table defines a `vectorIndex`:
+
+```ts showLineNumbers {2-8}
+const posts = await db.query.posts.findMany({
+  vectorSearch: {
+    index: 'embedding_vec',
+    vector: args.embedding,
+    limit: 10,
+    includeScore: true,
+    filter: (q) => q.eq('type', 'news'),
+  },
+  with: { author: true },
+});
+```
+
+`vectorSearch.index` and `vectorSearch.filter` are strongly typed from your vector index definition. `vectorSearch.includeScore: true` opt-in adds `_score` to each returned row.
+
+**Vector mode constraints**
+- `vectorSearch.limit` is required (`1..256`)
+- `orderBy` is not allowed
+- `cursor` is not allowed
+- `maxScan` is not allowed
+- `where` is not allowed
+- `.withIndex(...)` is not allowed
+- `offset` is not allowed
+- top-level `limit` is not allowed (use `vectorSearch.limit`)
+- `_score` is returned only when `vectorSearch.includeScore: true`
+- `with:`, `columns`, and `extras` are allowed
+
+## Choosing Filter vs Paginate
+
+Use this decision matrix to pick the right approach and avoid accidental full scans:
+
+| Goal | Recommended Tool | Notes |
+|---|---|---|
+| Simple filters, no pagination | `db.query.*.findMany({ where, limit })` | Uses index compilation when possible; non-paginated reads must be sized |
+| Complex JS predicate, no pagination | `db.query.*.withIndex('by_field').findMany({ where: (_t, { predicate }) => predicate((row) => ...), limit: 100 })` | Explicit index required; non-paginated reads must be sized |
+| Complex JS predicate + pagination | `db.query.*.withIndex('by_field').findMany({ where: (_t, { predicate }) => predicate((row) => ...), cursor, limit, maxScan })` | Explicit index + bounded scan |
+| Large lists | `db.query.*.findMany({ cursor: null, limit: 20 })` | First `orderBy` field should be indexed |
+| Search + equality filters | `db.query.*.findMany({ search: { index, query, filters? } })` | `filters` must be in search index `filterFields` |
+| Embedding similarity | `db.query.*.findMany({ vectorSearch: { index, vector, limit, includeScore?, filter? } })` | Similarity order from vector search; no `cursor`/`where`/`orderBy` |
+
+## Relation Loading With `with:`
+
+Eager-load related data to avoid N+1 queries. Here's how to load each user's recent posts:
+
+```ts showLineNumbers {2-7}
+const users = await db.query.users.findMany({
+  with: {
+    posts: {
+      limit: 5,
+      offset: 2,
+      orderBy: { createdAt: 'desc' },
+    },
+  },
+});
+```
+
+Relation filters for `many()` are applied post-fetch. Nested `with:` has a depth limit to prevent infinite recursion. The `limit` and `offset` in `with:` apply per parent relation, not globally.
+
+<Callout icon={<InfoIcon />}>
+**Note**: For `many()` relations, provide `with.<relation>.limit` or set `defineSchema(..., { defaults: { defaultLimit } })`. Otherwise, use `allowFullScan` on the parent query.
+</Callout>
+
+## Column Selection
+
+Select only the columns you need with `columns`:
+
+```ts showLineNumbers {2}
+const users = await db.query.users.findMany({
+  columns: { name: true, email: true },
+});
+```
+
+<Callout icon={<AlertTriangle />}>
+**Note**: `columns` is a post-fetch projection. Convex still reads full documents.
+</Callout>
+
+## Extras (Computed Fields)
+
+`extras` lets you attach computed properties to rows at query time:
+
+```ts showLineNumbers {2-4}
+const users = await db.query.users.findMany({
+  extras: {
+    emailDomain: (row) => row.email.split('@')[1]!,
+  },
+});
+```
+
+Callback form is also supported:
+
+```ts showLineNumbers {2-4}
+const users = await db.query.users.findMany({
+  extras: () => ({
+    emailDomain: (row) => row.email.split('@')[1]!,
+  }),
+});
+```
+
+Extras are computed in JavaScript after fetching documents (and after `with:` relations are loaded). They can't be used in `where`/`orderBy` and should be treated as post-fetch helpers.
+
+## Performance Tips
+
+- Add `index('...').on(t.field)` for fields used in filters or primary ordering
+- Use cursor pagination (`cursor` + `limit`) for large lists
+- Prefer `with:` over per-row queries to avoid N+1
+
+## Common Gotchas
+
+Here's a quick reference for the most frequent issues:
+
+| Issue | Fix |
+|---|---|
+| `where` callback fails | Return a filter expression: `where: (table, { eq }) => eq(table.field, value)` |
+| `eq(field, null)` | Use `{ isNull: true }` |
+| Slow ordering | Add an index on the primary `orderBy` field |
+| `columns` doesn't reduce reads | Projection is post-fetch |
+| Relations not loading | Ensure relations are defined on both sides (or explicit `from`/`to`) |
+
+You now know how to query, filter, paginate, search, and eager-load relations with the ORM.
+
+## Next Steps
+
+<Cards>
+  <Card title="Writing Data" href="/docs/orm/mutations">
+    Learn insert, update, and delete operations
+  </Card>
+  <Card title="Relations" href="/docs/orm/schema/relations">
+    Define and load relationships between tables
+  </Card>
+  <Card title="Schema Definition" href="/docs/orm/schema">
+    Deep dive into table definitions and type inference
+  </Card>
+  <Card title="Limitations" href="/docs/comparison/drizzle#not-available-in-convex">
+    Understand current limitations
+  </Card>
+</Cards>

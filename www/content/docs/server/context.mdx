@@ -15,7 +15,7 @@ Context (`ctx`) is passed to every procedure handler. It provides access to Conv
 
 | Property | Available In | Purpose |
 |----------|--------------|---------|
-| `ctx.db` / `ctx.table` | Queries, Mutations | Database access |
+| `ctx.orm` | Queries, Mutations | Database access (the ORM) |
 | `ctx.auth` | All | Authentication info |
 | `ctx.storage` | All | File storage |
 | `ctx.scheduler` | Mutations | Schedule functions |
@@ -27,61 +27,30 @@ Let's explore each one.
 
 Every procedure receives the base Convex context. Here's what you get out of the box:
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers {2-5}
-    export const list = publicQuery
-      .query(async ({ ctx }) => {
-        // ctx.db - Database access
-        // ctx.auth - Authentication info
-        // ctx.storage - File storage
-        return ctx.db.query('user').collect();
-      });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers {2-5}
-    export const list = publicQuery
-      .query(async ({ ctx }) => {
-        // ctx.table - Database access (Convex Ents)
-        // ctx.auth - Authentication info
-        // ctx.storage - File storage
-        return ctx.table('user');
-      });
-    ```
-  </Tab>
-</Tabs>
+```ts showLineNumbers {2-5}
+export const list = publicQuery
+  .query(async ({ ctx }) => {
+    // ctx.orm - Database access (the ORM)
+    // ctx.auth - Authentication info
+    // ctx.storage - File storage
+    return ctx.orm.query.user.findMany({ limit: 100 });
+  });
+```
 
-### Database (`ctx.db` / `ctx.table`)
+### Database (`ctx.orm`)
 
 The database is your primary way to read and write data. In queries, you can only read. In mutations, you can read and write.
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers
-    // Read
-    const user = await ctx.db.get(id);
-    const users = await ctx.db.query('user').collect();
+```ts showLineNumbers {1,4-5,8}
+import { user } from './schema';
 
-    // Write (mutations only)
-    const id = await ctx.db.insert('user', { name: 'John', email: 'john@example.com' });
-    await ctx.db.patch(id, { name: 'Updated' });
-    await ctx.db.delete(id);
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers
-    // Read
-    const user = await ctx.table('user').get(id);
-    const users = await ctx.table('user');
+// Read
+const one = await ctx.orm.query.user.findFirst({ where: { id: id } });
+const many = await ctx.orm.query.user.findMany({ limit: 100 });
 
-    // Write (mutations only)
-    const id = await ctx.table('user').insert({ name: 'John', email: 'john@example.com' });
-    await ctx.table('user').getX(id).patch({ name: 'Updated' });
-    await ctx.table('user').getX(id).delete();
-    ```
-  </Tab>
-</Tabs>
+// Write (mutations only)
+await ctx.orm.insert(user).values({ name: 'John', email: 'john@example.com' });
+```
 
 ### Authentication (`ctx.auth`)
 
@@ -107,87 +76,54 @@ Here's where cRPC shines. Use middleware to add custom data to context - the aut
 
 The pattern is simple: fetch what you need, then call `next()` with the extended context.
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts title="convex/lib/crpc.ts" showLineNumbers {3-7,9-11}
-    import { getSession } from 'better-convex/auth';
+```ts title="convex/lib/crpc.ts" showLineNumbers {3-18}
+import { getSession } from 'better-convex/auth';
 
-    export const authQuery = c.query.use(async ({ ctx, next }) => {
-      const session = await getSession(ctx);
-      if (!session) {
-        throw new CRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
-      }
+export const authQuery = c.query.use(async ({ ctx, next }) => {
+  const session = await getSession(ctx);
+  if (!session) {
+    throw new CRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
+  }
 
-      const user = (await ctx.db.get(session.userId))!;
+  const user = await ctx.orm.query.user.findFirst({
+    where: { id: session.userId },
+  });
+  if (!user) throw new CRPCError({ code: 'UNAUTHORIZED' });
 
-      return next({
-        ctx: { ...ctx, user: { id: user._id, session, ...user }, userId: user._id },
-      });
-    });
+  return next({
+    ctx: { ...ctx, user: { id: user.id, session, ...user }, userId: user.id },
+  });
+});
 
-    // Create mutation version with same pattern
-    export const authMutation = c.mutation.use(async ({ ctx, next }) => {
-      // ... same auth logic
-    });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts title="convex/lib/crpc.ts" showLineNumbers {3-7,9-11}
-    import { getSession } from 'better-convex/auth';
-
-    export const authQuery = c.query.use(async ({ ctx, next }) => {
-      const session = await getSession(ctx);
-      if (!session) {
-        throw new CRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
-      }
-
-      const user = await ctx.table('user').getX(session.userId);
-
-      return next({
-        ctx: { ...ctx, user: { id: user._id, session, ...user.doc() }, userId: user._id },
-      });
-    });
-
-    // Create mutation version with same pattern
-    export const authMutation = c.mutation.use(async ({ ctx, next }) => {
-      // ... same auth logic
-    });
-    ```
-  </Tab>
-</Tabs>
+// Create mutation version with same pattern
+export const authMutation = c.mutation.use(async ({ ctx, next }) => {
+  // ... same auth logic
+});
+```
 
 Now when you use `authQuery` or `authMutation`, `ctx.user` and `ctx.userId` are guaranteed to exist:
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts title="convex/functions/session.ts" showLineNumbers {4-5}
-    export const create = authMutation
-      .input(z.object({ token: z.string() }))
-      .mutation(async ({ ctx, input }) => {
-        // ctx.user and ctx.userId are now available and typed!
-        return ctx.db.insert('session', {
-          ...input,
-          userId: ctx.userId,
-          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-        });
-      });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts title="convex/functions/session.ts" showLineNumbers {4-5}
-    export const create = authMutation
-      .input(z.object({ token: z.string() }))
-      .mutation(async ({ ctx, input }) => {
-        // ctx.user and ctx.userId are now available and typed!
-        return ctx.table('session').insert({
-          ...input,
-          userId: ctx.userId,
-          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-        });
-      });
-    ```
-  </Tab>
-</Tabs>
+```ts title="convex/functions/session.ts" showLineNumbers {1-4,6-16}
+import { z } from 'zod';
+import { authMutation } from '../lib/crpc';
+import { session } from './schema';
+
+export const create = authMutation
+  .input(z.object({ token: z.string() }))
+  .output(z.string())
+  .mutation(async ({ ctx, input }) => {
+    // ctx.user and ctx.userId are now available and typed!
+    const [row] = await ctx.orm
+      .insert(session)
+      .values({
+        ...input,
+        userId: ctx.userId,
+        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      })
+      .returning({ id: session.id });
+    return row.id;
+  });
+```
 
 ## Context in Actions
 
@@ -213,7 +149,7 @@ export const processAndSave = publicAction
 ```
 
 <Callout icon={<InfoIcon />}>
-  **Note:** Actions can't access `ctx.db` directly. Use `ctx.runQuery` to read data and `ctx.runMutation` to write data. This ensures all database operations are transactional.
+  **Note:** Actions can't access the database directly. Use `ctx.runQuery` to read data and `ctx.runMutation` to write data. This ensures all database operations are transactional.
 </Callout>
 
 ## Migrate from Convex
@@ -223,38 +159,40 @@ If you're coming from vanilla Convex or convex-helpers, here's what changes.
 ### What stays the same
 
 Base context properties work identically:
-- `ctx.db` - Database reader/writer
+- `ctx.orm` - Database access (queries + mutations)
 - `ctx.auth` - Authentication
 - `ctx.storage` - File storage
 - `ctx.scheduler` - Scheduler (mutations only)
+- `ctx.runQuery` / `ctx.runMutation` - Call procedures (actions only)
 
 ### What's new
 
 cRPC's `.use()` middleware replaces convex-helpers' `customQuery`/`customMutation`:
 
-**Before (convex-helpers):**
+<Compare>
+  <CompareItem title="Before (convex-helpers)">
+    ```ts showLineNumbers
+    import { customQuery, customCtx } from 'convex-helpers/server/customFunctions';
 
-```ts showLineNumbers
-import { customQuery, customCtx } from 'convex-helpers/server/customFunctions';
-
-const userQuery = customQuery(query,
-  customCtx(async (ctx) => {
-    const user = await getUser(ctx);
-    if (!user) throw new Error('Authentication required');
-    return { user };
-  })
-);
-```
-
-**After (cRPC):**
-
-```ts showLineNumbers {2-5}
-const userQuery = c.query.use(async ({ ctx, next }) => {
-  const user = await getUser(ctx);
-  if (!user) throw new CRPCError({ code: 'UNAUTHORIZED' });
-  return next({ ctx: { ...ctx, user } });
-});
-```
+    const userQuery = customQuery(query,
+      customCtx(async (ctx) => {
+        const user = await getUser(ctx);
+        if (!user) throw new Error('Authentication required');
+        return { user };
+      })
+    );
+    ```
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```ts showLineNumbers {2-5}
+    const userQuery = c.query.use(async ({ ctx, next }) => {
+      const user = await getUser(ctx);
+      if (!user) throw new CRPCError({ code: 'UNAUTHORIZED' });
+      return next({ ctx: { ...ctx, user } });
+    });
+    ```
+  </CompareItem>
+</Compare>
 
 Key differences:
 - Call `next({ ctx })` instead of returning context directly

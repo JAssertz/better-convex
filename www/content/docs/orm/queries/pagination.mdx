@@ -1,0 +1,248 @@
+---
+title: Pagination
+description: Offset, cursor, composed, and key-based pagination in the ORM
+---
+
+import { AlertTriangle, InfoIcon } from "lucide-react"
+
+In this guide, we'll choose the right pagination mode for your query shape and data size.
+We'll start with a quick comparison, then walk through each mode with practical examples.
+
+The ORM exposes pagination through `findMany` only.
+
+## Quick Recommendation
+
+If you just want the default that scales:
+
+1. Start with cursor pagination: `findMany({ cursor, limit })`.
+2. Add `endCursor` when you need boundary pinning during reactive refreshes.
+3. Use `select()` composition for advanced pre-pagination transforms (union/interleave/filter/map/flatMap/distinct).
+4. Use `pageByKey` when you need deterministic key boundaries.
+5. Use `offset` only for shallow page-number UIs.
+
+## Pagination Comparison
+
+| Mode | API | Best for | Supports `endCursor` | Supports `maxScan` | Notes |
+|---|---|---|---|---|---|
+| Offset | `findMany({ offset, limit })` | Page-number UIs, small datasets | No | No | Simple, but slower at large offsets |
+| Cursor | `findMany({ cursor, limit })` | Infinite scroll and large lists | Yes | Yes (cursor mode only) | Efficient and stable when order/index are aligned |
+| Composition | `select().map/filter/flatMap/union/interleaveBy(...).paginate({ cursor, limit })` | Advanced stream-like composition before pagination | Yes | Yes | Supports union/interleave/map/filter/flatMap/distinct |
+| Key-based | `findMany({ pageByKey })` | Deterministic key boundaries and adjacency control | N/A | N/A | Returns `{ page, indexKeys, hasMore }` |
+
+<Callout icon={<InfoIcon />}>
+There is no public `db.stream()` API anymore. Advanced stream behavior is available through the `select()` composition chain.
+</Callout>
+
+## Offset Pagination
+
+Offset pagination is the most straightforward option:
+
+```ts showLineNumbers
+const rows = await db.query.users.findMany({
+  orderBy: { createdAt: 'desc' },
+  offset: 20,
+  limit: 10,
+});
+```
+
+Use this when users need direct jumps like page 8, page 9, page 10.
+Avoid deep offsets on large tables because the query still has to read through earlier rows.
+
+## Cursor Pagination
+
+Cursor pagination is the default for scalable list UIs.
+
+First page:
+
+```ts showLineNumbers
+const page1 = await db.query.posts.findMany({
+  where: { published: true },
+  orderBy: { createdAt: 'desc' },
+  cursor: null,
+  limit: 20,
+});
+```
+
+Next page:
+
+```ts showLineNumbers
+const page2 = await db.query.posts.findMany({
+  where: { published: true },
+  orderBy: { createdAt: 'desc' },
+  cursor: page1.continueCursor,
+  limit: 20,
+});
+```
+
+Return shape:
+
+```ts
+{
+  page: T[];
+  continueCursor: string | null;
+  isDone: boolean;
+  pageStatus?: 'SplitRecommended' | 'SplitRequired';
+  splitCursor?: string;
+}
+```
+
+### Boundary pinning with `endCursor`
+
+When data changes between requests, use `endCursor` to pin a page boundary:
+
+```ts showLineNumbers
+const refreshed = await db.query.posts.findMany({
+  where: { published: true },
+  orderBy: { createdAt: 'desc' },
+  cursor: null,
+  endCursor: page1.continueCursor,
+  limit: 20,
+});
+```
+
+This keeps adjacent pages stitched correctly as new rows arrive.
+
+### Scan budget with `maxScan`
+
+`maxScan` is available only in cursor mode. It caps scanned rows instead of throwing when a page would scan too much.
+
+```ts showLineNumbers
+const page = await db.query.users
+  .withIndex('by_email')
+  .findMany({
+    where: (_users, { predicate }) =>
+      predicate((u) => u.email.endsWith('@example.com')),
+    cursor: null,
+    limit: 20,
+    maxScan: 500,
+  });
+```
+
+When the scan budget is hit, you'll get a partial page plus `pageStatus` and `splitCursor` hints.
+
+`allowFullScan` does not apply in cursor mode.
+If cursor pagination needs a scan-fallback plan and:
+- `strict: true`: missing `maxScan` throws.
+- `strict: false`: missing `maxScan` warns and runs uncapped.
+
+## Composition Pagination (Advanced)
+
+`select()` composition is the public way to do stream-style transforms before pagination.
+
+### Union/interleave (merged-stream behavior)
+
+`select().union(...).interleaveBy(...)` is the merged-stream equivalent.
+
+```ts showLineNumbers
+const page = await db.query.messages
+  .select()
+  .union([
+    {
+      index: {
+        name: 'by_from_to',
+        range: (q) => q.eq('from', me).eq('to', them),
+      },
+    },
+    {
+      index: {
+        name: 'by_from_to',
+        range: (q) => q.eq('from', them).eq('to', me),
+      },
+    },
+  ])
+  .interleaveBy(['createdAt', 'id'])
+  .paginate({ cursor: null, limit: 20 });
+```
+
+### Pre-pagination transforms
+
+You can apply transforms in order by chaining:
+
+```ts showLineNumbers
+const page = await db.query.messages
+  .select()
+  .filter(async (m) => !m.deletedAt)
+  .map(async (m) => ({ ...m, preview: m.body.slice(0, 120) }))
+  .distinct({ fields: ['channelId'] })
+  .paginate({ cursor: null, limit: 20, maxScan: 500 });
+```
+
+### Relation-targeted `flatMap`
+
+```ts showLineNumbers
+const page = await db.query.users
+  .select()
+  .flatMap('posts', { includeParent: true })
+  .paginate({ cursor: null, limit: 20 });
+```
+
+### Composition limitations
+
+| Combination | Status |
+|---|---|
+| Composition entrypoint | `select()` chain only |
+| `select() + search` | Not supported |
+| `select() + vectorSearch` | Not supported |
+| `select() + offset` | Not supported |
+| `select() + with` | Not supported |
+| `select() + extras` | Not supported |
+| `select() + columns` | Not supported |
+
+## Key-Based Paging (`pageByKey`)
+
+Use `pageByKey` when you want explicit key boundaries rather than opaque cursors.
+
+```ts showLineNumbers
+const first = await db.query.messages.findMany({
+  pageByKey: {
+    index: 'by_channel',
+    order: 'asc',
+    targetMaxRows: 100,
+  },
+});
+
+const second = await db.query.messages.findMany({
+  pageByKey: {
+    index: 'by_channel',
+    order: 'asc',
+    startKey: first.indexKeys[99],
+    targetMaxRows: 100,
+  },
+});
+```
+
+Return shape:
+
+```ts
+{
+  page: T[];
+  indexKeys: (Value | undefined)[][];
+  hasMore: boolean;
+}
+```
+
+`pageByKey` also supports `endKey`, inclusive/exclusive bounds, and `absoluteMaxRows` for hard page caps.
+
+## Validation Rules
+
+These combinations are rejected:
+
+- `endCursor` without cursor mode (`cursor + limit`).
+- `maxScan` without cursor mode.
+- `pageByKey` with `cursor`, `offset`, `search`, `vectorSearch`, or `select()` composition.
+
+## Migration from `db.stream()`
+
+If you previously used stream helpers directly, map them to `findMany` like this:
+
+| Previous pattern | New pattern |
+|---|---|
+| `db.stream().query(...).filterWith(...).paginate(...)` | `select().filter(...).paginate({ cursor, limit })` |
+| `mergedStream([...], fields)` | `select().union([...]).interleaveBy(fields).paginate({ cursor, limit })` |
+| manual `map`/`flatMap` stream chains | `select().map(...).flatMap(...).paginate({ cursor, limit })` |
+| `getPage(...)` key-boundary paging | `findMany({ pageByKey: { ... } })` |
+| `paginator(...).query(...).paginate(...)` | `findMany({ cursor, limit, ... })` |
+
+<Callout icon={<AlertTriangle />}>
+Keep the query shape stable between calls when paginating. Changing indexes/order/filters between page requests invalidates cursor continuity.
+</Callout>

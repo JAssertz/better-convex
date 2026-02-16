@@ -25,26 +25,13 @@ Let's explore each component.
 
 Use `.input()` to define and validate procedure arguments. The schema runs before your handler, catching invalid data early.
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts title="convex/functions/user.ts" showLineNumbers {2-3}
-    export const getById = publicQuery
-      .input(z.object({ id: zid('user') }))
-      .query(async ({ ctx, input }) => {
-        return ctx.db.get(input.id);
-      });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts title="convex/functions/user.ts" showLineNumbers {2-3}
-    export const getById = publicQuery
-      .input(z.object({ id: zid('user') }))
-      .query(async ({ ctx, input }) => {
-        return ctx.table('user').get(input.id);
-      });
-    ```
-  </Tab>
-</Tabs>
+```ts title="convex/functions/user.ts" showLineNumbers {2-3}
+export const getById = publicQuery
+  .input(z.object({ id: z.string() }))
+  .query(async ({ ctx, input }) => {
+    return ctx.orm.query.user.findFirst({ where: { id: input.id } });
+  });
+```
 
 ### Schema Format
 
@@ -66,120 +53,65 @@ Pass a `z.object()` schema directly. You get all of Zod's validation power - str
 
 For procedures that take no arguments, simply omit `.input()`:
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers
-    export const list = publicQuery
-      .query(async ({ ctx }) => {
-        return ctx.db.query('user').collect();
-      });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers
-    export const list = publicQuery
-      .query(async ({ ctx }) => {
-        return ctx.table('user');
-      });
-    ```
-  </Tab>
-</Tabs>
+```ts showLineNumbers
+export const list = publicQuery
+  .query(async ({ ctx }) => {
+    return ctx.orm.query.user.findMany({ limit: 100 });
+  });
+```
 
 ### Input Merging
 
 Here's where cRPC gets powerful. You can stack `.input()` calls to build complex types. This is especially useful when middleware needs to validate its own input:
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    First, define a procedure that validates and fetches a target user:
+First, define a procedure that validates and fetches a target user:
 
-    ```ts title="convex/lib/crpc.ts" showLineNumbers {2-7}
-    const userProcedure = authQuery
-      .input(z.object({ userId: zid('user') }))
-      .use(async ({ ctx, input, next }) => {
-        const targetUser = await ctx.db.get(input.userId);
-        if (!targetUser) throw new CRPCError({ code: 'NOT_FOUND' });
-        return next({ ctx: { ...ctx, targetUser } });
-      });
-    ```
+```ts title="convex/lib/crpc.ts" showLineNumbers {2-10}
+const userProcedure = authQuery
+  .input(z.object({ userId: z.string() }))
+  .use(async ({ ctx, input, next }) => {
+    const targetUser = await ctx.orm.query.user.findFirst({
+      where: { id: input.userId },
+    });
+    if (!targetUser) throw new CRPCError({ code: 'NOT_FOUND' });
+    return next({ ctx: { ...ctx, targetUser } });
+  });
+```
 
-    Now when you extend this procedure, inputs are merged automatically:
+Now when you extend this procedure, inputs are merged automatically:
 
-    ```ts title="convex/functions/session.ts" showLineNumbers {2,5}
-    export const list = userProcedure
-      .input(z.object({ limit: z.number().default(10) }))
-      .query(async ({ ctx, input }) => {
-        // input.userId + input.limit both available!
-        return ctx.db.query('session')
-          .withIndex('userId', q => q.eq('userId', input.userId))
-          .take(input.limit);
-      });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    First, define a procedure that validates and fetches a target user:
-
-    ```ts title="convex/lib/crpc.ts" showLineNumbers {2-7}
-    const userProcedure = authQuery
-      .input(z.object({ userId: zid('user') }))
-      .use(async ({ ctx, input, next }) => {
-        const targetUser = await ctx.table('user').get(input.userId);
-        if (!targetUser) throw new CRPCError({ code: 'NOT_FOUND' });
-        return next({ ctx: { ...ctx, targetUser } });
-      });
-    ```
-
-    Now when you extend this procedure, inputs are merged automatically:
-
-    ```ts title="convex/functions/session.ts" showLineNumbers {2,5}
-    export const list = userProcedure
-      .input(z.object({ limit: z.number().default(10) }))
-      .query(async ({ ctx, input }) => {
-        // input.userId + input.limit both available!
-        return ctx.table('session', 'userId', q => q.eq('userId', input.userId))
-          .take(input.limit);
-      });
-    ```
-  </Tab>
-</Tabs>
+```ts title="convex/functions/session.ts" showLineNumbers {2,5}
+export const list = userProcedure
+  .input(z.object({ limit: z.number().default(10) }))
+  .query(async ({ ctx, input }) => {
+    // input.userId + input.limit both available!
+    return ctx.orm.query.session.findMany({
+      where: { userId: input.userId },
+      limit: input.limit,
+    });
+  });
+```
 
 ## Output Validation
 
 Use `.output()` to validate return values. This catches bugs where your handler returns unexpected data.
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers {3-7}
-    export const getById = publicQuery
-      .input(z.object({ id: zid('user') }))
-      .output(z.object({
-        _id: zid('user'),
-        name: z.string(),
-        email: z.string(),
-      }))
-      .query(async ({ ctx, input }) => {
-        const user = await ctx.db.get(input.id);
-        if (!user) throw new CRPCError({ code: 'NOT_FOUND' });
-        return user;
-      });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers {3-7}
-    export const getById = publicQuery
-      .input(z.object({ id: zid('user') }))
-      .output(z.object({
-        _id: zid('user'),
-        name: z.string(),
-        email: z.string(),
-      }))
-      .query(async ({ ctx, input }) => {
-        const user = await ctx.table('user').getX(input.id);
-        return user;
-      });
-    ```
-  </Tab>
-</Tabs>
+```ts showLineNumbers {3-7}
+export const getById = publicQuery
+  .input(z.object({ id: z.string() }))
+  .output(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string(),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    const user = await ctx.orm.query.user.findFirst({ where: { id: input.id } });
+    if (!user) throw new CRPCError({ code: 'NOT_FOUND' });
+    return user;
+  });
+```
 
 <Callout icon={<InfoIcon />}>
   **Note:** `z.void()` is not supported by Convex. For mutations that don't return a value, use `.output(z.null())`. Convex returns `null` by default, so an explicit `return null` is not required.
@@ -195,63 +127,35 @@ Now let's look at the three handler types. Each serves a different purpose.
 
 Use `.query()` for read-only operations. Queries are cached and support real-time subscriptions - when data changes, clients update automatically.
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers {3-5}
-    export const list = publicQuery
-      .input(z.object({ limit: z.number().default(10) }))
-      .query(async ({ ctx, input }) => {
-        return ctx.db.query('user').take(input.limit);
-      });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers {3-5}
-    export const list = publicQuery
-      .input(z.object({ limit: z.number().default(10) }))
-      .query(async ({ ctx, input }) => {
-        return ctx.table('user').take(input.limit);
-      });
-    ```
-  </Tab>
-</Tabs>
+```ts showLineNumbers {3-5}
+export const list = publicQuery
+  .input(z.object({ limit: z.number().default(10) }))
+  .query(async ({ ctx, input }) => {
+    return ctx.orm.query.user.findMany({ limit: input.limit });
+  });
+```
 
 ### Mutations
 
 Use `.mutation()` for write operations. Mutations are transactional - if any part fails, the entire operation rolls back.
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers {3-5,9-11}
-    export const create = publicMutation
-      .input(z.object({ name: z.string(), email: z.string().email() }))
-      .mutation(async ({ ctx, input }) => {
-        return ctx.db.insert('user', input);
-      });
+```ts showLineNumbers {1-4,6-17}
+import { z } from 'zod';
+import { eq } from 'better-convex/orm';
+import { user } from './schema';
 
-    export const remove = publicMutation
-      .input(z.object({ id: zid('user') }))
-      .mutation(async ({ ctx, input }) => {
-        await ctx.db.delete(input.id);
-      });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers {3-5,9-11}
-    export const create = publicMutation
-      .input(z.object({ name: z.string(), email: z.string().email() }))
-      .mutation(async ({ ctx, input }) => {
-        return ctx.table('user').insert(input);
-      });
+export const create = publicMutation
+  .input(z.object({ name: z.string(), email: z.string().email() }))
+  .mutation(async ({ ctx, input }) => {
+    await ctx.orm.insert(user).values(input);
+  });
 
-    export const remove = publicMutation
-      .input(z.object({ id: zid('user') }))
-      .mutation(async ({ ctx, input }) => {
-        await ctx.table('user').getX(input.id).delete();
-      });
-    ```
-  </Tab>
-</Tabs>
+export const remove = publicMutation
+  .input(z.object({ id: z.string() }))
+  .mutation(async ({ ctx, input }) => {
+    await ctx.orm.delete(user).where(eq(user.id, input.id));
+  });
+```
 
 ### Actions
 
@@ -270,52 +174,27 @@ export const sendWelcomeEmail = publicAction
 
 For large datasets, use `.paginated()` for cursor-based pagination. It automatically adds `cursor` and `limit` to your input, and wraps output with pagination metadata.
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers {7-8,14}
-    const SessionSchema = z.object({
-      _id: zid('session'),
-      userId: zid('user'),
-      token: z.string(),
-    });
+```ts showLineNumbers {7-8,14}
+const SessionSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  token: z.string(),
+});
 
-    export const list = publicQuery
-      .input(z.object({ userId: zid('user').optional() }))
-      .paginated({ limit: 20, item: SessionSchema })
-      .query(async ({ ctx, input }) => {
-        return ctx.db
-          .query('session')
-          .withIndex('userId', (q) =>
-            input.userId ? q.eq('userId', input.userId) : q
-          )
-          .order('desc')
-          .paginate({ cursor: input.cursor, numItems: input.limit });
-      });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers {7-8,14}
-    const SessionSchema = z.object({
-      _id: zid('session'),
-      userId: zid('user'),
-      token: z.string(),
-    });
+export const list = publicQuery
+  .input(z.object({ userId: z.string().optional() }))
+  .paginated({ limit: 20, item: SessionSchema })
+  .query(async ({ ctx, input }) => {
+	    return ctx.orm.query.session.findMany({
+	      where: input.userId ? { userId: input.userId } : {},
+	      orderBy: { createdAt: 'desc' },
+	      cursor: input.cursor,
+	      limit: input.limit,
+	    });
+	  });
+```
 
-    export const list = publicQuery
-      .input(z.object({ userId: zid('user').optional() }))
-      .paginated({ limit: 20, item: SessionSchema })
-      .query(async ({ ctx, input }) => {
-        return ctx.table('session', 'userId', (q) =>
-            input.userId ? q.eq('userId', input.userId) : q
-          )
-          .order('desc')
-          .paginate({ cursor: input.cursor, numItems: input.limit });
-      });
-    ```
-  </Tab>
-</Tabs>
-
-The handler receives flat `input.cursor` and `input.limit`. Transform them for Convex's `.paginate({ cursor, numItems })`. The output is automatically typed as `{ continueCursor: string, isDone: boolean, page: T[] }`.
+The handler receives flat `input.cursor` and `input.limit`. Pass them to `findMany({ cursor, limit })`. The output is automatically typed as `{ continueCursor: string, isDone: boolean, page: T[] }`.
 
 See [Infinite Queries](/docs/react/infinite-queries) for client-side usage with `useInfiniteQuery`.
 
@@ -345,86 +224,46 @@ export const backfillData = privateMutation
 
 Here's a full CRUD example showing all the patterns together:
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts title="convex/functions/user.ts" showLineNumbers
-    import { z } from 'zod';
-    import { zid } from 'convex-helpers/server/zod4';
-    import { publicQuery, publicMutation } from '../lib/crpc';
+```ts title="convex/functions/user.ts" showLineNumbers
+import { z } from 'zod';
+import { eq } from 'better-convex/orm';
+import { publicQuery, publicMutation } from '../lib/crpc';
+import { user } from './schema';
 
-    // Define reusable schema
-    const userSchema = z.object({
-      name: z.string().min(1),
-      email: z.string().email(),
-    });
+// Define reusable schema
+const userSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+});
 
-    export const list = publicQuery
-      .query(async ({ ctx }) => {
-        return ctx.db.query('user').collect();
-      });
+export const list = publicQuery.query(async ({ ctx }) => {
+  return ctx.orm.query.user.findMany({ limit: 100 });
+});
 
-    export const getById = publicQuery
-      .input(z.object({ id: zid('user') }))
-      .query(async ({ ctx, input }) => {
-        return ctx.db.get(input.id);
-      });
+export const getById = publicQuery
+  .input(z.object({ id: z.string() }))
+  .query(async ({ ctx, input }) => {
+    return ctx.orm.query.user.findFirst({ where: { id: input.id } });
+  });
 
-    // Use the schema directly
-    export const create = publicMutation
-      .input(userSchema)
-      .mutation(async ({ ctx, input }) => {
-        return ctx.db.insert('user', input);
-      });
+export const create = publicMutation
+  .input(userSchema)
+  .output(z.string())
+  .mutation(async ({ ctx, input }) => {
+    const [row] = await ctx.orm
+      .insert(user)
+      .values(input)
+      .returning({ id: user.id });
+    return row.id;
+  });
 
-    // Extend schemas with .extend()
-    export const update = publicMutation
-      .input(userSchema.partial().extend({ id: zid('user') }))
-      .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        return ctx.db.patch(id, data);
-      });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts title="convex/functions/user.ts" showLineNumbers
-    import { z } from 'zod';
-    import { zid } from 'convex-helpers/server/zod4';
-    import { publicQuery, publicMutation } from '../lib/crpc';
-
-    // Define reusable schema
-    const userSchema = z.object({
-      name: z.string().min(1),
-      email: z.string().email(),
-    });
-
-    export const list = publicQuery
-      .query(async ({ ctx }) => {
-        return ctx.table('user');
-      });
-
-    export const getById = publicQuery
-      .input(z.object({ id: zid('user') }))
-      .query(async ({ ctx, input }) => {
-        return ctx.table('user').get(input.id);
-      });
-
-    // Use the schema directly
-    export const create = publicMutation
-      .input(userSchema)
-      .mutation(async ({ ctx, input }) => {
-        return ctx.table('user').insert(input);
-      });
-
-    // Extend schemas with .extend()
-    export const update = publicMutation
-      .input(userSchema.partial().extend({ id: zid('user') }))
-      .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-        return ctx.table('user').getX(id).patch(data);
-      });
-    ```
-  </Tab>
-</Tabs>
+export const update = publicMutation
+  .input(userSchema.partial().extend({ id: z.string() }))
+  .mutation(async ({ ctx, input }) => {
+    const { id, ...data } = input;
+    await ctx.orm.update(user).set(data).where(eq(user.id, id));
+  });
+```
 
 ## Zod vs Convex Validators
 
@@ -440,10 +279,6 @@ cRPC uses Zod for validation instead of Convex's `v` validators. Here's a quick 
 | `z.string().optional()` | `v.optional(v.string())` |
 | `zid('tablename')` | `v.id('tablename')` |
 
-<Callout icon={<InfoIcon />}>
-  **Note:** `zid` is imported from `convex-helpers/server/zod4` and validates Convex document IDs with full type safety.
-</Callout>
-
 ## Migrate from Convex
 
 If you're coming from vanilla Convex, here's what changes.
@@ -455,39 +290,41 @@ If you're coming from vanilla Convex, here's what changes.
 
 ### What's new
 
-**Before (vanilla Convex):**
+<Compare>
+  <CompareItem title="Before (vanilla Convex)">
+    ```ts showLineNumbers
+    import { query } from 'convex/server';
+    import { v } from 'convex/values';
+    import { orm } from '../lib/orm';
 
-```ts showLineNumbers
-import { query } from './_generated/server';
-import { v } from 'convex/values';
+    export const getById = query({
+      args: { id: v.id('user') },
+      handler: async (ctx, args) => {
+        const db = orm.db(ctx);
+        return db.query.user.findFirst({ where: { id: args.id } });
+      },
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```ts showLineNumbers {5-7}
+    import { z } from 'zod';
+    import { publicQuery } from '../lib/crpc';
 
-export const getById = query({
-  args: { id: v.id('user') },
-  handler: async (ctx, args) => {
-    return ctx.db.get(args.id);
-  },
-});
-```
-
-**After (cRPC):**
-
-```ts showLineNumbers {5-7}
-import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
-import { publicQuery } from '../lib/crpc';
-
-export const getById = publicQuery
-  .input(z.object({ id: zid('user') }))
-  .query(async ({ ctx, input }) => {
-    return ctx.db.get(input.id);
-  });
-```
+    export const getById = publicQuery
+      .input(z.object({ id: z.string() }))
+      .query(async ({ ctx, input }) => {
+        return ctx.orm.query.user.findFirst({ where: { id: input.id } });
+      });
+    ```
+  </CompareItem>
+</Compare>
 
 Key differences:
 - Fluent builder API instead of object config
 - Zod validation instead of `v` validators
 - `{ ctx, input }` destructured params instead of `(ctx, args)`
-- Use `zid()` for document ID validation
+- Use `z.string()` for IDs at procedure boundaries (`zid()` only for explicit schema `id()` column mapping)
 
 ## Next Steps
 

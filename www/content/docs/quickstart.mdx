@@ -10,7 +10,8 @@ import { InfoIcon } from "lucide-react"
 In this guide, we'll get Better Convex running from scratch. You'll set up a Next.js app with Convex, create your first cRPC procedures, and use them with TanStack Query.
 
 <Callout icon={<InfoIcon />}>
-**ctx.db vs ctx.table**: This guide has tabs for two database access styles. Use **ctx.db** (vanilla Convex) if you're new. Use **ctx.table** ([Convex Ents](https://labs.convex.dev/convex-ents)) for relational patterns with edges and cascading deletes.
+Docs use the ORM (`ctx.orm`) everywhere. If you're migrating from native Convex, see
+[/docs/migrations/db](/docs/migrations/db).
 </Callout>
 
 ## Create Next.js App
@@ -22,18 +23,9 @@ cd my-app
 
 ## Installation
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```bash
-    bun add convex better-convex convex-helpers zod @tanstack/react-query
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```bash
-    bun add convex better-convex convex-helpers zod @tanstack/react-query convex-ents
-    ```
-  </Tab>
-</Tabs>
+```bash
+bun add convex better-convex zod @tanstack/react-query
+```
 
 ## Configure Folder Structure
 
@@ -96,36 +88,46 @@ See [Concepts](/docs/concepts) for detailed folder structure explanation.
 
 ## 1. Define Schema
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts title="convex/functions/schema.ts" showLineNumbers {4-7}
-    import { defineSchema, defineTable } from 'convex/server';
-    import { v } from 'convex/values';
+We'll start by defining tables and relations in one file.
 
-    export default defineSchema({
-      user: defineTable({
-        name: v.string(),
-        email: v.string(),
-      }).index('email', ['email']),
-    });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts title="convex/functions/schema.ts" showLineNumbers {4-9}
-    import { v } from 'convex/values';
-    import { defineEnt, defineEntSchema } from 'convex-ents';
+```ts title="convex/functions/schema.ts" showLineNumbers {3-8,10-15,17-22}
+import {
+  boolean,
+  convexTable,
+  defineRelations,
+  defineSchema,
+  id,
+  index,
+  text,
+} from 'better-convex/orm';
 
-    const schema = defineEntSchema({
-      user: defineEnt({
-        name: v.string(),
-        email: v.string(),
-      }).index('email', ['email']),
-    });
+export const user = convexTable('user', {
+  name: text().notNull(),
+  email: text().notNull(),
+});
 
-    export default schema;
-    ```
-  </Tab>
-</Tabs>
+export const posts = convexTable(
+  'posts',
+  {
+    title: text().notNull(),
+    published: boolean(),
+    userId: id('user').notNull(),
+  },
+  (t) => [index('by_user').on(t.userId)]
+);
+
+const tables = { user, posts };
+export default defineSchema(tables, { strict: false });
+
+export const relations = defineRelations(tables, (r) => ({
+  user: { posts: r.many.posts() },
+  posts: { author: r.one.user({ from: r.posts.userId, to: r.user.id }) },
+}));
+```
+
+<Callout icon={<InfoIcon />}>
+Docs use `strict: false` to keep snippets short. Keep strict default and add indexes in real apps.
+</Callout>
 
 ## 2. Initialize Convex
 
@@ -166,171 +168,104 @@ Create `.env.local` with your Convex URLs:
   </Tab>
 </Tabs>
 
-## 3. Create cRPC Builder
+## 3. Create ORM + cRPC Builder
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts title="convex/lib/crpc.ts" showLineNumbers {1,10-11,15-21,23-24}
-    import { initCRPC } from 'better-convex/server';
-    import {
-      query,
-      mutation,
-      internalQuery,
-      internalMutation,
-      action,
-      internalAction,
-    } from '../functions/_generated/server';
-    import type {
-      ActionCtx,
-      MutationCtx,
-      QueryCtx,
-    } from '../functions/_generated/server';
-    import type { DataModel } from '../functions/_generated/dataModel';
+First, attach the ORM to your context. Create `convex/lib/orm.ts`:
 
-    export type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
+```ts title="convex/lib/orm.ts" showLineNumbers {1-3,5-6,8-11}
+import { createOrm } from 'better-convex/orm';
+import type { MutationCtx, QueryCtx } from '../functions/_generated/server';
+import { relations } from '../functions/schema';
 
-    const c = initCRPC
-      .dataModel<DataModel>()
-      .create({
-        query,
-        internalQuery,
-        mutation,
-        internalMutation,
-        action,
-        internalAction,
-      });
+export const orm = createOrm({ schema: relations });
 
-    export const publicQuery = c.query;
-    export const publicMutation = c.mutation;
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    First, create the ents helper:
+export const withOrm = <Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) => ({
+  ...ctx,
+  orm: orm.db(ctx),
+});
+```
 
-    ```ts title="convex/lib/ents.ts" showLineNumbers
-    import type { GenericEnt, GenericEntWriter } from 'convex-ents';
-    import { entsTableFactory, getEntDefinitions } from 'convex-ents';
-    import type { TableNames } from '../functions/_generated/dataModel';
-    import type { MutationCtx, QueryCtx } from '../functions/_generated/server';
-    import schema from '../functions/schema';
+Now create the cRPC builder in `convex/lib/crpc.ts`:
 
-    export const entDefinitions = getEntDefinitions(schema);
+```ts title="convex/lib/crpc.ts" showLineNumbers {1,10-12,15-27,29-30}
+import { initCRPC } from 'better-convex/server';
+import type {
+  ActionCtx,
+  MutationCtx,
+  QueryCtx,
+} from '../functions/_generated/server';
+import type { DataModel } from '../functions/_generated/dataModel';
+import { withOrm } from './orm';
 
-    export type Ent<TableName extends TableNames> = GenericEnt<
-      typeof entDefinitions,
-      TableName
-    >;
 
-    export type EntWriter<TableName extends TableNames> = GenericEntWriter<
-      typeof entDefinitions,
-      TableName
-    >;
+const c = initCRPC
+  .dataModel<DataModel>()
+  .context({
+    query: (ctx) => withOrm(ctx),
+    mutation: (ctx) => withOrm(ctx),
+  })
+  .create();
 
-    export const getCtxWithTable = <Ctx extends MutationCtx | QueryCtx>(ctx: Ctx) => ({
-      ...ctx,
-      table: entsTableFactory(ctx, entDefinitions),
-    });
-    ```
-
-    Then create the cRPC builder:
-
-    ```ts title="convex/lib/crpc.ts" showLineNumbers {1,10-12,18-27,29-30}
-    import { initCRPC } from 'better-convex/server';
-    import {
-      query,
-      mutation,
-      internalQuery,
-      internalMutation,
-      action,
-      internalAction,
-    } from '../functions/_generated/server';
-    import type {
-      ActionCtx,
-      MutationCtx,
-      QueryCtx,
-    } from '../functions/_generated/server';
-    import type { DataModel } from '../functions/_generated/dataModel';
-    import { getCtxWithTable } from './ents';
-
-    export type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
-
-    const c = initCRPC
-      .dataModel<DataModel>()
-      .context({
-        query: (ctx) => getCtxWithTable(ctx),
-        mutation: (ctx) => getCtxWithTable(ctx),
-      })
-      .create({
-        query,
-        internalQuery,
-        mutation,
-        internalMutation,
-        action,
-        internalAction,
-      });
-
-    export const publicQuery = c.query;
-    export const publicMutation = c.mutation;
-    ```
-  </Tab>
-</Tabs>
+export const publicQuery = c.query;
+export const publicMutation = c.mutation;
+```
 
 ## 4. Define Procedures
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts title="convex/functions/user.ts" showLineNumbers {1-3,5-11,14-17}
-    import { z } from 'zod';
-    import { zid } from 'convex-helpers/server/zod4';
-    import { publicQuery, publicMutation } from '../lib/crpc';
+```ts title="convex/functions/user.ts" showLineNumbers {1-4,6-27,29-40}
+import { z } from 'zod';
+import { publicQuery, publicMutation } from '../lib/crpc';
+import { user } from './schema';
 
-    export const list = publicQuery
-      .input(z.object({ limit: z.number().optional() }))
-      .output(z.array(z.object({
-        _id: zid('user'),
-        _creationTime: z.number(),
+export const list = publicQuery
+  .input(z.object({ limit: z.number().optional() }))
+  .output(
+    z.array(
+      z.object({
+        id: z.string(),
+        createdAt: z.date(),
         name: z.string(),
         email: z.string(),
-      })))
-      .query(async ({ ctx, input }) => {
-        return ctx.db.query('user').take(input.limit ?? 10);
-      });
+        posts: z.array(
+          z.object({
+            id: z.string(),
+            createdAt: z.date(),
+            title: z.string(),
+            published: z.boolean().nullable(),
+          })
+        ),
+      })
+    )
+  )
+  .query(async ({ ctx, input }) => {
+    return ctx.orm.query.user.findMany({
+      limit: input.limit ?? 10,
+      with: {
+        posts: {
+          limit: 5,
+          orderBy: { createdAt: 'desc' },
+          columns: {
+            id: true,
+            createdAt: true,
+            title: true,
+            published: true,
+          },
+        },
+      },
+    });
+  });
 
-    export const create = publicMutation
-      .input(z.object({ name: z.string(), email: z.string() }))
-      .output(zid('user'))
-      .mutation(async ({ ctx, input }) => {
-        return ctx.db.insert('user', input);
-      });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts title="convex/functions/user.ts" showLineNumbers {1-3,5-11,14-17}
-    import { z } from 'zod';
-    import { zid } from 'convex-helpers/server/zod4';
-    import { publicQuery, publicMutation } from '../lib/crpc';
-
-    export const list = publicQuery
-      .input(z.object({ limit: z.number().optional() }))
-      .output(z.array(z.object({
-        _id: zid('user'),
-        _creationTime: z.number(),
-        name: z.string(),
-        email: z.string(),
-      })))
-      .query(async ({ ctx, input }) => {
-        return ctx.table('user').take(input.limit ?? 10);
-      });
-
-    export const create = publicMutation
-      .input(z.object({ name: z.string(), email: z.string() }))
-      .output(zid('user'))
-      .mutation(async ({ ctx, input }) => {
-        return ctx.table('user').insert(input);
-      });
-    ```
-  </Tab>
-</Tabs>
+export const create = publicMutation
+  .input(z.object({ name: z.string(), email: z.string() }))
+  .output(z.string())
+  .mutation(async ({ ctx, input }) => {
+    const [row] = await ctx.orm
+      .insert(user)
+      .values(input)
+      .returning({ id: user.id });
+    return row.id;
+  });
+```
 
 <Callout icon={<InfoIcon />}>
 The `.output()` schema is required for proper TypeScript inference when using `staticApi` codegen.
@@ -447,7 +382,7 @@ export default function UserPage() {
         Create User
       </button>
       {users?.map((user) => (
-        <div key={user._id}>{user.name}</div>
+        <div key={user.id}>{user.name}</div>
       ))}
     </div>
   );
@@ -468,7 +403,7 @@ You have a working Better Convex app. Add more features:
 
 <Cards>
   <Card title="Add Auth" href="/docs/auth/server" />
-  <Card title="Add Triggers" href="/docs/db/triggers" />
-  <Card title="Add Rate Limiting" href="/docs/server/rate-limiting" />
+  <Card title="Add Triggers" href="/docs/orm/triggers" />
+  <Card title="Add Rate Limiting" href="/docs/server/advanced/rate-limiting" />
   <Card title="Full Templates" href="/docs/templates" />
 </Cards>

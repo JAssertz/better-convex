@@ -319,8 +319,6 @@ import { rateLimitGuard } from "./rate-limiter";
 // Types
 // =============================================================================
 
-export type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
-
 type SessionUser = {
   id: Id<"user">;
   plan?: "premium" | null;
@@ -660,8 +658,6 @@ import { registerTriggers } from "./triggers";
 // Types
 // =============================================================================
 
-export type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
-
 type SessionUser = {
   id: Id<"user">;
   plan?: "premium" | null;
@@ -979,28 +975,36 @@ export const internalMutationWithTriggers = customMutation(
 
 ```ts title="convex/shared/types.ts"
 import type {
+  InferInsertModel,
+  InferSelectModel,
+} from "better-convex/orm";
+import type {
   inferApiInputs,
   inferApiOutputs,
   WithHttpRouter,
 } from "better-convex/server";
-import type { WithoutSystemFields } from "convex/server";
 
 import type { api } from "../functions/_generated/api";
-import type { Doc, TableNames } from "../functions/_generated/dataModel";
 // biome-ignore lint/style/noRestrictedImports: type
 import type { appRouter } from "../functions/http";
+import type { tables } from "../functions/schema";
 
-export type DocWithId<TableName extends TableNames> = WithoutSystemFields<
-  Doc<TableName>
-> & {
-  id: Doc<TableName>["_id"];
-};
+type TableName = keyof typeof tables;
+export type Select<T extends TableName> = InferSelectModel<(typeof tables)[T]>;
+export type Insert<T extends TableName> = InferInsertModel<(typeof tables)[T]>;
+
+// Example
+export type SelectUser = Select<"user">;
+export type InsertUser = Insert<"user">;
 
 // API type with HTTP router (http is optional for type inference)
 export type Api = WithHttpRouter<typeof api, typeof appRouter>;
 export type ApiInputs = inferApiInputs<Api>;
 export type ApiOutputs = inferApiOutputs<Api>;
 ```
+
+ORM + cRPC default: define `createdAt: timestamp().notNull().defaultNow()` on tables where you want `createdAt: Date`.
+Native path: omit explicit `createdAt` and system `createdAt` stays `number`.
 
 ### meta.ts
 
@@ -1026,12 +1030,13 @@ import {
   type AuthFunctions,
 } from "better-convex/auth";
 import { internal } from "./_generated/api";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
-import type { GenericCtx } from "../lib/crpc";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import type { DataModel } from "./_generated/dataModel";
 import { internalMutationWithTriggers } from "../lib/crpc";
 import schema from "./schema";
 import authConfig from "./auth.config";
+
+type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
 
 const authFunctions: AuthFunctions = internal.auth;
 
@@ -1307,11 +1312,12 @@ export const getSessionUser = optionalAuthQuery
 ### auth-shared.ts
 
 ```ts title="convex/shared/auth-shared.ts"
-import type { Doc, Id } from "../functions/_generated/dataModel";
+import type { Select } from "./types";
+import type { Doc } from "../functions/_generated/dataModel";
 
-export type SessionUser = Omit<Doc<"user">, "_creationTime" | "_id"> & {
-  id: Id<"user">;
+export type SessionUser = Select<"user"> & {
   isAdmin: boolean;
+  // Native Better Auth session document for auth header/session plumbing.
   session: Doc<"session">;
   impersonatedBy?: string;
   plan?: "premium" | "team";

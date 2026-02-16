@@ -1,0 +1,281 @@
+---
+title: Rate Limiting
+description: Tiered rate limiting with user-based access levels.
+links:
+  doc: https://www.convex.dev/components/rate-limiter
+---
+
+import { InfoIcon } from "lucide-react"
+
+In this guide, we'll implement rate limiting for your Convex functions. You'll learn to set up the rate limiter, configure tiered limits for different user types, and integrate it with cRPC middleware.
+
+## Overview
+
+[@convex-dev/rate-limiter](https://www.convex.dev/components/rate-limiter) provides powerful rate limiting for Convex functions:
+
+| Feature | Description |
+|---------|-------------|
+| Token bucket | Smooth rate limiting with burst capacity |
+| Fixed window | Strict limits per time period |
+| Tiered access | Different limits for free/premium users |
+| Per-user or global | Limit by user ID, IP, or globally |
+
+Let's set it up.
+
+## Installation
+
+First, install the rate limiter package:
+
+```bash
+bun add @convex-dev/rate-limiter
+```
+
+Then add it to your Convex config:
+
+```ts title="convex/functions/convex.config.ts" showLineNumbers {1,4-5}
+import rateLimiter from '@convex-dev/rate-limiter/convex.config';
+import { defineApp } from 'convex/server';
+
+const app = defineApp();
+app.use(rateLimiter);
+export default app;
+```
+
+## Setup
+
+Now let's create the rate limiter configuration. We'll extract the config to a const so `getRateLimitKey` can check if keys exist:
+
+```ts title="convex/lib/rate-limiter.ts" showLineNumbers {6-17,19}
+import { HOUR, MINUTE, RateLimiter, SECOND } from '@convex-dev/rate-limiter';
+import { CRPCError } from 'better-convex/server';
+import { components } from '../functions/_generated/api';
+import type { MutationCtx } from '../functions/_generated/server';
+
+// Extract config for key checking in getRateLimitKey
+const rateLimitConfig = {
+  // Token bucket: smooth limiting with burst capacity
+  'ai:free': { kind: 'token bucket', period: 10 * SECOND, rate: 10 },
+  'ai:premium': { kind: 'token bucket', period: 10 * SECOND, rate: 50 },
+
+  // Fixed window: strict limits per period
+  'post/create:free': { kind: 'fixed window', period: MINUTE, rate: 5 },
+  'post/create:premium': { kind: 'fixed window', period: MINUTE, rate: 20 },
+
+  // Default fallbacks (used when specific key not defined)
+  'default:free': { kind: 'fixed window', period: MINUTE, rate: 30 },
+  'default:premium': { kind: 'fixed window', period: MINUTE, rate: 100 },
+  'default:public': { kind: 'fixed window', period: MINUTE, rate: 20 },
+} as const;
+
+export const rateLimiter = new RateLimiter(components.rateLimiter, rateLimitConfig);
+```
+
+## Rate Limit Types
+
+The rate limiter supports two algorithms. Choose based on your use case.
+
+### Token Bucket
+
+Token bucket allows bursts up to the rate, then refills over time. Great for APIs where occasional bursts are acceptable:
+
+```ts showLineNumbers {2-3}
+{
+  kind: 'token bucket',
+  period: 10 * SECOND,  // Refill period
+  rate: 10,             // Tokens per period
+}
+// User can burst 10 requests, then ~1 per second
+```
+
+### Fixed Window
+
+Fixed window enforces strict limits per time window. Use this when you need predictable quotas:
+
+```ts showLineNumbers {2-3}
+{
+  kind: 'fixed window',
+  period: MINUTE,
+  rate: 30,
+}
+// Exactly 30 requests per minute, resets at window boundary
+```
+
+## Tiered Limits
+
+Here's the pattern for free/premium/public tiers. Define specific limits for features, with fallbacks to defaults:
+
+```ts title="convex/lib/rate-limiter.ts" showLineNumbers {2-4,6-7,10-12}
+const rateLimitConfig = {
+  // Feature-specific limits (override defaults)
+  'post/create:free': { kind: 'fixed window', period: MINUTE, rate: 5 },
+  'post/create:premium': { kind: 'fixed window', period: MINUTE, rate: 20 },
+  'post/create:public': { kind: 'fixed window', period: MINUTE, rate: 3 },
+
+  'comment/create:free': { kind: 'fixed window', period: MINUTE, rate: 30 },
+  'comment/create:premium': { kind: 'fixed window', period: MINUTE, rate: 100 },
+
+  // Default fallbacks (used when specific key not defined)
+  'default:free': { kind: 'fixed window', period: MINUTE, rate: 30 },
+  'default:premium': { kind: 'fixed window', period: MINUTE, rate: 100 },
+  'default:public': { kind: 'fixed window', period: MINUTE, rate: 20 },
+} as const;
+
+export const rateLimiter = new RateLimiter(components.rateLimiter, rateLimitConfig);
+```
+
+## Helper Functions
+
+Next, we'll create helper functions to determine user tiers and build rate limit keys:
+
+```ts title="convex/lib/rate-limiter.ts" showLineNumbers {4-8,12-20,23-35}
+type SessionUser = { id: string; plan?: 'premium' | null; isAdmin?: boolean };
+
+/** Get user tier based on subscription */
+export function getUserTier(
+  user: Pick<SessionUser, 'plan' | 'isAdmin'> | null
+): 'free' | 'premium' | 'public' {
+  if (!user) return 'public';
+  if (user.isAdmin) return 'premium';
+  if (user.plan) return 'premium';
+  return 'free';
+}
+
+/** Build rate limit key with tier suffix, falls back to default */
+export function getRateLimitKey(
+  baseKey: string,
+  tier: 'free' | 'premium' | 'public'
+) {
+  const specificKey = `${baseKey}:${tier}`;
+
+  // Use specific key if defined, otherwise fall back to default
+  if (specificKey in rateLimitConfig) {
+    return specificKey;
+  }
+
+  return `default:${tier}`;
+}
+
+/** Check rate limit and throw if exceeded */
+export async function rateLimitGuard(
+  ctx: MutationCtx & {
+    rateLimitKey: string;
+    user: Pick<SessionUser, 'id' | 'plan'> | null;
+  }
+) {
+  const tier = getUserTier(ctx.user);
+  const limitKey = getRateLimitKey(ctx.rateLimitKey, tier);
+  const identifier = ctx.user?.id ?? 'anonymous';
+
+  const status = await rateLimiter.limit(ctx, limitKey, {
+    key: identifier,
+  });
+
+  if (!status.ok) {
+    throw new CRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: 'Rate limit exceeded. Please try again later.',
+    });
+  }
+}
+```
+
+The `rateLimitGuard` function ties everything together - it determines the user's tier, builds the rate limit key, and throws a `CRPCError` if the limit is exceeded.
+
+## cRPC Integration
+
+Now let's add rate limiting middleware to your cRPC setup:
+
+```ts title="convex/lib/crpc.ts" showLineNumbers {3-10,13,16-17}
+import { rateLimitGuard } from './rate-limiter';
+
+const rateLimitMiddleware = c.middleware<
+  MutationCtx & { user?: { id: string; plan?: string } | null }
+>(async ({ ctx, meta, next }) => {
+  await rateLimitGuard({
+    ...ctx,
+    rateLimitKey: meta.rateLimit ?? 'default',
+    user: ctx.user ?? null,
+  });
+  return next({ ctx });
+});
+
+// Apply to mutations
+export const publicMutation = c.mutation.use(rateLimitMiddleware);
+
+export const authMutation = c.mutation
+  .use(authMiddleware)
+  .use(rateLimitMiddleware);
+```
+
+<Callout icon={<InfoIcon />}>
+**Note:** The middleware reads `meta.rateLimit` from [procedure metadata](/docs/server/metadata). If not set, it falls back to `'default'`.
+</Callout>
+
+## Usage in Procedures
+
+Set custom rate limit keys via [metadata](/docs/server/metadata):
+
+```ts title="convex/functions/posts.ts" showLineNumbers {2,8}
+// Uses default rate limit
+export const createPost = authMutation
+  .input(z.object({ title: z.string() }))
+  .mutation(async ({ ctx, input }) => {
+    // Rate limited with 'default:free' or 'default:premium'
+  });
+
+// Uses specific rate limit
+export const create = authMutation
+  .meta({ rateLimit: 'post/create' })
+  .input(z.object({ title: z.string() }))
+  .mutation(async ({ ctx, input }) => {
+    // Rate limited with 'post/create:free' or 'post/create:premium'
+  });
+```
+
+## Complete Configuration
+
+Here's a full rate limiter configuration with tiered limits for various operations:
+
+```ts title="convex/lib/rate-limiter.ts" showLineNumbers {4-6,9-12,15-16,19-20,23-24,27-29}
+import { HOUR, MINUTE, RateLimiter, SECOND } from '@convex-dev/rate-limiter';
+
+const rateLimitConfig = {
+  // AI operations (token bucket for smooth limiting)
+  'ai:free': { kind: 'token bucket', period: 10 * SECOND, rate: 10 },
+  'ai:premium': { kind: 'token bucket', period: 10 * SECOND, rate: 50 },
+  'ai:public': { kind: 'token bucket', period: 10 * SECOND, rate: 20 },
+
+  // CRUD operations
+  'post/create:free': { kind: 'fixed window', period: MINUTE, rate: 5 },
+  'post/create:premium': { kind: 'fixed window', period: MINUTE, rate: 20 },
+  'post/update:free': { kind: 'fixed window', period: MINUTE, rate: 20 },
+  'post/update:premium': { kind: 'fixed window', period: MINUTE, rate: 60 },
+
+  // Message operations
+  'message/create:free': { kind: 'fixed window', period: MINUTE, rate: 30 },
+  'message/create:premium': { kind: 'fixed window', period: MINUTE, rate: 100 },
+
+  // Export/Import (longer periods)
+  'export:free': { kind: 'fixed window', period: 10 * MINUTE, rate: 5 },
+  'export:premium': { kind: 'fixed window', period: 10 * MINUTE, rate: 15 },
+
+  // Organization operations
+  'organization/invite:free': { kind: 'fixed window', period: HOUR, rate: 5 },
+  'organization/invite:premium': { kind: 'fixed window', period: HOUR, rate: 25 },
+
+  // Default fallbacks (used when specific key not defined)
+  'default:free': { kind: 'fixed window', period: MINUTE, rate: 30 },
+  'default:premium': { kind: 'fixed window', period: MINUTE, rate: 100 },
+  'default:public': { kind: 'fixed window', period: MINUTE, rate: 20 },
+} as const;
+
+export const rateLimiter = new RateLimiter(components.rateLimiter, rateLimitConfig);
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Metadata" href="/docs/server/metadata" />
+  <Card title="Error Handling" href="/docs/server/error-handling" />
+  <Card title="Middlewares" href="/docs/server/middlewares" />
+</Cards>

@@ -1,0 +1,248 @@
+---
+title: Mutations
+description: Insert, update, and delete operations with Drizzle-style builders
+---
+
+import { InfoIcon, CheckCircle } from "lucide-react"
+
+In this guide, we'll cover how to write data with the ORM -- inserting rows, updating fields, and deleting documents. You'll use familiar Drizzle-style builders while the ORM handles constraint enforcement, foreign key cascades, and batching under the hood.
+
+## Dedicated Pages
+
+Each mutation type has its own detailed page:
+
+<Cards>
+  <Card title="Insert" href="/docs/orm/mutations/insert">
+    Insert rows, returning, and onConflict upserts
+  </Card>
+  <Card title="Update" href="/docs/orm/mutations/update">
+    Update rows with set/where/returning
+  </Card>
+  <Card title="Delete" href="/docs/orm/mutations/delete">
+    Delete rows with where/returning
+  </Card>
+</Cards>
+
+## Setup
+
+All mutation examples assume you attached ORM to `ctx.orm` once in your context (see [Quickstart](/docs/quickstart#orm-setup)).
+
+Here's a typical import block for mutation handlers:
+
+```ts showLineNumbers title="convex/functions/users.ts"
+import { z } from 'zod';
+import { eq } from 'better-convex/orm';
+import { publicMutation } from '../lib/crpc';
+import { users } from '../schema';
+```
+
+## Shared Concepts
+
+Before diving into each mutation type, let's cover the concepts that apply across `insert`, `update`, and `delete`.
+
+### Returning
+
+Every mutation builder supports `.returning()` to get back the affected rows. Without it, the result is `void`.
+
+You can return all fields or pick specific columns:
+
+```ts showLineNumbers
+// Return all fields
+const [user] = await ctx.orm
+  .insert(users)
+  .values({ name: 'Ada', email: 'ada@example.com' })
+  .returning();
+
+// Return specific fields
+const [partial] = await ctx.orm
+  .insert(users)
+  .values({ name: 'Ada', email: 'ada@example.com' })
+  .returning({ id: users.id, email: users.email });
+```
+
+<Callout icon={<InfoIcon />}>
+**Note:** `.returning()` always returns an array, even for single-row mutations.
+</Callout>
+
+### Where Clauses
+
+`update()` and `delete()` require a `.where(...)` clause by default. Calling without one throws an error unless you explicitly opt in with `.allowFullScan()`.
+
+```ts showLineNumbers
+// Target specific rows with where
+await ctx.orm.update(users).set({ name: 'Updated' }).where(eq(users.id, userId));
+
+// Operate on ALL rows (use with care)
+await ctx.orm.delete(users).allowFullScan();
+```
+
+For more on `allowFullScan` and index compilation, see [Querying Data](/docs/orm/queries).
+
+### Atomicity
+
+<Callout icon={<CheckCircle />}>
+**Important:** Convex mutations are atomic -- all changes in a single mutation call succeed or fail together.
+</Callout>
+
+### Safety Limits
+
+The ORM enforces runtime limits on how many rows a single mutation can touch. The key defaults are:
+
+- `mutationBatchSize`: `100` (page size for collecting matched rows)
+- `mutationMaxRows`: `1000` (sync-mode hard cap)
+- `mutationLeafBatchSize`: `900` (async FK fan-out batch size)
+
+You can customize these in your schema definition. For the full list of configurable defaults, see [Schema Definition -- Runtime Defaults](/docs/orm/schema#runtime-defaults).
+
+## Insert
+
+Here's a basic insert that creates a new user:
+
+```ts showLineNumbers title="convex/functions/users.ts"
+export const createUser = publicMutation
+  .input(z.object({ name: z.string(), email: z.string().email() }))
+  .mutation(async ({ ctx, input }) => {
+    await ctx.orm.insert(users).values({
+      name: input.name,
+      email: input.email,
+    });
+  });
+```
+
+### Upsert (onConflict)
+
+You can handle conflicts with `onConflictDoUpdate`:
+
+```ts showLineNumbers
+await ctx.orm
+  .insert(users)
+  .values({ email: 'ada@example.com', name: 'Ada' })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: 'Ada Lovelace' },
+  });
+```
+
+For more options including `onConflictDoNothing` and multi-row inserts, see [Insert](/docs/orm/insert).
+
+## Update
+
+Here's a basic update that renames a user by `id`:
+
+```ts showLineNumbers title="convex/functions/users.ts"
+export const updateUserName = publicMutation
+  .input(z.object({ userId: z.string(), newName: z.string() }))
+  .mutation(async ({ ctx, input }) => {
+    await ctx.orm
+      .update(users)
+      .set({ name: input.newName })
+      .where(eq(users.id, input.userId));
+  });
+```
+
+For paginated updates, async batching, and more, see [Update](/docs/orm/update).
+
+## Delete
+
+Here's a basic delete that removes a user by `id`:
+
+```ts showLineNumbers title="convex/functions/users.ts"
+export const deleteUser = publicMutation
+  .input(z.object({ userId: z.string() }))
+  .mutation(async ({ ctx, input }) => {
+    await ctx.orm.delete(users).where(eq(users.id, input.userId));
+  });
+```
+
+For soft deletes, scheduled deletes, and async batching, see [Delete](/docs/orm/delete).
+
+## Paginated Mutation Batches
+
+For large update/delete workloads that exceed safety limits, you can process rows page-by-page with `.paginate()`. This requires an index on the filtered field:
+
+```ts showLineNumbers
+// Schema: index('by_role').on(t.role) on users table
+```
+
+```ts showLineNumbers {5}
+const batch = await ctx.orm
+  .update(users)
+  .set({ role: 'member' })
+  .where(eq(users.role, 'pending'))
+  .paginate({ cursor: null, limit: 100 });
+```
+
+The paginated result includes:
+
+- `continueCursor` -- cursor for the next batch
+- `isDone` -- `true` when no more pages remain
+- `numAffected` -- rows affected in this page
+- `page` -- returned rows (only when `.returning()` is used)
+
+## Async Mutation Batching
+
+When a mutation can affect large sets of rows, use async mode. The first batch runs in the current mutation, then remaining batches are scheduled automatically through the Convex scheduler.
+
+You can enable async mode in three ways:
+
+- **Per call:** `.execute({ mode: 'async' })`
+- **Convenience alias:** `.executeAsync()`
+- **Global default:** `defineSchema(..., { defaults: { mutationExecutionMode: 'async' } })`
+
+### Wiring Setup
+
+Async execution requires wiring `ormFunctions` and `scheduledMutationBatch` into your ORM setup. Here's how to extend the module from [Quickstart](/docs/quickstart#orm-setup):
+
+```ts showLineNumbers title="convex/lib/orm.ts" {4,9}
+import { createOrm } from 'better-convex/orm';
+import { internal } from '../_generated/api';
+import { internalMutation } from '../functions';
+import { relations } from '../schema';
+
+export const orm = createOrm({
+  schema: relations,
+  ormFunctions: internal.orm,
+  internalMutation,
+});
+
+export const { scheduledMutationBatch, scheduledDelete } = orm.api();
+```
+
+Then use `ctx.orm` as usual in your handlers:
+
+```ts showLineNumbers title="convex/functions/users.ts" {7-8}
+import { eq } from 'better-convex/orm';
+import { publicMutation } from '../lib/crpc';
+import { users } from '../schema';
+
+export const renameUsers = publicMutation.mutation(async ({ ctx }) => {
+  await ctx.orm
+    .update(users)
+    .set({ name: 'Updated' })
+    .where(eq(users.role, 'pending')) // requires index('by_role').on(t.role)
+    .execute({ mode: 'async', batchSize: 200, delayMs: 0 });
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Tip:** Both `update()` and `delete()` share the same async wiring. Set it up once and it works for all mutation types.
+</Callout>
+
+You now have all the building blocks for writing data. Dive into the sub-pages below for detailed coverage of each mutation type.
+
+## Next Steps
+
+<Cards>
+  <Card title="Insert" href="/docs/orm/mutations/insert">
+    Multi-row inserts, upserts, and conflict handling
+  </Card>
+  <Card title="Update" href="/docs/orm/mutations/update">
+    Paginated updates, async batching, and safety limits
+  </Card>
+  <Card title="Delete" href="/docs/orm/mutations/delete">
+    Soft deletes, scheduled deletes, and cascades
+  </Card>
+  <Card title="Schema Definition" href="/docs/orm/schema">
+    Configure runtime defaults and table-level settings
+  </Card>
+</Cards>

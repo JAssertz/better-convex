@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import * as childProcess from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parse } from 'dotenv';
@@ -33,9 +33,11 @@ export async function syncEnv(options: SyncOptions = {}) {
     // Generate BETTER_AUTH_SECRET if not present
     if (!envVars.BETTER_AUTH_SECRET) {
       try {
-        const secret = execSync('openssl rand -base64 32', {
-          encoding: 'utf-8',
-        }).trim();
+        const secret = childProcess
+          .execSync('openssl rand -base64 32', {
+            encoding: 'utf-8',
+          })
+          .trim();
         envVars.BETTER_AUTH_SECRET = secret;
         console.info('🔐 Generated BETTER_AUTH_SECRET');
 
@@ -52,10 +54,12 @@ export async function syncEnv(options: SyncOptions = {}) {
 
     // Generate JWKS if not set
     try {
-      const existingJwks = execSync(`npx convex env get JWKS${prodFlag}`, {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'ignore'],
-      }).trim();
+      const existingJwks = childProcess
+        .execSync(`npx convex env get JWKS${prodFlag}`, {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        })
+        .trim();
 
       if (
         !existingJwks ||
@@ -63,7 +67,7 @@ export async function syncEnv(options: SyncOptions = {}) {
         existingJwks.includes('not set')
       ) {
         console.info('🔐 Generating JWKS...');
-        execSync(
+        childProcess.execSync(
           `npx convex run auth:getLatestJwks${prodFlag} | npx convex env set JWKS${prodFlag}`,
           { stdio: 'inherit' }
         );
@@ -80,13 +84,12 @@ export async function syncEnv(options: SyncOptions = {}) {
 
   // Log deployment info
   try {
-    const deployment = execSync(
-      `npx convex env get CONVEX_DEPLOYMENT${prodFlag}`,
-      {
+    const deployment = childProcess
+      .execSync(`npx convex env get CONVEX_DEPLOYMENT${prodFlag}`, {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'ignore'],
-      }
-    ).trim();
+      })
+      .trim();
     console.info(
       `📍 Current Convex deployment: ${deployment || 'anonymous'}\n`
     );
@@ -105,13 +108,12 @@ export async function syncEnv(options: SyncOptions = {}) {
 
     try {
       if (!force) {
-        const currentValue = execSync(
-          `npx convex env get ${varName}${prodFlag}`,
-          {
+        const currentValue = childProcess
+          .execSync(`npx convex env get ${varName}${prodFlag}`, {
             encoding: 'utf-8',
             stdio: ['pipe', 'pipe', 'ignore'],
-          }
-        ).trim();
+          })
+          .trim();
 
         if (currentValue === value) {
           console.info(`✅ ${varName}: Already up to date`);
@@ -119,15 +121,21 @@ export async function syncEnv(options: SyncOptions = {}) {
         }
       }
 
-      execSync(`npx convex env set ${varName}="${value}"${prodFlag}`, {
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      childProcess.execSync(
+        `npx convex env set ${varName}="${value}"${prodFlag}`,
+        {
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }
+      );
       console.info(`✅ ${varName}: Updated`);
     } catch {
       try {
-        execSync(`npx convex env set ${varName}="${value}"${prodFlag}`, {
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
+        childProcess.execSync(
+          `npx convex env set ${varName}="${value}"${prodFlag}`,
+          {
+            stdio: ['pipe', 'pipe', 'pipe'],
+          }
+        );
         console.info(`✅ ${varName}: Set successfully`);
       } catch {
         console.error(`❌ ${varName}: Failed to set`);

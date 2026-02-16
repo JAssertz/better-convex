@@ -1,4 +1,4 @@
-import fs, { globSync } from 'node:fs';
+import fs from 'node:fs';
 import path from 'node:path';
 import { createJiti } from 'jiti';
 import { isValidConvexFile } from '../shared/meta-utils';
@@ -29,6 +29,24 @@ type CRPCMeta = {
   auth?: 'optional' | 'required';
   [key: string]: unknown;
 };
+
+function listFilesRecursive(cwd: string, relDir = ''): string[] {
+  const absDir = path.join(cwd, relDir);
+  const entries = fs.readdirSync(absDir, { withFileTypes: true });
+
+  const files: string[] = [];
+  for (const entry of entries) {
+    const relPath = relDir ? `${relDir}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...listFilesRecursive(cwd, relPath));
+      continue;
+    }
+    if (entry.isFile()) {
+      files.push(relPath);
+    }
+  }
+  return files;
+}
 
 export function getConvexConfig(outputDir?: string): {
   functionsDir: string;
@@ -185,8 +203,7 @@ export async function generateMeta(
   const allHttpRoutes: HttpRoutes = {};
   let totalFunctions = 0;
 
-  // Get all .ts files recursively in functions directory
-  const files = globSync('**/*.ts', { cwd: functionsDir }).filter(
+  const files = listFilesRecursive(functionsDir).filter(
     (file) => file.endsWith('.ts') && isValidConvexFile(file)
   );
 

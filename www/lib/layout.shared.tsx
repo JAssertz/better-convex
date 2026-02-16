@@ -13,6 +13,14 @@ export function baseOptions(): BaseLayoutProps {
         </div>
       ),
     },
+    links: [
+      {
+        text: 'Docs',
+        url: '/docs',
+        on: 'nav',
+        active: 'nested-url',
+      },
+    ],
     githubUrl: 'https://github.com/udecode/better-convex',
   };
 }

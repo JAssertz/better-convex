@@ -1,6 +1,10 @@
 import type { GenericActionCtx, GenericDataModel } from 'convex/server';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import {
+  type DataTransformerOptions,
+  getTransformer,
+} from '../crpc/transformer';
 import { CRPCError } from './error';
 import type {
   CRPCHonoHandler,
@@ -524,14 +528,36 @@ function createProcedure(
       // Parse path params
       let parsedParams: unknown;
       if (def.paramsSchema) {
-        parsedParams = def.paramsSchema.parse(pathParams as any);
+        try {
+          parsedParams = def.paramsSchema.parse(pathParams as any);
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            throw new CRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Invalid path params',
+              cause: error,
+            });
+          }
+          throw error;
+        }
       }
 
       // Parse query params - pass schema for array coercion
       let parsedQuery: unknown;
       if (def.querySchema) {
         const queryParams = parseQueryParams(url, def.querySchema);
-        parsedQuery = def.querySchema.parse(queryParams as any);
+        try {
+          parsedQuery = def.querySchema.parse(queryParams as any);
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            throw new CRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Invalid query params',
+              cause: error,
+            });
+          }
+          throw error;
+        }
       }
 
       // Parse body for non-GET methods
@@ -549,7 +575,20 @@ function createProcedure(
           body = await request.json().catch(() => ({}));
         }
 
-        parsedInput = def.inputSchema.parse(body as any);
+        try {
+          parsedInput = def.inputSchema.parse(
+            def.functionConfig.transformer.input.deserialize(body) as any
+          );
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            throw new CRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Invalid input',
+              cause: error,
+            });
+          }
+          throw error;
+        }
       }
 
       // Parse form data (multipart/form-data)
@@ -560,7 +599,18 @@ function createProcedure(
         for (const [key, value] of formData.entries()) {
           formObj[key] = value;
         }
-        parsedForm = def.formSchema.parse(formObj);
+        try {
+          parsedForm = def.formSchema.parse(formObj);
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            throw new CRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Invalid form data',
+              cause: error,
+            });
+          }
+          throw error;
+        }
       }
 
       // Build handler options - ctx namespaced, include Hono Context `c`
@@ -596,7 +646,7 @@ function createProcedure(
       const output = def.outputSchema
         ? def.outputSchema.parse(result as any)
         : result;
-      return c.json(output);
+      return c.json(def.functionConfig.transformer.output.serialize(output));
     } catch (error) {
       return handleHttpError(error);
     }
@@ -817,6 +867,7 @@ export function createHttpProcedureBuilder<
   >['functionConfig']['base'];
   createContext: (ctx: GenericActionCtx<GenericDataModel>) => TCtx;
   meta: TMeta;
+  transformer?: DataTransformerOptions;
 }): HttpProcedureBuilder<
   TCtx,
   TCtx,
@@ -834,6 +885,7 @@ export function createHttpProcedureBuilder<
     functionConfig: {
       base: config.base,
       createContext: config.createContext,
+      transformer: getTransformer(config.transformer),
     },
   }) as HttpProcedureBuilder<
     TCtx,

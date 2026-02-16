@@ -69,7 +69,7 @@ export const { createContext, createCaller } = createCallerFactory({
 
 ### Better Auth (Next.js)
 
-For Better Auth with Next.js, see [Next.js Setup](/docs/nextjs/setup) which uses `convexBetterAuth` from `better-convex/auth-nextjs`.
+For Better Auth with Next.js, see [Next.js Setup](/docs/nextjs) which uses `convexBetterAuth` from `better-convex/auth-nextjs`.
 
 ### Custom Auth
 
@@ -83,10 +83,12 @@ import { createCallerFactory } from 'better-convex/server';
 export const { createContext, createCaller } = createCallerFactory({
   api,
   convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!,
-  getToken: async (siteUrl, headers) => {
-    // Extract token from headers (implement your auth logic)
-    const token = headers.get('authorization')?.replace('Bearer ', '');
-    return { token };
+  auth: {
+    getToken: async (siteUrl, headers) => {
+      // Extract token from headers (implement your auth logic)
+      const token = headers.get('authorization')?.replace('Bearer ', '');
+      return { token };
+    },
   },
   meta,
 });
@@ -95,6 +97,14 @@ export const { createContext, createCaller } = createCallerFactory({
 <Callout icon={<InfoIcon />}>
   **Note:** The `meta` parameter is generated via CLI. See [Metadata](/docs/server/metadata) for setup.
 </Callout>
+
+If you customize `transformer`, use the same transformer in:
+- `initCRPC.create({ transformer })`
+- `createCRPCContext({ transformer })`
+- `createCallerFactory({ transformer })`
+- `getServerQueryClientOptions({ transformer })`
+
+`Date` support stays always on; custom transformer is additive only.
 
 ## Usage
 
@@ -147,25 +157,26 @@ const data = await ctx.caller.user.list({});
 
 ### What's new
 
-**Before (vanilla Convex):**
+<Compare>
+  <CompareItem title="Before (vanilla Convex)">
+    ```ts title="src/app/api/users/route.ts" showLineNumbers
+    import { fetchQuery, fetchMutation } from 'convex/nextjs';
+    import { api } from '@convex/_generated/api';
 
-```ts title="src/app/api/users/route.ts" showLineNumbers
-import { fetchQuery, fetchMutation } from 'convex/nextjs';
-import { api } from '@convex/_generated/api';
+    const users = await fetchQuery(api.user.list, {});
+    const id = await fetchMutation(api.user.create, { name: 'John', email: 'john@example.com' });
+    ```
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```ts title="src/app/api/users/route.ts" showLineNumbers {4-6}
+    import { createContext } from '@/lib/convex/server';
 
-const users = await fetchQuery(api.user.list, {});
-const id = await fetchMutation(api.user.create, { name: 'John', email: 'john@example.com' });
-```
-
-**After (cRPC):**
-
-```ts title="src/app/api/users/route.ts" showLineNumbers {4-6}
-import { createContext } from '@/lib/convex/server';
-
-const ctx = await createContext({ headers });
-const users = await ctx.caller.user.list({});
-const id = await ctx.caller.user.create({ name: 'John', email: 'john@example.com' });
-```
+    const ctx = await createContext({ headers });
+    const users = await ctx.caller.user.list({});
+    const id = await ctx.caller.user.create({ name: 'John', email: 'john@example.com' });
+    ```
+  </CompareItem>
+</Compare>
 
 Key differences:
 
@@ -193,6 +204,8 @@ type CreateCallerFactoryOptions<TApi> = {
     isUnauthorized?: (error: unknown) => boolean;
   };
   meta: CallerMeta;
+  // Additive only. Built-in Date transformer remains enabled.
+  transformer?: DataTransformer | { input: DataTransformer; output: DataTransformer };
 };
 ```
 

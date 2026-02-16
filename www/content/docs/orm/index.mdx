@@ -1,0 +1,131 @@
+---
+title: Overview
+description: Drizzle-style relational queries for Convex with full type safety
+---
+
+import { CheckCircle } from "lucide-react"
+
+The ORM mirrors Drizzle's relational query builder while adapting to Convex's document model.
+
+## What You Get
+
+- Drizzle-style schema and relations (`convexTable`, `defineRelations`, `one`, `many`)
+- Type-safe queries (`findMany`, `findFirst`, cursor pagination, `where`, `orderBy`, `with`)
+- Mutations (`insert`, `update`, `delete`, `returning`, `onConflictDoUpdate`)
+- Runtime RLS policies (`rlsPolicy`, `convexTable.withRLS`)
+- End-to-end TypeScript inference (`InferSelectModel`, `$inferSelect`)
+
+`ctx.orm` is attached once during setup (see [Quickstart](/docs/quickstart#orm-setup)). All examples below assume `ctx.orm` is available.
+
+## Where It Differs From SQL ORMs
+
+Here's a quick summary of the key differences you'll encounter coming from a SQL-based ORM:
+
+- `id` and `createdAt` are auto-created by Convex
+- System `createdAt` is `number`; define `createdAt: timestamp().notNull().defaultNow()` for `Date`
+- `timestamp()` is the recommended point-in-time type for audit fields like `createdAt` / `updatedAt`
+- `date()` is calendar-only (`YYYY-MM-DD`) and should be used for date-without-time fields
+- Fields are nullable by default (`text()` -> `string | null`)
+- `columns` projection and string operators run post-fetch
+- `with` is relation loading (no SQL joins)
+- Cursor pagination needs an index on the primary `orderBy` field
+
+## Timestamps And Dates
+
+The ORM keeps Convex storage constraints and gives you a stronger public type API:
+
+- Public system fields are `id` and `createdAt` in ORM APIs.
+- Internal Convex fields (`_id`, `_creationTime`) stay internal-only in ORM APIs.
+- `timestamp()` gives point-in-time semantics and returns `Date` by default.
+- `date()` gives calendar-date semantics and can return `string` or `Date` depending on mode.
+
+For most tables, define an explicit timestamp column:
+
+```ts title="convex/schema.ts" showLineNumbers
+import { convexTable, text, timestamp } from 'better-convex/orm';
+
+export const posts = convexTable('posts', {
+  title: text().notNull(),
+  createdAt: timestamp().notNull().defaultNow(), // Date in ORM API
+});
+```
+
+With cRPC, Date wire serialization is built in, so `Date` values round-trip without manual `getTime()` calls.
+
+## Quick Example
+
+Let's define a simple schema with `users` and `posts` tables, then wire up relations between them:
+
+```ts title="convex/schema.ts" showLineNumbers {3-7,10-14}
+import { convexTable, defineRelations, text, boolean, integer, id, index } from 'better-convex/orm';
+
+export const users = convexTable('users', {
+  name: text().notNull(),
+  email: text().notNull(),
+  role: text(),
+  age: integer(),
+});
+
+export const posts = convexTable('posts', {
+  title: text().notNull(),
+  content: text().notNull(),
+  published: boolean(),
+  userId: id('users'),
+}, (t) => [index('by_published').on(t.published)]);
+
+export const relations = defineRelations({ users, posts }, (r) => ({
+  users: { posts: r.many.posts() },
+  posts: {
+    author: r.one.users({ from: r.posts.userId, to: r.users.id }),
+  },
+}));
+```
+
+Here's how to query published posts with their authors using `ctx.orm` in cRPC:
+
+```ts title="convex/functions/posts.ts" showLineNumbers {3-7}
+import { publicQuery } from '../lib/crpc';
+
+export const getRecentPosts = publicQuery.query(async ({ ctx }) => {
+  return ctx.orm.query.posts.findMany({
+    where: { published: true },
+    orderBy: { createdAt: 'desc' },
+    limit: 10,
+    with: { author: true },
+  });
+});
+```
+
+You now have a fully typed query with relation loading in just a few lines.
+
+## Next Steps
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart#orm-setup">
+    Get running in 5 minutes
+  </Card>
+  <Card title="Migrate from native Convex" href="/docs/migrations/db">
+    ctx.db to ORM mapping guide
+  </Card>
+  <Card title="Migrate from Convex Ents" href="/docs/migrations/ents">
+    Ents to ORM mapping guide
+  </Card>
+  <Card title="Schema Definition" href="/docs/orm/schema">
+    Tables, relations, and indexes
+  </Card>
+  <Card title="Querying Data" href="/docs/orm/queries">
+    Filters, ordering, and pagination
+  </Card>
+  <Card title="Pagination" href="/docs/orm/queries/pagination">
+    Offset vs cursor pagination reference
+  </Card>
+  <Card title="Row-Level Security" href="/docs/orm/rls">
+    rlsPolicy rules and enforcement
+  </Card>
+  <Card title="Triggers" href="/docs/orm/triggers">
+    Automatic side effects in schema
+  </Card>
+  <Card title="Drizzle Comparison" href="/docs/comparison/drizzle">
+    Side-by-side API mapping
+  </Card>
+</Cards>

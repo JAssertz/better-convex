@@ -1,0 +1,152 @@
+---
+title: Operators
+description: Query `where` operators and mutation filter helpers (Drizzle-style)
+---
+
+import { InfoIcon } from "lucide-react"
+
+In this guide, we'll learn how to filter data using ORM operators. You'll master two filter contexts: **object filters** for relational queries (`where: { ... }`) and **operator helpers** for mutations and RLS (`eq(...)`, `and(...)`, etc.).
+
+## Query `where` (Object Filters)
+
+Object filters are the primary query mechanism for ORM relational queries. You can combine equality checks, comparison operators, and logical combinators in a single `where` object.
+
+Here's a query that finds admin or member users over 18:
+
+```ts showLineNumbers {2-4}
+await db.query.users.findMany({
+  where: {
+    OR: [{ role: 'admin' }, { role: 'member' }],
+    age: { gt: 18 },
+  },
+});
+```
+
+### Supported Operators
+
+Here's the full list of operators you can use inside a `where` object:
+
+```ts showLineNumbers
+where: {
+  OR: [],
+  AND: [],
+  NOT: {},
+
+  // relations (filter by existence or nested filters)
+  posts: true,
+
+  // columns
+  age: 15,
+  age: { eq: 15 },
+  age: { ne: 15 },
+  age: { gt: 15 },
+  age: { gte: 15 },
+  age: { lt: 15 },
+  age: { lte: 15 },
+  age: { between: [18, 65] },
+  age: { notBetween: [18, 65] },
+  role: { in: ['admin', 'member'] },
+  role: { notIn: ['banned'] },
+  email: { isNull: true },
+  email: { isNotNull: true },
+}
+```
+
+<Callout icon={<InfoIcon />}>
+**Note:** `between` is inclusive (`>= min` and `<= max`). `notBetween` is strict outside-range (`< min` or `> max`).
+</Callout>
+
+### String Operators (post-fetch)
+
+The ORM supports Drizzle-style `like`/`ilike` operators and evaluates them **post-fetch**.
+
+Here's how to search for posts containing "javascript" (case-insensitive):
+
+```ts showLineNumbers {2}
+await db.query.posts.withIndex('by_title').findMany({
+  where: { title: { ilike: '%javascript%' } },
+});
+```
+
+You can also use convenience operators for common patterns:
+
+```ts showLineNumbers {2}
+await db.query.users.withIndex('by_email').findMany({
+  where: { email: { endsWith: '@example.com' } },
+});
+```
+
+The supported string operators are:
+
+- `like`, `ilike`, `notLike`, `notIlike`
+- `startsWith`, `endsWith`, `contains`
+
+### Array Operators (post-fetch)
+
+If a field is an array (for example, embeddings or other array-like values), you can use:
+
+- `arrayContains`
+- `arrayContained`
+- `arrayOverlaps`
+
+## Mutation `where` (Filter Expressions)
+
+Mutation builders (`insert`, `update`, `delete`) use operator helpers that return a `FilterExpression`. These helpers accept **column builders** (like `users.role`) and use builder typing to infer the right value type.
+
+Here's how to update all users with a specific role who are over 18:
+
+```ts showLineNumbers {3-6}
+import { and, eq, gt } from 'better-convex/orm';
+
+// Schema: index('by_role').on(t.role) on users table
+await ctx.orm.update(users).set({ role: 'admin' }).where(
+  and(
+    eq(users.role, 'member'),
+    gt(users.age, 18),
+  )
+);
+```
+
+### Common Helpers
+
+Here's a reference of all available mutation/RLS operator helpers:
+
+| Category | Helpers |
+|----------|---------|
+| Comparison | `eq`, `ne`, `gt`, `gte`, `lt`, `lte` |
+| Range | `between`, `notBetween` |
+| Set | `inArray`, `notInArray` |
+| Logical | `and`, `or`, `not` |
+| Null | `isNull`, `isNotNull` |
+
+## Unsupported SQL-only Features
+
+These SQL-specific features are not available in the ORM:
+
+- `RAW` filters and SQL placeholders (`sql.placeholder(...)`)
+- Prepared statements
+- SQL subquery operators `exists` / `notExists` (Convex has no SQL subquery runtime)
+
+For existence checks, use relation filters instead. Here's how to find users who have posts, and users who don't:
+
+```ts showLineNumbers
+// Users with posts
+await db.query.users.findMany({
+  where: { posts: true },
+});
+
+// Users without posts
+await db.query.users.findMany({
+  where: { NOT: { posts: true } },
+});
+```
+
+You now know how to filter data in both query and mutation contexts. Object filters give you a declarative syntax for relational queries, while operator helpers provide composable expressions for mutations and RLS rules.
+
+## Next Steps
+
+<Cards>
+  <Card title="Queries" href="/docs/orm/queries" />
+  <Card title="Mutations" href="/docs/orm/mutations" />
+  <Card title="RLS (Row-Level Security)" href="/docs/orm/rls" />
+</Cards>

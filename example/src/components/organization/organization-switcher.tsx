@@ -99,7 +99,7 @@ export function OrganizationSwitcher() {
         // Find the invitation to get the org slug
         const inv = invitations?.find((i) => i.id === variables.invitationId);
         if (inv) {
-          router.push(`/org/${inv.organizationSlug}`);
+          router.push(`/org/${encodeURIComponent(inv.organizationSlug)}`);
         }
         setOpen(false);
       },
@@ -123,11 +123,14 @@ export function OrganizationSwitcher() {
         setOpen(false);
         // Navigate to the organization page after switching
         if (selectedOrgSlug) {
-          router.push(`/org/${selectedOrgSlug}`);
+          router.push(`/org/${encodeURIComponent(selectedOrgSlug)}`);
           setSelectedOrgSlug(null);
         } else {
           router.refresh();
         }
+      },
+      onError: () => {
+        setSelectedOrgSlug(null);
       },
     })
   );
@@ -140,7 +143,7 @@ export function OrganizationSwitcher() {
         setShowCreateDialog(false);
         setOrgName('');
         // Navigate to the new organization
-        router.push(`/org/${result.slug}`);
+        router.push(`/org/${encodeURIComponent(result.slug)}`);
       },
     })
   );
@@ -158,13 +161,13 @@ export function OrganizationSwitcher() {
 
   const handleSelectOrganization = (
     organizationId: Id<'organization'>,
-    slug: string
+    organizationSlug: string
   ) => {
     if (organizationId === currentOrg.id) {
       setOpen(false);
       return;
     }
-    setSelectedOrgSlug(slug);
+    setSelectedOrgSlug(organizationSlug);
     setActiveOrganization.mutate({ organizationId });
   };
 

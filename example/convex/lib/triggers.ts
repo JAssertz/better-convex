@@ -4,6 +4,7 @@ import type { DataModel } from '../functions/_generated/dataModel';
 import {
   aggregateCommentsByTodo,
   aggregateProjectMembers,
+  aggregateRepliesByParent,
   aggregateTagUsage,
   aggregateTodosByProject,
   aggregateTodosByStatus,
@@ -34,6 +35,7 @@ export const registerTriggers = () => {
 
   // Comment count aggregate
   triggers.register('todoComments', aggregateCommentsByTodo.trigger());
+  triggers.register('todoComments', aggregateRepliesByParent.trigger());
 
   return triggers;
 };

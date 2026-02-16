@@ -16,6 +16,8 @@ export default defineConfig([
       '**/out/**',
       '**/build/**',
       '**/tmp/**',
+      '**/coverage/**',
+      '**/coverage-*/**',
       '**/convex',
     ],
   },

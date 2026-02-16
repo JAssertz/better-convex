@@ -1,0 +1,182 @@
+---
+title: RLS
+description: Drizzle-style rlsPolicy rules enforced at runtime for the ORM
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+In this guide, we'll learn how to add row-level security (RLS) to your ORM tables. You'll define per-table policies that control which rows each user can read, insert, update, and delete -- all enforced automatically at runtime.
+
+## Define Policies
+
+Policies live alongside your table definition. Use `convexTable.withRLS` and pass an array of `rlsPolicy` rules that reference table columns and the request context.
+
+Here's a `secrets` table where each user can only access their own rows:
+
+```ts title="convex/schema.ts" showLineNumbers {3-4,6-24}
+import { convexTable, rlsPolicy, text, id, eq } from 'better-convex/orm';
+
+export const secrets = convexTable.withRLS(
+  'secrets',
+  {
+    value: text().notNull(),
+    ownerId: id('users').notNull(),
+  },
+  (t) => [
+    rlsPolicy('read_own', {
+      for: 'select',
+      using: (ctx) => eq(t.ownerId, ctx.viewerId),
+    }),
+    rlsPolicy('insert_own', {
+      for: 'insert',
+      withCheck: (ctx) => eq(t.ownerId, ctx.viewerId),
+    }),
+    rlsPolicy('update_own', {
+      for: 'update',
+      using: (ctx) => eq(t.ownerId, ctx.viewerId),
+      withCheck: (ctx) => eq(t.ownerId, ctx.viewerId),
+    }),
+    rlsPolicy('delete_own', {
+      for: 'delete',
+      using: (ctx) => eq(t.ownerId, ctx.viewerId),
+    }),
+  ]
+);
+```
+
+<Callout icon={<InfoIcon />}>
+**Note:** If you add at least one `rlsPolicy(...)` to a table, RLS is enabled automatically. You don't need to call `withRLS(...)` explicitly.
+</Callout>
+
+### Policy operations
+
+Each policy targets a specific operation via the `for` field:
+
+| Operation | Clause | When it runs |
+|-----------|--------|--------------|
+| `select` | `using` | Filters rows after fetch |
+| `insert` | `withCheck` | Validates new rows before write |
+| `update` | `using` + `withCheck` | Filters existing rows, then validates the new values |
+| `delete` | `using` | Filters rows before delete |
+
+### Enable RLS without policies
+
+You can also enable RLS on a table without adding any policies. This effectively locks the table -- no rows are accessible through `ctx.orm` until you add permissive policies.
+
+```ts showLineNumbers
+const secrets = convexTable('secrets', {
+  value: text().notNull(),
+}).enableRLS();
+```
+
+<Callout icon={<AlertTriangle />}>
+**Important:** `enableRLS()` is deprecated (Drizzle parity). Prefer `convexTable.withRLS(...)` for new code.
+</Callout>
+
+## Context Setup
+
+Before policies can run, you need to wire up the ORM with RLS enabled. Do this once in your context layer so every handler gets a policy-aware `ctx.orm`.
+
+```ts title="convex/lib/orm.ts" showLineNumbers {5}
+import type { GenericDatabaseWriter } from 'convex/server';
+import { createOrm } from 'better-convex/orm';
+import { relations } from '../schema';
+
+const orm = createOrm({ schema: relations });
+
+export const withOrm = <Ctx extends { db: GenericDatabaseWriter<any> }>(ctx: Ctx) => {
+  const ormDb = orm.db(ctx, { rls: { ctx } });
+  return { ...ctx, orm: ormDb };
+};
+```
+
+The `rls: { ctx }` option tells the ORM to evaluate policies using the current request context (which includes `ctx.viewerId`, auth info, etc.).
+
+## Use in Handlers
+
+With the context wired up, all ORM reads and writes through `ctx.orm` automatically enforce your policies. No extra code needed in each handler.
+
+```ts title="convex/functions/secrets.ts" showLineNumbers
+import { publicQuery } from '../lib/crpc';
+
+export const listSecrets = publicQuery.query(async ({ ctx }) => {
+  return ctx.orm.query.secrets.findMany();
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Note:** RLS policies are evaluated post-fetch -- after query filters run. They also apply to nested relation loading, so related rows are filtered too.
+</Callout>
+
+## Bypass Rules
+
+Sometimes trusted server-side code needs unrestricted access -- migrations, admin dashboards, or background jobs. Use `ctx.orm.skipRules` to bypass all RLS policies:
+
+```ts showLineNumbers
+await ctx.orm.skipRules.query.secrets.findMany();
+```
+
+<Callout icon={<AlertTriangle />}>
+**Important:** `ctx.db` also bypasses RLS entirely. Only ORM access through `ctx.orm` enforces policies. Keep this in mind if you mix raw Convex calls with ORM calls.
+</Callout>
+
+## Roles
+
+For more granular control, you can scope policies to specific roles using `to` clauses. Roles are optional -- if you don't use `to`, the policy applies to all users.
+
+First, define a role and reference it in your policy:
+
+```ts showLineNumbers {3,7}
+import { rlsRole, rlsPolicy } from 'better-convex/orm';
+
+const admin = rlsRole('admin');
+
+rlsPolicy('admin_only', {
+  for: 'select',
+  to: admin,
+  using: (ctx, t) => eq(t.ownerId, ctx.viewerId),
+});
+```
+
+Then provide a `roleResolver` when building `ctx.orm` so it knows how to determine the current user's roles:
+
+```ts showLineNumbers {3-4}
+const ormDb = orm.db(ctx, {
+  rls: {
+    ctx,
+    roleResolver: (ctx) => ctx.roles ?? [],
+  },
+});
+```
+
+<Callout icon={<InfoIcon />}>
+**Note:** `to` clauses are only enforced when you provide a `roleResolver`. Without one, role-scoped policies are silently skipped.
+</Callout>
+
+## Drizzle Differences
+
+ORM RLS is inspired by Drizzle but runs differently since Convex is not a SQL database. Here are the key distinctions to keep in mind.
+
+Policies are enforced at runtime in your application layer, not inside a database engine. This means `ctx.db` (raw Convex access) always bypasses RLS -- only `ctx.orm` enforces your rules.
+
+<Callout icon={<AlertTriangle />}>
+**Important:** If RLS is enabled on a table but no permissive policies exist, all access through `ctx.orm` is denied by default. You must add at least one permissive policy to grant access.
+</Callout>
+
+Foreign-key cascade fan-out (`cascade`, `set null`, `set default`) runs after the root mutation row passes RLS. Fan-out writes are executed as system actions and do not re-check child-table RLS policies.
+
+<Callout icon={<AlertTriangle />}>
+**Important:** Be cautious with cascades on RLS-protected tables. The root write is checked, but cascaded child writes bypass RLS entirely.
+</Callout>
+
+## Summary
+
+Row-level security lets you co-locate access rules with your schema, keeping authorization logic out of individual handlers. Policies are enforced automatically on all `ctx.orm` reads and writes, with `skipRules` available for trusted server code.
+
+## Next Steps
+
+<Cards>
+  <Card title="Queries" href="/docs/orm/queries" />
+  <Card title="Mutations" href="/docs/orm/mutations" />
+  <Card title="Relations" href="/docs/orm/schema/relations" />
+</Cards>

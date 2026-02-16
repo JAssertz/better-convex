@@ -28,7 +28,7 @@ Let's set it up step by step.
 We'll start by installing the required packages:
 
 ```bash
-bun add better-auth@1.4.9 @convex-dev/better-auth better-convex hono
+bun add better-auth@1.4.9 better-convex hono
 ```
 
 <Callout icon={<InfoIcon />}>
@@ -40,7 +40,7 @@ Pin `better-auth` to avoid breaking changes. Check [Better Auth releases](https:
 Next, we'll create the auth configuration file. This tells Convex how to validate JWTs using Static JWKS:
 
 ```ts title="convex/functions/auth.config.ts" showLineNumbers {4-6}
-import { getAuthConfigProvider } from '@convex-dev/better-auth/auth-config';
+import { getAuthConfigProvider } from 'better-convex/auth-config';
 import type { AuthConfig } from 'convex/server';
 
 export default {
@@ -52,41 +52,40 @@ export default {
 
 Now we'll create the auth client. This connects Better Auth to your Convex database and lets you add triggers for user lifecycle events:
 
-```ts title="convex/functions/auth.ts" showLineNumbers {8,11,14-15,23-27,43-47,52-55,60-67,70-82}
+```ts title="convex/functions/auth.ts" showLineNumbers {7,10-15,22-27,41-45,50-53,58-65,68-80}
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
-import { convex } from '@convex-dev/better-auth/plugins';
 import { admin } from 'better-auth/plugins';
-import { createClient, createApi, type AuthFunctions } from 'better-convex/auth';
+import { convex, createClient, createApi, type AuthFunctions } from 'better-convex/auth';
 import { internal } from './_generated/api';
-import type { MutationCtx, QueryCtx } from './_generated/server';
+import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
 import type { DataModel } from './_generated/dataModel';
 import schema from './schema';
 import authConfig from './auth.config';
+import { withOrm } from '../lib/orm';
 
 type GenericCtx = QueryCtx | MutationCtx | ActionCtx;
 const authFunctions: AuthFunctions = internal.auth;
 
-// Create client with Convex adapter and triggers
+// Create client with Convex adapter and auth triggers
 export const authClient = createClient<DataModel, typeof schema>({
   authFunctions,
   schema,
-  internalMutation, // Optional: custom mutation wrapper (see below)
+  context: withOrm, // Optional: enrich auth mutation + trigger ctx once
   triggers: {
     user: {
       beforeCreate: async (_ctx, data) => {
-        // Ensure every user has a username
-        const username =
-          data.username?.trim() ||
-          data.email?.split('@')[0] ||
-          `user-${Date.now()}`;
+      // Ensure every user has a username
+      const username =
+        data.username?.trim() ||
+        data.email?.split('@')[0] ||
+        `user-${Date.now()}`;
 
-        return { ...data, username };
-      },
-      // ctx.db version - for ctx.table, see Triggers documentation
+      return { ...data, username };
+    },
       onCreate: async (ctx, user) => {
         // Create related records after signup
-        await ctx.db.insert('profiles', {
-          userId: user._id,
+        await ctx.orm.insert(profiles).values({
+          userId: user.id,
           bio: '',
         });
       },
@@ -95,10 +94,10 @@ export const authClient = createClient<DataModel, typeof schema>({
 });
 
 // Auth options factory
-export const createAuthOptions = (ctx: GenericCtx) =>
+export const getAuthOptions = (ctx: GenericCtx) =>
   ({
     baseURL: process.env.SITE_URL!,
-    database: authClient.httpAdapter(ctx),
+    database: authClient.adapter(ctx, getAuthOptions),
     plugins: [
       convex({
         authConfig,
@@ -120,16 +119,8 @@ export const createAuthOptions = (ctx: GenericCtx) =>
     trustedOrigins: [process.env.SITE_URL ?? 'http://localhost:3000'],
   }) satisfies BetterAuthOptions;
 
-// Create auth instance for HTTP routes
-export const createAuth = (ctx: GenericCtx) => betterAuth(createAuthOptions(ctx));
-
-// IMPORTANT: Use getAuth for queries/mutations (direct DB access)
-export const getAuth = <Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) => {
-  return betterAuth({
-    ...createAuthOptions(ctx),
-    database: authClient.adapter(ctx, createAuthOptions),
-  });
-};
+// Create auth instance for all Convex contexts
+export const getAuth = (ctx: GenericCtx) => betterAuth(getAuthOptions(ctx));
 
 // Export trigger handlers for Convex
 export const {
@@ -152,14 +143,14 @@ export const {
   updateOne,
   getLatestJwks,
   rotateKeys,
-} = createApi(schema, createAuth, {
-  internalMutation, // Optional: same wrapper as createClient
+} = createApi(schema, getAuth, {
+  context: withOrm, // Optional: same context enrichment
   skipValidation: true, // Smaller generated types
 });
 
 // Export auth instance for Better Auth CLI
 // biome-ignore lint/suspicious/noExplicitAny: Required for CLI
-export const auth = betterAuth(createAuthOptions({} as any));
+export const auth = betterAuth(getAuthOptions({} as any));
 ```
 
 <Callout icon={<InfoIcon />}>
@@ -193,153 +184,94 @@ Your database needs tables for users, sessions, accounts, and more. You have two
   <Tab value="Manual">
     If you prefer full control, define the auth tables directly in your schema:
 
-    <Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-      <Tab value="ctx.db">
-        ```ts title="convex/schema.ts" showLineNumbers {6-20,22-33,35-47,49-55,57-61}
-        import { defineSchema, defineTable } from 'convex/server';
-        import { v } from 'convex/values';
+    ```ts title="convex/functions/schema.ts" showLineNumbers {1-2,4-72}
+    import {
+      boolean,
+      convexTable,
+      defineSchema,
+      id,
+      index,
+      integer,
+      text,
+      timestamp,
+    } from 'better-convex/orm';
 
-        export default defineSchema({
-          user: defineTable({
-            name: v.string(),
-            email: v.string(),
-            emailVerified: v.boolean(),
-            image: v.optional(v.string()),
-            createdAt: v.number(),
-            updatedAt: v.number(),
-            // Admin plugin
-            role: v.optional(v.string()),
-            banned: v.optional(v.boolean()),
-            banReason: v.optional(v.string()),
-            banExpires: v.optional(v.number()),
-          })
-            .index('email', ['email']),
+    export const user = convexTable(
+      'user',
+      {
+        name: text().notNull(),
+        email: text().notNull(),
+        emailVerified: boolean().notNull(),
+        image: text(),
+        createdAt: timestamp().notNull().defaultNow(),
+        updatedAt: integer().notNull(),
 
-          session: defineTable({
-            token: v.string(),
-            expiresAt: v.number(),
-            createdAt: v.number(),
-            updatedAt: v.number(),
-            ipAddress: v.optional(v.string()),
-            userAgent: v.optional(v.string()),
-            userId: v.string(),
-            // Admin plugin
-            impersonatedBy: v.optional(v.string()),
-          })
-            .index('token', ['token'])
-            .index('userId', ['userId']),
+        // Admin plugin
+        role: text(),
+        banned: boolean(),
+        banReason: text(),
+        banExpires: integer(),
+      },
+      (t) => [index('email').on(t.email)]
+    );
 
-          account: defineTable({
-            accountId: v.string(),
-            providerId: v.string(),
-            userId: v.string(),
-            accessToken: v.optional(v.string()),
-            refreshToken: v.optional(v.string()),
-            idToken: v.optional(v.string()),
-            accessTokenExpiresAt: v.optional(v.number()),
-            refreshTokenExpiresAt: v.optional(v.number()),
-            scope: v.optional(v.string()),
-            password: v.optional(v.string()),
-            createdAt: v.number(),
-            updatedAt: v.number(),
-          })
-            .index('accountId', ['accountId'])
-            .index('userId', ['userId']),
+    export const session = convexTable(
+      'session',
+      {
+        token: text().notNull(),
+        expiresAt: integer().notNull(),
+        createdAt: timestamp().notNull().defaultNow(),
+        updatedAt: integer().notNull(),
+        ipAddress: text(),
+        userAgent: text(),
+        userId: id('user').notNull(),
 
-          verification: defineTable({
-            identifier: v.string(),
-            value: v.string(),
-            expiresAt: v.number(),
-            createdAt: v.optional(v.number()),
-            updatedAt: v.optional(v.number()),
-          })
-            .index('identifier', ['identifier']),
+        // Admin plugin
+        impersonatedBy: text(),
+      },
+      (t) => [index('token').on(t.token), index('userId').on(t.userId)]
+    );
 
-          jwks: defineTable({
-            publicKey: v.string(),
-            privateKey: v.string(),
-            createdAt: v.number(),
-          }),
+    export const account = convexTable(
+      'account',
+      {
+        accountId: text().notNull(),
+        providerId: text().notNull(),
+        userId: id('user').notNull(),
+        accessToken: text(),
+        refreshToken: text(),
+        idToken: text(),
+        accessTokenExpiresAt: integer(),
+        refreshTokenExpiresAt: integer(),
+        scope: text(),
+        password: text(),
+        createdAt: timestamp().notNull().defaultNow(),
+        updatedAt: integer().notNull(),
+      },
+      (t) => [index('accountId').on(t.accountId), index('userId').on(t.userId)]
+    );
 
-          // Your other tables
-        });
-        ```
-      </Tab>
-      <Tab value="ctx.table">
-        ```ts title="convex/schema.ts" showLineNumbers {5-18,20-28,30-42,44-50,52-56}
-        import { v } from 'convex/values';
-        import { defineEnt, defineEntSchema, getEntDefinitions } from 'convex-ents';
+    export const verification = convexTable(
+      'verification',
+      {
+        identifier: text().notNull(),
+        value: text().notNull(),
+        expiresAt: integer().notNull(),
+        createdAt: timestamp(),
+        updatedAt: integer(),
+      },
+      (t) => [index('identifier').on(t.identifier)]
+    );
 
-        const schema = defineEntSchema({
-          user: defineEnt({
-            name: v.string(),
-            email: v.string(),
-            emailVerified: v.boolean(),
-            image: v.optional(v.string()),
-            createdAt: v.number(),
-            updatedAt: v.number(),
-            // Admin plugin
-            role: v.optional(v.string()),
-            banned: v.optional(v.boolean()),
-            banReason: v.optional(v.string()),
-            banExpires: v.optional(v.number()),
-          })
-            .index('email', ['email'])
-            .edges('sessions', { to: 'session', ref: 'userId' })
-            .edges('accounts', { to: 'account', ref: 'userId' }),
+    export const jwks = convexTable('jwks', {
+      publicKey: text().notNull(),
+      privateKey: text().notNull(),
+      createdAt: timestamp().notNull().defaultNow(),
+    });
 
-          session: defineEnt({
-            token: v.string(),
-            expiresAt: v.number(),
-            createdAt: v.number(),
-            updatedAt: v.number(),
-            ipAddress: v.optional(v.string()),
-            userAgent: v.optional(v.string()),
-            // Admin plugin
-            impersonatedBy: v.optional(v.string()),
-          })
-            .index('token', ['token'])
-            .edge('user', { to: 'user', field: 'userId' }),
-
-          account: defineEnt({
-            accountId: v.string(),
-            providerId: v.string(),
-            accessToken: v.optional(v.string()),
-            refreshToken: v.optional(v.string()),
-            idToken: v.optional(v.string()),
-            accessTokenExpiresAt: v.optional(v.number()),
-            refreshTokenExpiresAt: v.optional(v.number()),
-            scope: v.optional(v.string()),
-            password: v.optional(v.string()),
-            createdAt: v.number(),
-            updatedAt: v.number(),
-          })
-            .index('accountId', ['accountId'])
-            .edge('user', { to: 'user', field: 'userId' }),
-
-          verification: defineEnt({
-            identifier: v.string(),
-            value: v.string(),
-            expiresAt: v.number(),
-            createdAt: v.optional(v.number()),
-            updatedAt: v.optional(v.number()),
-          })
-            .index('identifier', ['identifier']),
-
-          jwks: defineEnt({
-            publicKey: v.string(),
-            privateKey: v.string(),
-            createdAt: v.number(),
-          }),
-
-          // Your other tables
-        });
-
-        export default schema;
-        export const entDefinitions = getEntDefinitions(schema);
-        ```
-      </Tab>
-    </Tabs>
+    export const tables = { user, session, account, verification, jwks };
+    export default defineSchema(tables, { strict: false });
+    ```
   </Tab>
 </Tabs>
 
@@ -392,10 +324,13 @@ Import this at the top of your HTTP file (before other imports).
 
 ## 5. HTTP Routes
 
-Now we'll expose Better Auth's endpoints via HTTP. We use Hono as the router:
+Now we'll expose Better Auth's endpoints via HTTP.
 
-<Tabs groupId="router" items={["With cRPC", "Without cRPC"]} persist>
-  <Tab value="With cRPC">
+- Without Hono: use Convex `httpRouter` + `registerRoutes` (no Hono required).
+- With Hono or custom middleware chains: use Hono + `authMiddleware`.
+
+<Tabs groupId="router" items={["cRPC", "Convex", "Hono", ]} persist>
+<Tab value="cRPC">
     ```ts title="convex/functions/http.ts" showLineNumbers {1-5,9-18,21}
     import '../lib/http-polyfills';
     import { authMiddleware } from 'better-convex/auth';
@@ -403,7 +338,7 @@ Now we'll expose Better Auth's endpoints via HTTP. We use Hono as the router:
     import { Hono } from 'hono';
     import { cors } from 'hono/cors';
     import { router } from '../lib/crpc';
-    import { createAuth } from './auth';
+    import { getAuth } from './auth';
 
     const app = new Hono();
 
@@ -419,7 +354,7 @@ Now we'll expose Better Auth's endpoints via HTTP. We use Hono as the router:
     );
 
     // Better Auth middleware
-    app.use(authMiddleware(createAuth));
+    app.use(authMiddleware(getAuth));
 
     export const appRouter = router({
       // Add your routers here
@@ -427,16 +362,33 @@ Now we'll expose Better Auth's endpoints via HTTP. We use Hono as the router:
 
     export default createHttpRouter(app, appRouter);
     ```
-
   </Tab>
-  <Tab value="Without cRPC">
+  <Tab value="Convex">
+    ```ts title="convex/functions/http.ts" showLineNumbers {1-4,6-13}
+    import '../lib/http-polyfills';
+    import { registerRoutes } from 'better-convex/auth';
+    import { httpRouter } from 'convex/server';
+    import { getAuth } from './auth';
+
+    const http = httpRouter();
+
+    registerRoutes(http, getAuth, {
+      cors: {
+        allowedOrigins: [process.env.SITE_URL!],
+      },
+    });
+
+    export default http;
+    ```
+  </Tab>
+  <Tab value="Hono">
     ```ts title="convex/functions/http.ts" showLineNumbers {1-4,8-17,20}
     import '../lib/http-polyfills';
     import { authMiddleware } from 'better-convex/auth';
     import { HttpRouterWithHono } from 'better-convex/server';
     import { Hono } from 'hono';
     import { cors } from 'hono/cors';
-    import { createAuth } from './auth';
+    import { getAuth } from './auth';
 
     const app = new Hono();
 
@@ -452,11 +404,12 @@ Now we'll expose Better Auth's endpoints via HTTP. We use Hono as the router:
     );
 
     // Better Auth middleware
-    app.use(authMiddleware(createAuth));
+    app.use(authMiddleware(getAuth));
 
     export default new HttpRouterWithHono(app);
     ```
   </Tab>
+  
 </Tabs>
 <Callout icon={<InfoIcon />}>
 See [HTTP Router](/docs/server/http) for route examples, webhooks, and streaming.
@@ -491,130 +444,58 @@ npx convex run auth:rotateKeys | npx convex env set JWKS
 You've set up the Convex backend. Now let's connect your frontend:
 
 <Cards>
-  <Card title="React Setup" href="/docs/react/setup#with-auth" description="ConvexAuthProvider setup" />
-  <Card title="Next.js Setup" href="/docs/nextjs/setup" description="Server-side rendering + RSC" />
+  <Card title="React Setup" href="/docs/react#with-auth" description="ConvexAuthProvider setup" />
+  <Card title="Next.js Setup" href="/docs/nextjs" description="Server-side rendering + RSC" />
 </Cards>
 
 ## Key Concepts
 
 Now that you have auth working, let's understand a few important concepts.
 
-### Direct DB Access vs HTTP Adapter
+### Context-Aware Adapter Selection
 
-The auth client provides two adapters depending on where you're calling from:
+Use `getAuth(ctx)` in every context:
 
-```ts showLineNumbers {2-4,8-10}
-// ✅ In queries/mutations: Use getAuth (direct DB access)
-export const someQuery = publicQuery
-  .query(async ({ ctx }) => {
-    const auth = getAuth(ctx);
-    const session = await auth.api.getSession({ headers: await getHeaders(ctx) });
-  });
+```ts showLineNumbers {2,8}
+export const someQuery = publicQuery.query(async ({ ctx }) => {
+  const auth = getAuth(ctx);
+  const session = await auth.api.getSession({ headers: await getHeaders(ctx) });
+});
 
-// ✅ In HTTP routes/actions: Use createAuth (HTTP adapter)
-export const someAction = publicAction
-  .action(async ({ ctx }) => {
-    const auth = createAuth(ctx);
-    // Use for webhooks, external API calls
-  });
+export const someAction = publicAction.action(async ({ ctx }) => {
+  const auth = getAuth(ctx);
+});
 ```
 
-**Why two adapters?**
+`authClient.adapter(ctx, getAuthOptions)` auto-selects:
 
-| Adapter | Used by | Context | Performance |
-|---------|---------|---------|-------------|
-| `adapter` | `getAuth` | Queries/mutations | Direct DB access, no overhead |
-| `httpAdapter` | `createAuth` | HTTP routes/actions | Uses `ctx.run*` internally |
+| Adapter | Context | Behavior |
+|---------|---------|----------|
+| `adapter` | Queries/mutations (`ctx.db`) | Direct DB access, no `runQuery`/`runMutation` wrapper |
+| `httpAdapter` | Actions/HTTP contexts | Uses `ctx.run*` APIs |
 
 <Callout icon={<InfoIcon />}>
-**Performance:** The `httpAdapter` uses `ctx.runQuery`/`ctx.runMutation` internally, which adds **>50ms latency** per call (increasing with app size). Always use `getAuth` with direct DB access in queries and mutations.
+**Performance:** In queries/mutations, the direct DB adapter is selected automatically, avoiding the extra `ctx.runQuery`/`ctx.runMutation` hop.
 </Callout>
 
-### Custom Mutation Wrapper
+### Database Triggers
 
-Want to run custom logic when users are created or deleted? The `internalMutation` option lets you wrap auth mutations:
+Auth triggers (`triggers: { user, session }`) are independent from database triggers.
+If you also need DB-level side effects (aggregates, cascades, denormalized counters), define them in schema table configs:
 
-| Use Case | Description |
-|----------|-------------|
-| User aggregation | Maintain counts when users are created/deleted |
-| Custom trigger systems | Projects using convex-helpers triggers |
-| Middleware | Add logging, validation, or other cross-cutting concerns |
+```ts title="convex/functions/schema.ts" showLineNumbers {1-2,6-11}
+import { convexTable, onChange } from 'better-convex/orm';
+import { aggregateUsers } from './aggregates';
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts title="convex/lib/triggers.ts" showLineNumbers {6-17,19-22}
-    import { Triggers } from 'convex-helpers/server/triggers';
-    import { DataModel } from '../functions/_generated/dataModel';
-
-    const triggers = new Triggers<DataModel>();
-
-    // Maintain user count aggregate
-    triggers.register('user', {
-      async afterCreate(ctx, user) {
-        const stats = await ctx.db.query('stats').first();
-        if (stats) {
-          await ctx.db.patch(stats._id, { totalUsers: stats.totalUsers + 1 });
-        }
-      },
-      async afterDelete(ctx, user) {
-        const stats = await ctx.db.query('stats').first();
-        if (stats) {
-          await ctx.db.patch(stats._id, { totalUsers: stats.totalUsers - 1 });
-        }
-      },
-    });
-
-    export const internalMutationWithTriggers = customMutation(
-      internalMutation,
-      customCtx(async (ctx) => ({ db: triggers.wrapDB(ctx).db }))
-    );
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts title="convex/lib/triggers.ts" showLineNumbers {6-17,19-22}
-    import { Triggers } from 'convex-helpers/server/triggers';
-    import { DataModel } from '../functions/_generated/dataModel';
-
-    const triggers = new Triggers<DataModel>();
-
-    // Maintain user count aggregate
-    triggers.register('user', {
-      async afterCreate(ctx, user) {
-        const stats = await ctx.table('stats').first();
-        if (stats) {
-          await stats.patch({ totalUsers: stats.totalUsers + 1 });
-        }
-      },
-      async afterDelete(ctx, user) {
-        const stats = await ctx.table('stats').first();
-        if (stats) {
-          await stats.patch({ totalUsers: stats.totalUsers - 1 });
-        }
-      },
-    });
-
-    export const internalMutationWithTriggers = customMutation(
-      internalMutation,
-      customCtx(async (ctx) => ({ db: triggers.wrapDB(ctx).db }))
-    );
-    ```
-  </Tab>
-</Tabs>
-
-```ts title="convex/functions/auth.ts" showLineNumbers {1,4,8}
-import { internalMutationWithTriggers } from './lib/triggers';
-
-export const authClient = createClient({
-  // ...
-  internalMutation: internalMutationWithTriggers,
-});
-
-export const { ... } = createApi(schema, createAuth, {
-  internalMutation: internalMutationWithTriggers,
-});
+export const userTable = convexTable('user', {/* ... */}, () => [
+  aggregateUsers.trigger(),
+  onChange(async (ctx, change) => {
+    // Additional DB side effects
+  }),
+]);
 ```
 
-Without `internalMutation`, auth operations use the default Convex `internalMutation` and won't trigger your custom logic.
+Use `context: withOrm` in auth setup so auth handlers can call `ctx.orm` directly.
 
 ## Environment Variables
 
@@ -717,7 +598,7 @@ definePayload: ({ user, session }) => ({
 });
 ```
 
-Here's how to customize the expiration and payload—for example, extending to 4 hours and including only specific fields:
+Here's how to customize the expiration and payload - for example, extending to 4 hours and including only specific fields:
 
 ```ts showLineNumbers {3-11}
 convex({
@@ -784,36 +665,18 @@ if (identity) {
 
 If you just need the user ID:
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers {1,3,5-7,10}
-    import { getAuthUserId } from 'better-convex/auth';
+```ts showLineNumbers {1,3,5-7,10}
+import { getAuthUserId } from 'better-convex/auth';
 
-    const userId = await getAuthUserId(ctx);
+const userId = await getAuthUserId(ctx);
 
-    if (!userId) {
-      throw new CRPCError({ code: 'UNAUTHORIZED' });
-    }
+if (!userId) {
+  throw new CRPCError({ code: 'UNAUTHORIZED' });
+}
 
-    // userId is Id<'user'>
-    const user = await ctx.db.get(userId);
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers {1,3,5-7,10}
-    import { getAuthUserId } from 'better-convex/auth';
-
-    const userId = await getAuthUserId(ctx);
-
-    if (!userId) {
-      throw new CRPCError({ code: 'UNAUTHORIZED' });
-    }
-
-    // userId is Id<'user'>
-    const user = await ctx.table('user').get(userId);
-    ```
-  </Tab>
-</Tabs>
+// userId is Id<'user'>
+const user = await ctx.orm.query.user.findFirst({ where: { id: userId } });
+```
 
 ### getSession
 
@@ -825,7 +688,7 @@ import { getSession } from 'better-convex/auth';
 const session = await getSession(ctx);
 
 if (session) {
-  session._id;                  // Id<'session'>
+  session.id;                  // Id<'session'>
   session.userId;               // Id<'user'>
   session.activeOrganizationId; // Id<'organization'> | null
   session.expiresAt;            // number

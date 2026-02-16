@@ -71,6 +71,11 @@ import type {
   FunctionReturnType,
 } from 'convex/server';
 import { CRPCClientError } from '../crpc/error';
+import {
+  type CombinedDataTransformer,
+  type DataTransformerOptions,
+  getTransformer,
+} from '../crpc/transformer';
 import type { ConvexQueryMeta } from '../crpc/types';
 import { createHashFn } from '../internal/hash';
 import { isConvexQuery } from '../internal/query-key';
@@ -133,6 +138,9 @@ export interface ConvexQueryClientOptions extends ConvexReactClientOptions {
    * @default 3000
    */
   unsubscribeDelay?: number;
+
+  /** Optional payload transformer (always composed with built-in Date support). */
+  transformer?: DataTransformerOptions;
 }
 
 // ============================================================================
@@ -222,6 +230,39 @@ export class ConvexQueryClient {
   /** Delay before unsubscribing when query has no observers */
   private unsubscribeDelay: number;
 
+  /** Payload transformer used across request/response boundaries. */
+  private transformer: CombinedDataTransformer;
+
+  /** Runtime-safe accessor for pending unsubscribe map (defensive for HMR edge cases) */
+  private getPendingUnsubscribesMap() {
+    const self = this as unknown as {
+      pendingUnsubscribes?: Map<string, ReturnType<typeof setTimeout>>;
+    };
+    if (!self.pendingUnsubscribes) {
+      self.pendingUnsubscribes = new Map();
+    }
+    return self.pendingUnsubscribes;
+  }
+
+  /** Cancel a pending delayed unsubscribe for a query hash. */
+  private cancelPendingUnsubscribe(queryHash: string) {
+    const pendingUnsubscribes = this.getPendingUnsubscribesMap();
+    const timeoutId = pendingUnsubscribes.get(queryHash);
+    if (!timeoutId) return;
+
+    clearTimeout(timeoutId);
+    pendingUnsubscribes.delete(queryHash);
+  }
+
+  /** Unsubscribe a live Convex watch (if present) and remove it from the subscription map. */
+  private unsubscribeQueryByHash(queryHash: string) {
+    const sub = this.subscriptions[queryHash];
+    if (!sub) return;
+
+    sub.unsubscribe();
+    delete this.subscriptions[queryHash];
+  }
+
   /** Update auth store (for HMR where jotai store may reset) */
   updateAuthStore(authStore?: AuthStore) {
     this.authStore = authStore;
@@ -289,6 +330,7 @@ export class ConvexQueryClient {
     this.subscriptions = {};
     this.authStore = options.authStore;
     this.unsubscribeDelay = options.unsubscribeDelay ?? 3000;
+    this.transformer = getTransformer(options.transformer);
 
     // Auto-connect if queryClient provided in options
     if (options.queryClient) {
@@ -330,10 +372,10 @@ export class ConvexQueryClient {
   destroy() {
     this.unsubscribe?.();
     // Clear pending unsubscribe timeouts
-    for (const timeoutId of this.pendingUnsubscribes.values()) {
+    for (const timeoutId of this.getPendingUnsubscribesMap().values()) {
       clearTimeout(timeoutId);
     }
-    this.pendingUnsubscribes.clear();
+    this.getPendingUnsubscribesMap().clear();
     // Unsubscribe all active subscriptions
     for (const sub of Object.values(this.subscriptions)) {
       sub.unsubscribe();
@@ -346,13 +388,13 @@ export class ConvexQueryClient {
    * Call before logout to prevent UNAUTHORIZED errors during session invalidation.
    */
   unsubscribeAuthQueries() {
-    for (const [queryHash, sub] of Object.entries(this.subscriptions)) {
+    for (const queryHash of Object.keys(this.subscriptions)) {
       const query = this.queryClient.getQueryCache().get(queryHash);
       const meta = query?.meta as ConvexQueryMeta | undefined;
 
       if (meta?.authType === 'required') {
-        sub.unsubscribe();
-        delete this.subscriptions[queryHash];
+        this.cancelPendingUnsubscribe(queryHash);
+        this.unsubscribeQueryByHash(queryHash);
       }
     }
   }
@@ -410,7 +452,10 @@ export class ConvexQueryClient {
         existingData !== null && existingData !== undefined;
 
       if (hasResultValue || !hasExistingData) {
-        this.queryClient.setQueryData(queryKey, result.value);
+        this.queryClient.setQueryData(
+          queryKey,
+          this.transformer.output.deserialize(result.value)
+        );
       }
     } else {
       const { error } = result;
@@ -465,20 +510,8 @@ export class ConvexQueryClient {
       switch (event.type) {
         // Query removed from cache → unsubscribe from Convex (if still subscribed)
         case 'removed': {
-          // Clear any pending unsubscribe timeout
-          const pendingTimeout = this.pendingUnsubscribes.get(
-            event.query.queryHash
-          );
-          if (pendingTimeout) {
-            clearTimeout(pendingTimeout);
-            this.pendingUnsubscribes.delete(event.query.queryHash);
-          }
-          // Unsubscribe immediately
-          const sub = this.subscriptions[event.query.queryHash];
-          if (sub) {
-            sub.unsubscribe();
-            delete this.subscriptions[event.query.queryHash];
-          }
+          this.cancelPendingUnsubscribe(event.query.queryHash);
+          this.unsubscribeQueryByHash(event.query.queryHash);
           break;
         }
 
@@ -505,7 +538,9 @@ export class ConvexQueryClient {
           // Create WebSocket subscription via Convex watchQuery
           const watch = this.convexClient.watchQuery(
             funcName as unknown as FunctionReference<'query'>,
-            args as FunctionArgs<FunctionReference<'query'>>
+            this.transformer.input.serialize(args) as FunctionArgs<
+              FunctionReference<'query'>
+            >
           );
 
           // Update TanStack cache when Convex pushes new data
@@ -524,13 +559,7 @@ export class ConvexQueryClient {
         // Create subscription when first observer is added (query enabled)
         case 'observerAdded': {
           // Cancel any pending unsubscribe (handles React StrictMode double-mount)
-          const pendingTimeout = this.pendingUnsubscribes.get(
-            event.query.queryHash
-          );
-          if (pendingTimeout) {
-            clearTimeout(pendingTimeout);
-            this.pendingUnsubscribes.delete(event.query.queryHash);
-          }
+          this.cancelPendingUnsubscribe(event.query.queryHash);
 
           // Skip if already subscribed
           if (this.subscriptions[event.query.queryHash]) {
@@ -558,7 +587,9 @@ export class ConvexQueryClient {
           // Create WebSocket subscription via Convex watchQuery
           const watch = this.convexClient.watchQuery(
             funcName as unknown as FunctionReference<'query'>,
-            args as FunctionArgs<FunctionReference<'query'>>
+            this.transformer.input.serialize(args) as FunctionArgs<
+              FunctionReference<'query'>
+            >
           );
 
           // Update TanStack cache when Convex pushes new data
@@ -578,20 +609,20 @@ export class ConvexQueryClient {
         // Grace period prevents wasteful unsubscribe/subscribe from StrictMode
         // Cache data persists for gcTime (default 5 min) for instant back-navigation
         case 'observerRemoved': {
-          if (event.query.getObserversCount() === 0) {
-            const sub = this.subscriptions[event.query.queryHash];
-            if (sub) {
-              // Schedule unsubscribe after grace period
-              const timeoutId = setTimeout(() => {
-                this.pendingUnsubscribes.delete(event.query.queryHash);
-                // Verify still no observers before unsubscribing
-                if (event.query.getObserversCount() === 0) {
-                  sub.unsubscribe();
-                  delete this.subscriptions[event.query.queryHash];
-                }
-              }, this.unsubscribeDelay);
-              this.pendingUnsubscribes.set(event.query.queryHash, timeoutId);
-            }
+          if (
+            event.query.getObserversCount() === 0 &&
+            this.subscriptions[event.query.queryHash]
+          ) {
+            const queryHash = event.query.queryHash;
+            // Schedule unsubscribe after grace period
+            const timeoutId = setTimeout(() => {
+              this.getPendingUnsubscribesMap().delete(queryHash);
+              // Verify still no observers before unsubscribing
+              if (event.query.getObserversCount() === 0) {
+                this.unsubscribeQueryByHash(queryHash);
+              }
+            }, this.unsubscribeDelay);
+            this.getPendingUnsubscribesMap().set(queryHash, timeoutId);
           }
           break;
         }
@@ -617,9 +648,8 @@ export class ConvexQueryClient {
 
           // enabled: true → false: unsubscribe
           if (isDisabled && isSubscribed) {
-            const sub = this.subscriptions[event.query.queryHash];
-            sub.unsubscribe();
-            delete this.subscriptions[event.query.queryHash];
+            this.cancelPendingUnsubscribe(event.query.queryHash);
+            this.unsubscribeQueryByHash(event.query.queryHash);
             break;
           }
 
@@ -644,7 +674,9 @@ export class ConvexQueryClient {
           // Create WebSocket subscription via Convex watchQuery
           const watch = this.convexClient.watchQuery(
             funcName as unknown as FunctionReference<'query'>,
-            args as FunctionArgs<FunctionReference<'query'>>
+            this.transformer.input.serialize(args) as FunctionArgs<
+              FunctionReference<'query'>
+            >
           );
 
           // Update TanStack cache when Convex pushes new data
@@ -706,6 +738,7 @@ export class ConvexQueryClient {
       // Handle Convex queries
       if (isConvexQuery(queryKey)) {
         const [, funcName, args] = queryKey;
+        const wireArgs = this.transformer.input.serialize(args);
 
         // Check auth via authStore if authType in meta
         if (meta?.authType === 'required' && !isServer && this.authStore) {
@@ -722,26 +755,33 @@ export class ConvexQueryClient {
         // Execute query: HTTP on server, WebSocket on client
         if (isServer) {
           if (this.ssrQueryMode === 'consistent') {
-            return (await this.serverHttpClient!.consistentQuery(
-              funcName as unknown as FunctionReference<'query'>,
-              args
-            )) as FunctionReturnType<T>;
+            return this.transformer.output.deserialize(
+              await this.serverHttpClient!.consistentQuery(
+                funcName as unknown as FunctionReference<'query'>,
+                wireArgs as any
+              )
+            ) as FunctionReturnType<T>;
           }
-          return (await this.serverHttpClient!.query(
-            funcName as unknown as FunctionReference<'query'>,
-            args
-          )) as FunctionReturnType<T>;
+          return this.transformer.output.deserialize(
+            await this.serverHttpClient!.query(
+              funcName as unknown as FunctionReference<'query'>,
+              wireArgs as any
+            )
+          ) as FunctionReturnType<T>;
         }
 
-        return (await this.convexClient.query(
-          funcName as unknown as FunctionReference<'query'>,
-          args
-        )) as FunctionReturnType<T>;
+        return this.transformer.output.deserialize(
+          await this.convexClient.query(
+            funcName as unknown as FunctionReference<'query'>,
+            wireArgs as any
+          )
+        ) as FunctionReturnType<T>;
       }
 
       // Handle Convex actions (same pattern as queries)
       if (isConvexAction(queryKey)) {
         const [, funcName, args] = queryKey;
+        const wireArgs = this.transformer.input.serialize(args);
 
         // Check auth via authStore if authType in meta
         if (meta?.authType === 'required' && !isServer && this.authStore) {
@@ -756,16 +796,20 @@ export class ConvexQueryClient {
         }
 
         if (isServer) {
-          return (await this.serverHttpClient!.action(
-            funcName as unknown as FunctionReference<'action'>,
-            args
-          )) as FunctionReturnType<T>;
+          return this.transformer.output.deserialize(
+            await this.serverHttpClient!.action(
+              funcName as unknown as FunctionReference<'action'>,
+              wireArgs as any
+            )
+          ) as FunctionReturnType<T>;
         }
 
-        return (await this.convexClient.action(
-          funcName as unknown as FunctionReference<'action'>,
-          args
-        )) as FunctionReturnType<T>;
+        return this.transformer.output.deserialize(
+          await this.convexClient.action(
+            funcName as unknown as FunctionReference<'action'>,
+            wireArgs as any
+          )
+        ) as FunctionReturnType<T>;
       }
 
       // Fallback to other queryFn for non-Convex queries

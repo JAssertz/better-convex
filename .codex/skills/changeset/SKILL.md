@@ -1,0 +1,15 @@
+---
+name: changeset
+description: Use when writing changesets for releases
+---
+
+# Changeset Writing
+
+Follow @packages/better-convex/CHANGELOG.md writing style. We're still in v0, so use minor for breaking changes, and patch for the rest.
+
+**User-focused, not technical:**
+
+- Describe what users can DO now, not implementation details
+- NO internal function names, file paths, or algorithms
+- Show before/after or file structure examples when helpful
+- Keep it concise - 2-5 lines max

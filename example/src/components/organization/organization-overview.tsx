@@ -72,10 +72,6 @@ export function OrganizationOverview({
   const updateOrganization = useMutation(
     crpc.organization.updateOrganization.mutationOptions({
       meta: { errorMessage: 'Failed to update organization' },
-      onSuccess: () => {
-        setShowEditDialog(false);
-        toast.success('Organization updated successfully');
-      },
     })
   );
 
@@ -109,27 +105,42 @@ export function OrganizationOverview({
       return;
     }
 
-    const updateData: ApiInputs['organization']['updateOrganization'] = {};
+    const data: Omit<
+      ApiInputs['organization']['updateOrganization'],
+      'organizationId'
+    > = {};
     if (editData.name !== organization.name) {
-      updateData.name = editData.name.trim();
+      data.name = editData.name.trim();
     }
     if (editData.slug !== organization.slug && editData.slug.trim()) {
-      updateData.slug = editData.slug.trim();
+      data.slug = editData.slug.trim();
     }
     if (editData.logo !== (organization.logo || '') && editData.logo.trim()) {
-      updateData.logo = editData.logo.trim();
+      data.logo = editData.logo.trim();
     }
 
-    if (Object.keys(updateData).length === 0) {
+    if (Object.keys(data).length === 0) {
       toast.error('No changes detected');
       return;
     }
 
-    updateOrganization.mutate(updateData);
+    const nextSlug = data.slug;
+    updateOrganization.mutate(
+      { organizationId: organization.id, ...data },
+      {
+        onSuccess: () => {
+          setShowEditDialog(false);
+          toast.success('Organization updated successfully');
+          if (nextSlug) {
+            router.push(`/org/${encodeURIComponent(nextSlug)}`);
+          }
+        },
+      }
+    );
   };
 
   const handleDeleteOrganization = () => {
-    deleteOrganization.mutate();
+    deleteOrganization.mutate({ organizationId: organization.id });
   };
 
   const isOwner = organization.role === 'owner';

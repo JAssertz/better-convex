@@ -9,32 +9,35 @@
     "codegen",
     "cli"
   ],
-  "license": "MIT",
   "sideEffects": false,
   "type": "module",
   "exports": {
     "./auth": "./dist/auth/index.js",
     "./auth-client": "./dist/auth-client/index.js",
+    "./auth-config": "./dist/auth-config/index.js",
     "./auth-nextjs": "./dist/auth-nextjs/index.js",
     "./crpc": "./dist/crpc/index.js",
+    "./orm": "./dist/orm/index.js",
     "./react": "./dist/react/index.js",
     "./rsc": "./dist/rsc/index.js",
     "./server": "./dist/server/index.js",
     "./package.json": "./package.json"
   },
   "bin": {
-    "better-convex": "./dist/cli.cjs"
+    "better-convex": "./dist/cli.mjs"
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsdown",
-    "build:watch": "tsdown --watch",
+    "build": "NODE_OPTIONS=\"--require ../../tooling/node-styletext-patch.cjs\" tsdown",
+    "build:watch": "NODE_OPTIONS=\"--require ../../tooling/node-styletext-patch.cjs\" tsdown --watch",
     "prepublishOnly": "bun run build",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typecheck:types": "tsc --project ../../convex/test-types/tsconfig.json"
   },
   "dependencies": {
+    "@convex-dev/better-auth": "^0.10.10",
     "chokidar": "^5.0.0",
     "common-tags": "^1.8.2",
     "dotenv": "^17.2.3",
@@ -52,20 +55,15 @@
     "tsdown": "^0.20.1"
   },
   "peerDependencies": {
-    "@convex-dev/better-auth": ">=0.10.4",
     "@tanstack/react-query": ">=5",
     "better-auth": ">=1.4.9",
     "convex": ">=1.31",
-    "convex-helpers": ">=0.1",
     "hono": ">=4",
     "next": ">=14",
     "react": ">=18",
-    "zod": ">=3"
+    "zod": ">=4"
   },
   "peerDependenciesMeta": {
-    "@convex-dev/better-auth": {
-      "optional": true
-    },
     "better-auth": {
       "optional": true
     },

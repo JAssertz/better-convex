@@ -27,9 +27,9 @@ Let's start with setup.
 Create an auth client with mutation hooks:
 
 ```ts title="src/lib/convex/auth-client.ts" showLineNumbers {4,8-9,12-16}
-import { convexClient } from '@convex-dev/better-auth/client/plugins';
 import { inferAdditionalFields } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
+import { convexClient } from 'better-convex/auth-client';
 import { createAuthMutations } from 'better-convex/react';
 
 import type { Auth } from '@convex/auth-shared';
@@ -92,7 +92,7 @@ function LoginForm() {
 First enable email/password in your Convex auth config:
 
 ```ts title="convex/functions/auth.ts" showLineNumbers {3-5}
-const createAuthOptions = (ctx: GenericCtx) =>
+const getAuthOptions = (ctx: GenericCtx) =>
   ({
     emailAndPassword: {
       enabled: true,

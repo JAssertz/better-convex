@@ -14,7 +14,7 @@ import { InfoIcon } from "lucide-react"
 | **cRPC Builder** | tRPC-style fluent API for defining procedures |
 | **Real-time First** | WebSocket subscriptions flow into TanStack Query |
 | **Context & Middleware** | Composable layers for auth, rate limiting, custom logic |
-| **Database Layer** | Ents relationships, triggers, aggregates |
+| **Database Layer** | ORM relations, triggers, aggregates |
 | **File Structure** | Organized `functions/`, `lib/`, `shared/` directories |
 
 Let's explore each concept.
@@ -31,7 +31,7 @@ Before you know it, the elegant simplicity that drew you to Convex gets buried u
 
 - **tRPC-style API:** A fluent builder pattern for defining procedures with full type inference.
 - **TanStack Query Native:** First-class integration with `useQuery`, `useMutation`, and React Query DevTools.
-- **Real-time by Default:** Queries subscribe to WebSocket updates automatically—no extra setup.
+- **Real-time by Default:** Queries subscribe to WebSocket updates automatically - no extra setup.
 - **End-to-end Type Safety:** From your schema to your React components, everything is typed.
 - **Middleware Chains:** Composable layers for auth, rate limiting, and custom context.
 
@@ -39,31 +39,37 @@ Before you know it, the elegant simplicity that drew you to Convex gets buried u
 
 Better Convex introduces a tRPC-style builder for defining procedures. Instead of writing standalone functions, you chain methods to build queries and mutations with validation, middleware, and type inference.
 
-```ts showLineNumbers {12-17}
-// Before: Manual validation, no middleware
-export const list = query({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const user = await getUser(ctx); // repeated everywhere
-    if (!user) throw new Error('Unauthorized');
-    return ctx.db.query('todos').take(args.limit ?? 10).collect();
-  },
-});
-
-// After: Fluent API with middleware and Zod validation
-export const list = authQuery
-  .input(z.object({ limit: z.number().optional() }))
-  .query(async ({ ctx, input }) => {
-    // ctx.user is already available from middleware
-    return ctx.table('todos').take(input.limit ?? 10);
-  });
-```
+<Compare>
+  <CompareItem title="Before (vanilla Convex)">
+    ```ts showLineNumbers
+    export const list = query({
+      args: { limit: v.optional(v.number()) },
+      handler: async (ctx, args) => {
+        const user = await getUser(ctx); // repeated everywhere
+        if (!user) throw new Error('Unauthorized');
+        const { db } = ctx;
+        return db.query('todos').take(args.limit ?? 10).collect();
+      },
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```ts showLineNumbers
+    export const list = authQuery
+      .input(z.object({ limit: z.number().optional() }))
+      .query(async ({ ctx, input }) => {
+        // ctx.user is already available from middleware
+        return ctx.orm.query.todos.findMany({ limit: input.limit ?? 10 });
+      });
+    ```
+  </CompareItem>
+</Compare>
 
 _The auth middleware runs once, adds `user` to context, and every procedure that uses `authQuery` gets it automatically. No more copy-pasting auth checks._
 
 ## Real-time First
 
-Convex queries are reactive—when data changes, subscribers get updates. Better Convex preserves this while giving you TanStack Query's API:
+Convex queries are reactive - when data changes, subscribers get updates. Better Convex preserves this while giving you TanStack Query's API:
 
 ```tsx showLineNumbers {1}
 const { data, isPending } = useQuery(crpc.todos.list.queryOptions({}));
@@ -90,8 +96,7 @@ Every procedure receives a `ctx` object containing database access and any data 
 
 ```ts showLineNumbers {7-8}
 // Base context from cRPC setup
-ctx.db        // Native Convex database
-ctx.table     // Ents fluent API (if configured)
+ctx.orm       // ORM (queries + mutations)
 ctx.auth      // Convex auth object
 
 // Added by auth middleware
@@ -101,13 +106,18 @@ ctx.userId    // User's ID for quick access
 
 Middleware runs before your handler and can transform context:
 
-```ts showLineNumbers {1,6}
+```ts showLineNumbers {1-2,8}
+import type { GenericId } from 'convex/values';
+import { CRPCError } from 'better-convex/server';
+
 const authQuery = c.query.use(async ({ ctx, next }) => {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) throw new CRPCError({ code: 'UNAUTHORIZED' });
 
-  const user = await ctx.table('user').get(identity.subject);
-  return next({ ctx: { user, userId: user._id } });
+  const userId = identity.subject as GenericId<'user'>;
+  const user = await ctx.orm.query.user.findFirst({ where: { id: userId } });
+  if (!user) throw new CRPCError({ code: 'UNAUTHORIZED' });
+  return next({ ctx: { ...ctx, user, userId: user.id } });
 });
 ```
 
@@ -115,31 +125,22 @@ _Define the middleware once, use it everywhere. When you need admin-only access,
 
 ## Database Layer
 
-Better Convex works with Convex's native database, but integrates seamlessly with ecosystem tools for enhanced capabilities.
+Better Convex uses the ORM for Drizzle-style queries, relations, and runtime enforcement.
 
-### Ents
+### ORM Relations
 
-[Convex Ents](https://github.com/xixixao/convex-ents) adds relationships and a fluent query API. Instead of manual ID lookups, you traverse edges:
+Define relations with `defineRelations()` and load them with `with:`:
 
-```ts showLineNumbers {3-6,10-11}
-// Define relationships in schema
-const schema = defineEntSchema({
-  user: defineEnt({ name: v.string() })
-    .edges('posts', { to: 'post', ref: 'authorId' }),
-  post: defineEnt({ title: v.string() })
-    .edge('author', { to: 'user', field: 'authorId' }),
+```ts showLineNumbers
+const user = await ctx.orm.query.user.findFirst({
+  where: { id: userId },
+  with: { posts: { limit: 10, orderBy: { createdAt: 'desc' } } },
 });
-
-// Query with relationships
-const user = await ctx.table('user').getX(userId);
-const posts = await user.edge('posts');
 ```
-
-_Ents makes your database feel like an ORM while keeping Convex's reactivity. The fluent API chains naturally with Better Convex's builder pattern._
 
 ### Triggers
 
-Automatic side effects when data changes. Use [convex-helpers](https://github.com/get-convex/convex-helpers) triggers for:
+Automatic side effects when data changes. Use schema triggers for:
 
 - Maintaining denormalized counts
 - Cascade deletes
@@ -147,13 +148,19 @@ Automatic side effects when data changes. Use [convex-helpers](https://github.co
 - Syncing to external systems
 
 ```ts showLineNumbers {1-2,4-8}
-triggers.register('user', async (ctx, change) => {
+import { eq, onChange } from 'better-convex/orm';
+import { post } from './schema';
+
+onChange(async (ctx, change) => {
   if (change.operation === 'delete') {
     // Cascade delete user's posts
-    const posts = await ctx.table('post')
-      .filter(q => q.eq(q.field('authorId'), change.id));
-    for (const post of posts) {
-      await ctx.table('post').delete(post._id);
+    // Index post.authorId.
+    const posts = await ctx.orm.query.post.findMany({
+      where: { authorId: change.id },
+      limit: 100,
+    });
+    for (const postRow of posts) {
+      await ctx.orm.delete(post).where(eq(post.id, postRow.id));
     }
   }
 });
@@ -165,7 +172,7 @@ O(log n) operations for counts, sums, and rankings. Essential for dashboards and
 
 ```ts showLineNumbers {5-6}
 // Slow: Counting all rows (O(n))
-const count = await ctx.table('user').count();
+const count = (await ctx.orm.query.user.findMany({ limit: 10_000 })).length;
 
 // Fast: Using aggregates (O(log n))
 const count = await userAggregate.count(ctx);
@@ -187,8 +194,7 @@ convex/
 │   └── todos.ts         # Todo procedures
 ├── lib/                 # Shared helpers (not deployed)
 │   ├── crpc.ts          # cRPC builder and middleware
-│   ├── ents.ts          # Ents configuration
-│   ├── triggers.ts      # Database triggers
+│   ├── orm.ts           # ORM context attachment
 │   └── rate-limiter.ts  # Rate limiting logic
 └── shared/              # Client-importable code
     ├── types.ts         # Shared TypeScript types
@@ -225,6 +231,6 @@ _Static codegen improves type inference and IDE performance. The `tsgo` compiler
 
 <Cards>
   <Card title="Server Setup" href="/docs/server/setup" />
-  <Card title="React Setup" href="/docs/react/setup" />
+  <Card title="React Setup" href="/docs/react" />
   <Card title="Auth Server" href="/docs/auth/server" />
 </Cards>

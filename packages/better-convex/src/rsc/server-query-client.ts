@@ -1,6 +1,10 @@
 import { fetchAction, fetchQuery } from 'convex/nextjs';
 import type { FunctionReference } from 'convex/server';
 
+import {
+  type DataTransformerOptions,
+  getTransformer,
+} from '../crpc/transformer';
 import type { ConvexQueryMeta } from '../crpc/types';
 import { createHashFn } from '../internal/hash';
 import { fetchHttpRoute, type HttpQueryMeta } from './http-server';
@@ -10,6 +14,8 @@ export type GetServerQueryClientOptionsParams = {
   getToken?: () => Promise<string | undefined>;
   /** Base URL for HTTP routes (e.g., NEXT_PUBLIC_CONVEX_SITE_URL). Required for crpc.http.* queries. */
   convexSiteUrl?: string;
+  /** Optional payload transformer (always composed with built-in Date support). */
+  transformer?: DataTransformerOptions;
 };
 
 /**
@@ -31,7 +37,9 @@ export type GetServerQueryClientOptionsParams = {
 export function getServerQueryClientOptions({
   getToken,
   convexSiteUrl,
+  transformer: transformerOptions,
 }: GetServerQueryClientOptionsParams = {}) {
+  const transformer = getTransformer(transformerOptions);
   return {
     queries: {
       staleTime: 30_000,
@@ -59,7 +67,13 @@ export function getServerQueryClientOptions({
             throw new Error(`HTTP route metadata missing for: ${routeKey}`);
           }
 
-          return await fetchHttpRoute(convexSiteUrl, routeMeta, args, token);
+          return await fetchHttpRoute(
+            convexSiteUrl,
+            routeMeta,
+            args,
+            token,
+            transformer
+          );
         }
 
         // Handle WebSocket queries (convexQuery/convexAction)
@@ -67,6 +81,7 @@ export function getServerQueryClientOptions({
           FunctionReference<'query' | 'action'>,
           Record<string, unknown>,
         ];
+        const wireArgs = transformer.input.serialize(args);
 
         // Auto-skip auth-required queries when not authenticated
         const queryMeta = meta as ConvexQueryMeta | undefined;
@@ -78,13 +93,19 @@ export function getServerQueryClientOptions({
 
         // Use convex fetch directly - works for public queries too
         const opts = token ? { token } : undefined;
-        return type === 'convexQuery'
-          ? await fetchQuery(funcRef as FunctionReference<'query'>, args, opts)
-          : await fetchAction(
-              funcRef as FunctionReference<'action'>,
-              args,
-              opts
-            );
+        return transformer.output.deserialize(
+          type === 'convexQuery'
+            ? await fetchQuery(
+                funcRef as FunctionReference<'query'>,
+                wireArgs as any,
+                opts
+              )
+            : await fetchAction(
+                funcRef as FunctionReference<'action'>,
+                wireArgs as any,
+                opts
+              )
+        );
       },
       queryKeyHashFn: createHashFn(),
     },

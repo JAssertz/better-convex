@@ -1,5 +1,6 @@
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execa } from 'execa';
 import { generateMeta } from './codegen.js';
@@ -15,23 +16,42 @@ const require = createRequire(import.meta.url);
 const convexPkg = require.resolve('convex/package.json');
 const realConvex = join(dirname(convexPkg), 'bin/main.js');
 
+export type ParsedArgs = {
+  command: string;
+  restArgs: string[];
+  convexArgs: string[];
+  debug: boolean;
+  outputDir?: string;
+};
+
 // Parse args: better-convex [command] [--meta <dir>] [--debug] [...convex-args]
-const args = process.argv.slice(2);
-const command = args[0] || 'dev';
-const restArgs = args.slice(1);
+export function parseArgs(argv: string[]): ParsedArgs {
+  let debug = false;
+  let outputDir: string | undefined;
 
-// Extract better-convex specific flags
-const debug = args.includes('--debug');
-const metaIndex = restArgs.indexOf('--meta');
-const outputDir = metaIndex >= 0 ? restArgs[metaIndex + 1] : undefined;
+  const filtered: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
 
-// Args to pass to convex CLI (filter out better-convex specific ones)
-const convexArgs = restArgs.filter((a, i) => {
-  if (a === '--debug') return false;
-  if (a === '--meta') return false;
-  if (metaIndex >= 0 && i === metaIndex + 1) return false; // --meta value
-  return true;
-});
+    if (a === '--debug') {
+      debug = true;
+      continue;
+    }
+
+    if (a === '--meta') {
+      outputDir = argv[i + 1];
+      i += 1; // skip value
+      continue;
+    }
+
+    filtered.push(a);
+  }
+
+  const command = filtered[0] || 'dev';
+  const restArgs = filtered.slice(1);
+
+  return { command, restArgs, convexArgs: restArgs, debug, outputDir };
+}
 
 // Track child processes for cleanup
 const processes: any[] = [];
@@ -44,19 +64,44 @@ function cleanup() {
   }
 }
 
-async function main() {
+export type RunDeps = {
+  execa: typeof execa;
+  generateMeta: typeof generateMeta;
+  syncEnv: typeof syncEnv;
+  realConvex: string;
+};
+
+export async function run(
+  argv: string[],
+  deps?: Partial<RunDeps>
+): Promise<number> {
+  const {
+    execa: execaFn,
+    generateMeta: generateMetaFn,
+    syncEnv: syncEnvFn,
+    realConvex: realConvexPath,
+  } = {
+    execa,
+    generateMeta,
+    syncEnv,
+    realConvex,
+    ...deps,
+  };
+
+  const { command, restArgs, convexArgs, debug, outputDir } = parseArgs(argv);
+
   if (command === 'dev') {
     // Initial codegen
-    await generateMeta(outputDir, { debug });
+    await generateMetaFn(outputDir, { debug });
 
     // Spawn watcher as child process
     const isTs = __filename.endsWith('.ts');
     const watcherPath = isTs
       ? join(__dirname, 'watcher.ts')
-      : join(__dirname, 'watcher.cjs');
+      : join(__dirname, 'watcher.mjs');
     const runtime = isTs ? 'bun' : process.execPath;
 
-    const watcherProcess = execa(runtime, [watcherPath], {
+    const watcherProcess = execaFn(runtime, [watcherPath], {
       stdio: 'inherit',
       cwd: process.cwd(),
       env: {
@@ -68,11 +113,15 @@ async function main() {
     processes.push(watcherProcess);
 
     // Spawn real convex dev
-    const convexProcess = execa('node', [realConvex, 'dev', ...convexArgs], {
-      stdio: 'inherit',
-      cwd: process.cwd(),
-      reject: false, // Don't throw on non-zero exit
-    });
+    const convexProcess = execaFn(
+      'node',
+      [realConvexPath, 'dev', ...convexArgs],
+      {
+        stdio: 'inherit',
+        cwd: process.cwd(),
+        reject: false, // Don't throw on non-zero exit
+      }
+    );
     processes.push(convexProcess);
 
     // Setup cleanup handlers
@@ -92,17 +141,24 @@ async function main() {
       convexProcess,
     ]);
     cleanup();
-    process.exit(result.exitCode ?? 0);
-  } else if (command === 'codegen') {
+    return result.exitCode ?? 0;
+  }
+  if (command === 'codegen') {
     // Run better-convex codegen first
-    await generateMeta(outputDir, { debug });
+    await generateMetaFn(outputDir, { debug });
 
     // Then run real convex codegen
-    await execa('node', [realConvex, 'codegen', ...convexArgs], {
-      stdio: 'inherit',
-      cwd: process.cwd(),
-    });
-  } else if (command === 'env') {
+    const result = await execaFn(
+      'node',
+      [realConvexPath, 'codegen', ...convexArgs],
+      {
+        stdio: 'inherit',
+        cwd: process.cwd(),
+      }
+    );
+    return result.exitCode ?? 0;
+  }
+  if (command === 'env') {
     const subcommand = convexArgs[0];
 
     if (subcommand === 'sync') {
@@ -110,29 +166,60 @@ async function main() {
       const auth = restArgs.includes('--auth');
       const force = restArgs.includes('--force');
       const prod = restArgs.includes('--prod');
-      await syncEnv({ auth, force, prod });
-    } else {
-      // Pass through to convex env (list, get, set, remove)
-      const result = await execa('node', [realConvex, 'env', ...convexArgs], {
+      await syncEnvFn({ auth, force, prod });
+      return 0;
+    }
+    // Pass through to convex env (list, get, set, remove)
+    const result = await execaFn(
+      'node',
+      [realConvexPath, 'env', ...convexArgs],
+      {
         stdio: 'inherit',
         cwd: process.cwd(),
         reject: false,
-      });
-      process.exit(result.exitCode);
-    }
-  } else {
-    // Pass through to real convex CLI
-    const result = await execa('node', [realConvex, command, ...restArgs], {
+      }
+    );
+    return result.exitCode ?? 0;
+  }
+  // Pass through to real convex CLI
+  const result = await execaFn(
+    'node',
+    [realConvexPath, command, ...convexArgs],
+    {
       stdio: 'inherit',
       cwd: process.cwd(),
       reject: false,
-    });
-    process.exit(result.exitCode);
+    }
+  );
+  return result.exitCode ?? 0;
+}
+
+export function isEntryPoint(
+  entry: string | undefined,
+  filename: string
+): boolean {
+  if (!entry) return false;
+  // bin shims are often symlinks (e.g. node_modules/.bin/better-convex).
+  // Comparing resolved paths without dereferencing symlinks makes the CLI no-op.
+  try {
+    return (
+      resolve(fs.realpathSync(entry)) === resolve(fs.realpathSync(filename))
+    );
+  } catch {
+    return resolve(entry) === resolve(filename);
   }
 }
 
-main().catch((error) => {
-  cleanup();
-  console.error('Error:', error);
-  process.exit(1);
-});
+// Only run when executed directly (not when imported for tests).
+const isMain = isEntryPoint(process.argv[1], __filename);
+
+if (isMain) {
+  run(process.argv.slice(2)).then(
+    (code) => process.exit(code),
+    (error) => {
+      cleanup();
+      console.error('Error:', error);
+      process.exit(1);
+    }
+  );
+}

@@ -1,0 +1,456 @@
+---
+title: Filters
+description: Full-text search and complex query patterns.
+links:
+  doc: https://docs.convex.dev/text-search
+---
+
+import { InfoIcon } from "lucide-react"
+
+In this guide, we'll explore advanced querying in Convex. You'll learn to implement full-text search with relevance scoring, use predicate `where` for complex filtering (with explicit `.withIndex(...)`), and combine multiple queries with UNION and JOIN patterns.
+
+## Overview
+
+Convex provides powerful querying capabilities beyond basic filtering:
+
+| Feature | Description |
+|---------|-------------|
+| Full-text search | Search string fields with relevance scoring |
+| Predicate filters | Complex filtering with explicit `.withIndex(...)` |
+| UNION patterns | Combine multiple queries into one paginated result |
+| JOIN patterns | Paginate through related documents |
+| DISTINCT | Get unique values efficiently |
+
+Let's explore each one.
+
+## Filtering + Pagination Compatibility
+
+Pagination and filtering are tightly coupled.
+We'll start with a decision table, then walk through each mode with examples.
+
+| Query mode | Index requirement | Pagination support | Relation-aware filtering | Ordering |
+|---|---|---|---|---|
+| `findMany({ where: object })` | Optional. Planner uses indexes when possible; otherwise it runs a bounded scan. Some post-fetch operators are typed to require `.withIndex(...)`. | `limit/offset`, `cursor + limit` | Yes (`where: { relation: ... }`) | `orderBy` supported; first field drives cursor stability |
+| `findMany({ where: (table, ops) => ... })` | Optional. Planner uses indexes when possible; otherwise it runs a bounded scan. Some post-fetch operators are typed to require `.withIndex(...)`. | `limit/offset`, `cursor + limit` | No (base-table expression only) | `orderBy` supported; first field drives cursor stability |
+| `findMany({ where: (_table, { predicate }) => predicate(...) })` | Required explicit `.withIndex(name, range?)` | `limit/offset`, `cursor + limit`, optional `maxScan` (cursor mode) | No (predicate replaces object relation filter path) | Index/stream-backed; first order field matters for cursor mode |
+| `findMany({ search })` | Required `searchIndex` | `limit/offset`, `cursor + limit` | No relation filters (base-table object `where` only) | Relevance order only (`orderBy` unsupported) |
+| `findMany({ vectorSearch })` | Required `vectorIndex` + configured provider | `vectorSearch.limit` only (no `cursor`, `offset`, top-level `limit`) | No | Similarity order only |
+| `select().<composition>.paginate({ cursor, limit })` | Schema + index/range path per union source (or inferred base path) | `cursor + limit` (+ optional `endCursor`, `maxScan`) or non-cursor | Manual via composition chain (`filter`, `map`, `flatMap`, `distinct`, `union`, `interleaveBy`) | Stream-backed index order |
+
+### How to choose
+
+Use this sequence:
+
+1. Need relevance-ranked text search? Use `search`.
+2. Need vector similarity? Use `vectorSearch`.
+3. Need relation-aware filtering? Use object `where`.
+4. Need Drizzle callback syntax for base-table filters? Use callback `where`.
+5. Need custom JS predicate logic? Use callback `where` + `predicate(...)` with explicit `.withIndex(...)`.
+6. Need advanced pre-pagination composition (union/interleave/map/filter/flatMap/distinct)? Use the `select()` composition chain.
+
+<Callout icon={<InfoIcon />}>
+**Note:** The ORM supports search via `findMany({ search: { index, query, filters? } })`. Function `where` forms (callback and predicate) cannot be combined with search mode.
+</Callout>
+
+## Select Composition Filtering (Advanced)
+
+Most filtering should stay in plain `findMany`. Use `select()` composition when you need stream-style transforms before pagination.
+
+This example uses a union + interleave (internal merged-stream semantics), then applies `filter` and `map` before returning the page:
+
+```ts title="convex/functions/messages.ts" showLineNumbers {17-37}
+import { z } from 'zod';
+import { publicQuery } from '../lib/crpc';
+
+const MessageSchema = z.object({
+  id: z.string(),
+  from: z.string(),
+  to: z.string(),
+  body: z.string(),
+  deletedAt: z.number().nullable(),
+});
+
+export const listConversation = publicQuery
+  .input(z.object({ me: z.string(), them: z.string() }))
+  .paginated({ limit: 20, item: MessageSchema })
+  .query(async ({ ctx, input }) => {
+    return await ctx.orm.query.messages
+      .withIndex('by_from_to')
+      .select()
+      .union([
+        { where: { from: input.me, to: input.them } },
+        { where: { from: input.them, to: input.me } },
+      ])
+      .interleaveBy(['createdAt', 'id'])
+      .filter(async (m) => !m.deletedAt)
+      .map(async (m) => ({ ...m, body: m.body.slice(0, 240) }))
+      .paginate({
+        cursor: input.cursor,
+        limit: input.limit,
+        maxScan: 500,
+      });
+  });
+```
+
+If you need page-boundary pinning in reactive UIs, pass `endCursor` on the follow-up call.
+
+## Full-Text Search
+
+Full-text search enables searching string fields with relevance scoring. Each search index can search ONE field, with optional filter fields for equality filtering.
+
+### Schema Definition
+
+Let's start by adding search indexes to your schema. Use the naming pattern `search_<searchField>`:
+
+```ts title="convex/functions/schema.ts" showLineNumbers {8-12,14-16}
+import { convexTable, defineSchema, searchIndex, text } from 'better-convex/orm';
+
+export const articles = convexTable(
+  'articles',
+  {
+    title: text().notNull(),
+    content: text().notNull(),
+    author: text().notNull(),
+    category: text().notNull(),
+  },
+  (t) => [
+    // Search content with category/author as filter fields
+    searchIndex('search_content').on(t.content).filter(t.category, t.author),
+    // Separate index for title search
+    searchIndex('search_title').on(t.title),
+  ]
+);
+
+export const tables = { articles };
+export default defineSchema(tables, { strict: false });
+```
+
+<Callout icon={<InfoIcon />}>
+**Note:** Each search index can only search ONE field. Add `filterFields` for fast equality filtering before text search.
+</Callout>
+
+### Basic Search
+
+Now let's implement a basic search query:
+
+```ts title="convex/functions/articles.ts" showLineNumbers {7-11}
+import { z } from 'zod';
+import { publicQuery } from '../lib/crpc';
+
+export const search = publicQuery
+  .input(z.object({
+    query: z.string(),
+    limit: z.number().min(1).max(100).default(10),
+  }))
+  .output(z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    content: z.string(),
+  })))
+  .query(async ({ ctx, input }) => {
+    return await ctx.orm.query.articles.findMany({
+      search: {
+        index: 'search_content',
+        query: input.query,
+      },
+      limit: input.limit,
+    });
+  });
+```
+
+<Callout icon={<InfoIcon />}>
+**Important:** Always use `limit` or cursor pagination (`cursor` + `limit`) with search queries to limit results.
+</Callout>
+
+### Search with Filters
+
+Filter fields enable fast pre-filtering before text search. Only equality filters are supported:
+
+```ts title="convex/functions/articles.ts" showLineNumbers {8-16}
+export const searchByCategory = publicQuery
+  .input(z.object({
+    query: z.string(),
+    category: z.string(),
+    author: z.string().optional(),
+  }))
+  .output(z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    content: z.string(),
+    category: z.string(),
+  })))
+  .query(async ({ ctx, input }) => {
+    return await ctx.orm.query.articles.findMany({
+      search: {
+        index: 'search_content',
+        query: input.query,
+        filters: {
+          category: input.category,
+          ...(input.author ? { author: input.author } : {}),
+        },
+      },
+      limit: 20,
+    });
+  });
+```
+
+### Paginated Search
+
+Use `.paginated({ limit, item })` ([paginated builder](/docs/server/procedures#paginated-queries)) for cursor-based pagination:
+
+```ts title="convex/functions/articles.ts" showLineNumbers {3,9-17}
+const ArticleSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  content: z.string(),
+  category: z.string(),
+});
+
+export const searchPaginated = publicQuery
+  .input(z.object({
+    query: z.string(),
+    category: z.string().optional(),
+  }))
+  .paginated({ limit: 20, item: ArticleSchema })
+  .query(async ({ ctx, input }) => {
+    return await ctx.orm.query.articles.findMany({
+      search: {
+        index: 'search_content',
+        query: input.query,
+        filters: input.category ? { category: input.category } : undefined,
+      },
+      cursor: input.cursor,
+      limit: input.limit,
+    });
+  });
+```
+
+<Callout icon={<InfoIcon />}>
+**Tip:** Search results are automatically sorted by relevance.
+</Callout>
+
+## Callback `where` (Drizzle Style)
+
+Use callback `where` when you want Drizzle-like expression syntax with typed operators:
+
+```ts title="convex/functions/users.ts" showLineNumbers {4-7}
+const admins = await db.query.users.findMany({
+  where: (users, { and, eq, isNotNull }) =>
+    and(eq(users.role, 'admin'), isNotNull(users.email)),
+});
+```
+
+This mode compiles through the same expression planner as object `where`, so it can use indexes when possible.
+
+## Predicate `where` (Explicit Index Required)
+
+Use a predicate `where` for complex JS logic. You must provide an explicit `.withIndex(...)`.
+
+<Callout icon={<InfoIcon />}>
+**Disclaimer:** Use this while prototyping or when you know the query won't need to scale.  
+If you need to scale, prefer index-compiled filters and explicit index design.
+</Callout>
+
+```ts title="convex/functions/characters.ts" showLineNumbers {6-8,13-18,21-24}
+const CharacterSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  categories: z.array(z.string()).nullable(),
+  score: z.number(),
+});
+
+export const searchCharacters = publicQuery
+  .input(z.object({
+    category: z.string().optional(),
+    minScore: z.number().optional(),
+  }))
+  .paginated({ limit: 20, item: CharacterSchema })
+  .query(async ({ ctx, input }) => {
+    return await ctx.orm.query.characters
+      .withIndex('private', (q) => q.eq('private', false))
+      .findMany({
+        where: (_characters, { predicate }) =>
+          predicate((char) => {
+            if (input.category && !char.categories?.includes(input.category)) {
+              return false;
+            }
+            if (input.minScore && char.score < input.minScore) {
+              return false;
+            }
+            return true;
+          }),
+        cursor: input.cursor,
+        limit: input.limit,
+      });
+  });
+```
+
+<Callout icon={<InfoIcon />}>
+**Tip:** Prefer index‑friendly object `where` for most queries. Use predicate `where` only when you need complex JS logic and can anchor it with `.withIndex(...)`.
+</Callout>
+
+## Search vs Predicate `where`
+
+Understanding when to use each approach is critical. Here's a comparison:
+
+| Feature | Search | Predicate `where` |
+|---------|--------|-------------------|
+| Text matching | Full-text search with relevance | No text search |
+| Complex filters | `filterFields` only (equality) | Full TypeScript |
+| Range queries | No | Yes |
+| Pagination | Standard | Works with cursor pagination (`cursor` + `limit`) |
+| UNION/JOIN | No | Manual merge in app code |
+| Performance | Optimized for text | Depends on chosen index + predicate selectivity |
+| **Combined** | **Supported with base-field object `where`** | Predicate / relation `where` still unsupported |
+
+### Choosing the Right Approach
+
+1. **Need text search?** → Use search indexes
+2. **Need complex per-row JS logic?** → Use predicate `where` + explicit `.withIndex(...)`
+3. **Need range queries (greater than, less than)?** → Use object/callback expression `where` (index-compiled when possible)
+4. **Need UNION or JOIN operations?** → Merge in application code
+5. **Need text search + relation/predicate filters?** → See options below
+
+### Combining Search and Complex Filters
+
+Search mode supports `search.filters` plus base-table object `where`. For predicate `where` or relation-based `where`, use one of these patterns.
+
+**Option 1: Add more filterFields** (recommended)
+
+Add equality filters to your search index:
+
+```ts showLineNumbers {2-3}
+searchIndex('search_content')
+  .on(t.content)
+  .filter(t.category, t.author, t.status, t.dateGroup);
+```
+
+**Option 2: Separate query paths**
+
+Use search when text is provided, predicate filtering otherwise:
+
+```ts showLineNumbers {7-8,10-19,21-30}
+export const searchOrFilter = publicQuery
+  .input(z.object({
+    query: z.string().optional(),
+    category: z.string().optional(),
+    startDate: z.number().optional(),
+  }))
+  .paginated({ limit: 20, item: ArticleSchema })
+  .query(async ({ ctx, input }) => {
+    if (input.query) {
+      // Text search path - limited filtering
+      return await ctx.orm.query.articles.findMany({
+        search: {
+          index: 'search_content',
+          query: input.query!,
+          filters: input.category ? { category: input.category } : undefined,
+        },
+        cursor: input.cursor,
+        limit: input.limit,
+      });
+    }
+
+    // Predicate where path - full filtering power with explicit .withIndex(...)
+    return await ctx.orm.query.articles
+      .withIndex('by_creation_time')
+      .findMany({
+        where: (_articles, { predicate }) =>
+          predicate((article) => {
+            if (input.category && article.category !== input.category) return false;
+            if (input.startDate && article.publishedAt < input.startDate) return false;
+            return true;
+          }),
+        cursor: input.cursor,
+        limit: input.limit,
+      });
+  });
+```
+
+**Option 3: Post-process search results** (small datasets only)
+
+```ts showLineNumbers {2-4,6-8}
+// Only viable for small result sets
+const searchResults = await ctx
+  .orm.query.articles.findMany({
+    search: { index: 'search_content', query },
+    limit: 100, // Hard limit
+  });
+
+const filtered = searchResults.filter((article) =>
+  article.publishedAt >= startDate && article.publishedAt <= endDate
+);
+```
+
+## Performance Considerations
+
+Understanding performance is critical for production apps.
+
+### Search Performance
+
+- Search indexes have overhead - don't over-index
+- Use `filterFields` to narrow results before text matching
+- Always limit results with `limit` or cursor pagination (`cursor` + `limit`)
+
+### Predicate `where` Performance
+
+Predicate `where` runs post‑fetch against an explicit index stream. Use `maxScan` to cap scan size:
+
+```ts showLineNumbers {2-6}
+const results = await db.query.posts
+  .withIndex('by_created_at')
+  .findMany({
+    where: (_posts, { predicate }) => predicate((post) => expensiveCheck(post)),
+    cursor: input.cursor,
+    limit: input.limit,
+    maxScan: 500,
+  });
+```
+
+<Callout icon={<InfoIcon />}>
+**Warning:** Predicate filters can scan a large portion of a table. Keep page sizes small and use indexes when possible.
+</Callout>
+
+### Cursor Stability
+
+Cursor pagination is only stable when you reuse the same `where` predicate and `orderBy`:
+
+```ts showLineNumbers {1-6}
+const page1 = await db.query.messages
+  .withIndex('by_creation_time')
+  .findMany({
+    where: (_messages, { predicate }) => predicate((m) => m.read),
+    orderBy: { createdAt: 'desc' },
+    cursor: null,
+    limit: 20,
+  });
+```
+
+### Memory Efficiency
+
+- Prefer cursor pagination (`cursor` + `limit`) for user‑facing lists
+- Keep limits small for non‑paginated queries
+- Use selective index ranges for predicate `where` and cap reads with `maxScan`
+
+## Best Practices
+
+Here are key practices to follow when using filters and search.
+
+1. **Create appropriate indexes** - Each search field needs its own search index
+2. **Limit results** - Always use `limit` or cursor pagination (`cursor` + `limit`)
+3. **Use filterFields** - Pre-filter with equality before text search
+4. **Bound predicate scans** - Use explicit `.withIndex(...)` and cap reads with `maxScan`
+5. **Normalize search terms** - Consider lowercase for consistent matching
+6. **Handle empty queries** - Decide behavior when search query is empty
+7. **Prefer cursor pagination** - Use `findMany({ cursor: null, limit: 20 })` for large lists
+
+That's it. You now have all the tools for full-text search, predicate filtering, and advanced query composition in the ORM.
+
+## Next Steps
+
+<Cards>
+  <Card title="ORM" href="/docs/orm" />
+  <Card title="Triggers" href="/docs/orm/triggers" />
+  <Card title="Aggregates" href="/docs/server/advanced/aggregates" />
+  <Card title="better-convex" href="https://github.com/get-convex/better-convex" />
+</Cards>

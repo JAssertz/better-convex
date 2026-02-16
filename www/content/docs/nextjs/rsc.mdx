@@ -64,7 +64,7 @@ export function PostList() {
   return (
     <ul>
       {posts?.map((post) => (
-        <li key={post._id}>{post.title}</li>
+        <li key={post.id}>{post.title}</li>
       ))}
     </ul>
   );
@@ -311,47 +311,48 @@ If you're coming from vanilla Convex, here's what changes.
 
 ### What's new
 
-**Before (vanilla Convex):**
+<Compare>
+  <CompareItem title="Before (vanilla Convex)">
+    ```tsx showLineNumbers {1-3,6-7,12-13}
+    import { preloadQuery } from 'convex/nextjs';
+    import { api } from '@convex/_generated/api';
+    import { Preloaded, usePreloadedQuery } from 'convex/react';
 
-```tsx showLineNumbers {1-3,6-7,12-13}
-import { preloadQuery } from 'convex/nextjs';
-import { api } from '@convex/_generated/api';
-import { Preloaded, usePreloadedQuery } from 'convex/react';
+    // Server Component
+    export default async function Page() {
+      const preloaded = await preloadQuery(api.posts.list);
+      return <PostList preloadedPosts={preloaded} />;
+    }
 
-// Server Component
-export default async function Page() {
-  const preloaded = await preloadQuery(api.posts.list);
-  return <PostList preloadedPosts={preloaded} />;
-}
+    // Client Component
+    function PostList({ preloadedPosts }: { preloadedPosts: Preloaded<typeof api.posts.list> }) {
+      const posts = usePreloadedQuery(preloadedPosts);
+      return /* ... */;
+    }
+    ```
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```tsx showLineNumbers {1,4-5,7-9,14-15}
+    import { crpc, HydrateClient, prefetch } from '@/lib/convex/rsc';
 
-// Client Component
-function PostList({ preloadedPosts }: { preloadedPosts: Preloaded<typeof api.posts.list> }) {
-  const posts = usePreloadedQuery(preloadedPosts);
-  return /* ... */;
-}
-```
+    // Server Component
+    export default async function Page() {
+      prefetch(crpc.posts.list.queryOptions({}));
+      return (
+        <HydrateClient>
+          <PostList />
+        </HydrateClient>
+      );
+    }
 
-**After (cRPC):**
-
-```tsx showLineNumbers {1,4-5,7-9,14-15}
-import { crpc, HydrateClient, prefetch } from '@/lib/convex/rsc';
-
-// Server Component
-export default async function Page() {
-  prefetch(crpc.posts.list.queryOptions({}));
-  return (
-    <HydrateClient>
-      <PostList />
-    </HydrateClient>
-  );
-}
-
-// Client Component
-function PostList() {
-  const { data: posts } = useQuery(crpc.posts.list.queryOptions({}));
-  return /* ... */;
-}
-```
+    // Client Component
+    function PostList() {
+      const { data: posts } = useQuery(crpc.posts.list.queryOptions({}));
+      return /* ... */;
+    }
+    ```
+  </CompareItem>
+</Compare>
 
 **Key differences:**
 
@@ -367,7 +368,7 @@ function PostList() {
 ## Next Steps
 
 <Cards>
-  <Card title="Setup" href="/docs/nextjs/setup" />
+  <Card title="Setup" href="/docs/nextjs" />
   <Card title="HTTP Router" href="/docs/server/http" />
   <Card title="Auth Server" href="/docs/auth/server" />
 </Cards>

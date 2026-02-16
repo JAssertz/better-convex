@@ -128,14 +128,14 @@ export const authComponent = createClient<DataModel, typeof authSchema>(
   { local: { schema: authSchema }, verbose: false }
 );
 
-export const createAuthOptions = (ctx: GenericCtx<DataModel>) => ({
+export const getAuthOptions = (ctx: GenericCtx<DataModel>) => ({
   baseURL: process.env.SITE_URL,
   database: authComponent.adapter(ctx),
   // ... plugins and options
 });
 
 export const createAuth = (ctx: GenericCtx<DataModel>) =>
-  betterAuth(createAuthOptions(ctx));
+  betterAuth(getAuthOptions(ctx));
 
 export const { getAuthUser } = authComponent.clientApi();
 
@@ -185,7 +185,7 @@ export const authClient = createClient<DataModel, typeof schema>({
 });
 
 // Create auth options factory
-const createAuthOptions = (ctx: QueryCtx | MutationCtx | ActionCtx) =>
+const getAuthOptions = (ctx: QueryCtx | MutationCtx | ActionCtx) =>
   ({
     baseURL: process.env.SITE_URL!,
     emailAndPassword: { enabled: true },
@@ -207,13 +207,13 @@ const createAuthOptions = (ctx: QueryCtx | MutationCtx | ActionCtx) =>
 // Query/Mutation context auth
 export const getAuth = <Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) =>
   betterAuth({
-    ...createAuthOptions(ctx),
-    database: authClient.adapter(ctx, createAuthOptions),
+    ...getAuthOptions(ctx),
+    database: authClient.adapter(ctx, getAuthOptions),
   });
 
 // Action context auth
 export const createAuth = (ctx: ActionCtx) =>
-  betterAuth(createAuthOptions(ctx));
+  betterAuth(getAuthOptions(ctx));
 
 // Generate internal CRUD functions
 export const {
@@ -239,12 +239,12 @@ export const {
 } = authClient.triggersApi();
 
 // Export for Better Auth CLI
-export const auth = betterAuth(createAuthOptions({} as any));
+export const auth = betterAuth(getAuthOptions({} as any));
 ```
 
 **Important changes:**
 - `createClient` now takes `{ authFunctions, schema, triggers }` instead of `(components.betterAuth, { local: {...} })`
-- Two database adapters: `httpAdapter(ctx)` for HTTP routes, `adapter(ctx, createAuthOptions)` for queries/mutations
+- Two database adapters: `httpAdapter(ctx)` for HTTP routes, `adapter(ctx, getAuthOptions)` for queries/mutations
 - `createApi()` generates internal functions instead of component access
 - Triggers are built-in, not separate
 

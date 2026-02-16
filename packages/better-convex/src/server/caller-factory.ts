@@ -11,7 +11,8 @@ import type {
   FunctionReference,
   FunctionReturnType,
 } from 'convex/server';
-import type { EmptyObject } from 'convex-helpers';
+import type { DataTransformerOptions } from '../crpc/transformer';
+import type { EmptyObject } from '../internal/upstream';
 import {
   type CallerMeta,
   type CallerOpts,
@@ -50,6 +51,8 @@ type CreateCallerFactoryOptions<TApi> = {
   auth?: AuthOptions;
   /** Procedure metadata. */
   meta: CallerMeta;
+  /** Optional wire transformer for request/response payloads (always composed with Date). */
+  transformer?: DataTransformerOptions;
 };
 
 type OptionalArgs<FuncRef extends FunctionReference<any, any>> =
@@ -88,8 +91,6 @@ export type ConvexContext<TApi> = {
  *
  * @example
  * ```ts
- * import { getToken } from '@convex-dev/better-auth/utils';
- *
  * const { createContext, createCaller } = createCallerFactory({
  *   api,
  *   convexSiteUrl: env.NEXT_PUBLIC_CONVEX_SITE_URL,
@@ -163,7 +164,7 @@ export function createCallerFactory<TApi extends Record<string, unknown>>(
       return callWithTokenAndRetry(
         (token) => {
           const argsAndOptions = getArgsAndOptions([args], token);
-          return fetchQuery(query, ...argsAndOptions);
+          return fetchQuery(query, argsAndOptions[0], argsAndOptions[1]);
         },
         tokenResult,
         reqOpts.headers
@@ -183,7 +184,7 @@ export function createCallerFactory<TApi extends Record<string, unknown>>(
       return callWithTokenAndRetry(
         (token) => {
           const argsAndOptions = getArgsAndOptions([args], token);
-          return fetchMutation(mutation, ...argsAndOptions);
+          return fetchMutation(mutation, argsAndOptions[0], argsAndOptions[1]);
         },
         tokenResult,
         reqOpts.headers
@@ -201,7 +202,7 @@ export function createCallerFactory<TApi extends Record<string, unknown>>(
       return callWithTokenAndRetry(
         (token) => {
           const argsAndOptions = getArgsAndOptions([args], token);
-          return fetchAction(action, ...argsAndOptions);
+          return fetchAction(action, argsAndOptions[0], argsAndOptions[1]);
         },
         tokenResult,
         reqOpts.headers
@@ -216,6 +217,7 @@ export function createCallerFactory<TApi extends Record<string, unknown>>(
         fetchMutation: fetchAuthMutation,
         fetchAction: fetchAuthAction,
         meta: opts.meta,
+        transformer: opts.transformer,
       }),
     };
   };

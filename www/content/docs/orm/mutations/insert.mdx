@@ -1,0 +1,135 @@
+---
+title: Insert
+description: Insert rows with Drizzle-style builders
+---
+
+import { InfoIcon, AlertTriangle } from "lucide-react"
+
+In this guide, we'll learn how to insert rows into your Convex tables using the ORM's Drizzle-style `insert()` builder. You'll see single inserts, multi-row inserts, returning clauses, and upsert patterns.
+
+## Basic Insert
+
+Let's start with a simple mutation that inserts a single user:
+
+```ts showLineNumbers title="convex/functions/users.ts"
+import { z } from 'zod';
+import { publicMutation } from '../lib/crpc';
+import { users } from '../schema';
+
+export const createUser = publicMutation
+  .input(z.object({ email: z.string().email(), name: z.string() }))
+  .mutation(async ({ ctx, input }) => {
+    await ctx.orm.insert(users).values({
+      email: input.email,
+      name: input.name,
+    });
+  });
+```
+
+If you need the insert type for a table, you can infer it from the table definition:
+
+```ts
+type NewUser = typeof users.$inferInsert;
+```
+
+## Returning
+
+By default, `insert()` returns `void`. Use `.returning()` to get the inserted rows back.
+
+You can return all fields or pick specific columns:
+
+```ts showLineNumbers {3,8}
+const [user] = await ctx.orm
+  .insert(users)
+  .values({ email: 'ada@example.com', name: 'Ada' })
+  .returning();
+
+const [partial] = await ctx.orm
+  .insert(users)
+  .values({ email: 'grace@example.com', name: 'Grace' })
+  .returning({ id: users.id, email: users.email });
+```
+
+<Callout icon={<InfoIcon />}>
+**Note:** `.returning()` always returns an array, even for single-row inserts.
+</Callout>
+
+## Insert Multiple Rows
+
+You can pass an array to `.values()` to insert several rows at once:
+
+```ts showLineNumbers
+await ctx.orm.insert(users).values([
+  { email: 'a@example.com', name: 'A' },
+  { email: 'b@example.com', name: 'B' },
+]);
+```
+
+## Upserts and Conflicts
+
+The ORM mirrors Drizzle's `onConflictDoNothing()` and `onConflictDoUpdate()` surface, enforced at runtime against your table's unique constraints and indexes.
+
+### On Conflict Do Nothing
+
+Use `onConflictDoNothing` to silently skip rows that would violate a unique constraint:
+
+```ts showLineNumbers {4}
+await ctx.orm
+  .insert(users)
+  .values({ email: 'ada@example.com', name: 'Ada' })
+  .onConflictDoNothing({ target: users.email });
+```
+
+You can also omit `target` to skip inserts on **any** unique conflict:
+
+```ts showLineNumbers {4}
+await ctx.orm
+  .insert(users)
+  .values({ email: 'ada@example.com', name: 'Ada' })
+  .onConflictDoNothing();
+```
+
+### On Conflict Do Update
+
+Use `onConflictDoUpdate` to update the existing row when a conflict occurs:
+
+```ts showLineNumbers {4-7}
+await ctx.orm
+  .insert(users)
+  .values({ email: 'ada@example.com', name: 'Ada' })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: 'Ada Lovelace' },
+  });
+```
+
+<Callout icon={<AlertTriangle />}>
+**Important:** `onConflictDoUpdate()` requires a `target` column and a backing unique constraint or index (`uniqueIndex()`, `.unique()`, `unique()`).
+</Callout>
+
+## Constraint and RLS Enforcement
+
+The ORM enforces unique constraints, foreign keys, and RLS policies at runtime for all insert and upsert operations.
+
+<Callout icon={<InfoIcon />}>
+**Note:** Direct `ctx.db.insert(...)` bypasses these checks. Use `ctx.orm` to get full constraint enforcement.
+</Callout>
+
+That's it. You now have everything you need to insert data - from simple single-row inserts to conflict-handling upserts.
+
+## Next Steps
+
+<Cards>
+  <Card title="Mutations Overview" href="/docs/orm/mutations">
+    Shared mutation concepts: returning, where, atomicity, and async batching
+  </Card>
+  <Card title="Update" href="/docs/orm/mutations/update">
+    Update rows with set/where/returning
+  </Card>
+  <Card title="Delete" href="/docs/orm/mutations/delete">
+    Delete rows with where/returning
+  </Card>
+  <Card title="Schema Definition" href="/docs/orm/schema">
+    Define tables, constraints, and runtime defaults
+  </Card>
+</Cards>

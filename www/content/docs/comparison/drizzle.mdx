@@ -1,0 +1,417 @@
+---
+title: Drizzle
+description: Side-by-side API comparison between Drizzle ORM and the ORM with migration guide
+links:
+  doc: https://orm.drizzle.team
+---
+
+import { AlertTriangle } from "lucide-react"
+
+This guide compares Drizzle and the ORM side-by-side. It focuses on API mapping and the behavioral differences that matter when moving from SQL to Convex. The mapping is aligned with Drizzle v1 relational APIs.
+
+## At A Glance
+
+**Same API surface:**
+- Table builders and relations (`convexTable`, `defineRelations`, `one`, `many`)
+- Relational query builder (`findMany`, `findFirst`, object/callback `where`, `orderBy`, `limit`, `offset`, `with`)
+- Type inference (`InferSelectModel`, `InferInsertModel`, `$inferSelect`, `$inferInsert`)
+- Mutation helpers (`insert`, `update`, `delete`, `returning`, `onConflictDoUpdate`)
+
+**ORM extras:**
+- `findFirstOrThrow()` (Prisma-style sugar when a row must exist)
+
+**Different behavior:**
+- `id` is auto-created (no manual `id` column)
+- Fields are nullable by default (`text()` yields `string | null`)
+- `columns` projection and string operators run post-fetch
+- Relation filters and ordering for `many()` run post-fetch
+- Unique and foreign keys (including FK actions) are enforced by ORM mutations, not SQL
+- Cursor pagination uses the first `orderBy` field and requires indexes for stable ordering
+
+**Not available in Convex:**
+- SQL joins and raw SQL execution
+- Database migrations and database-side constraints/triggers
+- Custom SQL data types
+- ORM query-builder aggregations (`count`, `sum`, `avg`, `max`, `min`) should use Convex aggregate components
+
+## Convex‑Ents Compatibility
+
+The ORM is designed as a successor to Convex‑Ents, but it follows Drizzle’s query‑builder model rather than Ent‑object APIs.
+
+**What maps cleanly:**
+- Relations and relational reads (`with`) replace `edge()`/`edgeX()` traversal
+- Runtime constraints (unique / foreign key / check) are enforced by ORM mutations
+- Soft and scheduled deletes are supported
+- Many‑to‑many with data uses an explicit join table with payload fields
+
+**What’s intentionally different:**
+- No ent‑object API (`getX()`, `patch()`, lazy promises); use `ctx.orm.query.*` and mutation builders
+- No edge methods on loaded rows; use relation loading + mutation builders
+
+See [Migrate from native Convex](/docs/migrations/db) (for `ctx.db`) or [Migrate from Convex Ents](/docs/migrations/ents) (for `ctx.table`) for step‑by‑step mappings.
+
+**Concurrency note:** uniqueness is best‑effort within a mutation; concurrent mutations can still race. Prefer `onConflictDoNothing()` / retries or serialize writes per key when strict guarantees are required.
+
+## Migration Checklist
+
+- [ ] Install `better-convex`
+- [ ] Convert table definitions to `convexTable()` with column builders (`text`, `integer`, `boolean`, `id`)
+- [ ] Replace manual `id` fields with Convex `id`
+- [ ] Define relations using `defineRelations()` and `with`
+- [ ] Attach ORM to `ctx.orm` in context (create once)
+- [ ] Keep `where`, `orderBy`, `limit`, `offset` shapes the same
+- [ ] Move joins to relation loading (`with`)
+
+## Schema Definition
+
+<Compare>
+  <CompareItem title="Drizzle">
+    ```ts showLineNumbers
+    import { pgTable, serial, text, integer, boolean } from 'drizzle-orm/pg-core';
+
+    const users = pgTable('users', {
+      id: serial('id').primaryKey(),
+      name: text('name').notNull(),
+      email: text('email').notNull(),
+      age: integer('age'),
+      isAdmin: boolean('is_admin').default(false),
+    });
+
+    const posts = pgTable('posts', {
+      id: serial('id').primaryKey(),
+      title: text('title').notNull(),
+      content: text('content').notNull(),
+      published: boolean('published').default(false),
+      userId: integer('user_id').references(() => users.id),
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="ORM">
+    ```ts showLineNumbers
+    import { convexTable, text, integer, boolean, id } from 'better-convex/orm';
+
+    const users = convexTable('users', {
+      // id is auto-created as Id<'users'>
+      name: text().notNull(),
+      email: text().notNull(),
+      age: integer(),
+      isAdmin: boolean(),
+    });
+
+    const posts = convexTable('posts', {
+      // id is auto-created as Id<'posts'>
+      title: text().notNull(),
+      content: text().notNull(),
+      published: boolean(),
+      userId: id('users'),
+    });
+    ```
+  </CompareItem>
+</Compare>
+
+**Key changes:**
+- IDs are auto-created as `id`
+- Nullable by default unless `.notNull()` is used
+- Foreign keys are `id('table')`
+
+## Relations
+
+<Compare>
+  <CompareItem title="Drizzle">
+    ```ts showLineNumbers
+    import { defineRelations } from 'drizzle-orm';
+
+    export const relations = defineRelations({ users, posts }, (r) => ({
+      users: {
+        posts: r.many.posts(),
+      },
+      posts: {
+        author: r.one.users({
+          from: r.posts.userId,
+          to: r.users.id,
+        }),
+      },
+    }));
+    ```
+  </CompareItem>
+  <CompareItem title="ORM">
+    ```ts showLineNumbers {11}
+    import { defineRelations } from 'better-convex/orm';
+
+    export const relations = defineRelations({ users, posts }, (r) => ({
+      users: {
+        posts: r.many.posts(),
+      },
+      posts: {
+        author: r.one.users({
+          from: r.posts.userId,
+          to: r.users.id,
+        }),
+      },
+    }));
+    ```
+  </CompareItem>
+</Compare>
+
+## Queries
+
+<Compare>
+  <CompareItem title="Drizzle">
+    ```ts showLineNumbers
+    const users = await db.query.users.findMany();
+
+    const user = await db.query.users.findFirst({
+      where: { id: userId },
+    });
+
+    const admins = await db.query.users.findMany({
+      where: { role: 'admin' },
+      orderBy: { createdAt: 'desc' },
+      limit: 10,
+    });
+    ```
+  </CompareItem>
+  <CompareItem title="ORM">
+    ```ts showLineNumbers {1}
+    const users = await ctx.orm.query.users.findMany({ limit: 50 });
+
+    const user = await ctx.orm.query.users.findFirst({
+      where: { id: userId },
+    });
+
+    const requiredUser = await ctx.orm.query.users.findFirstOrThrow({
+      where: { id: userId },
+    });
+
+    // Schema: index('by_role').on(t.role) on users table
+    const admins = await ctx.orm.query.users.findMany({
+      where: { role: 'admin' },
+      orderBy: { createdAt: 'desc' },
+      limit: 10,
+    });
+    ```
+  </CompareItem>
+</Compare>
+
+## API Mapping
+
+| Drizzle | ORM | Notes |
+|---|---|---|
+| `pgTable()` / `mysqlTable()` / `sqliteTable()` | `convexTable()` | Same surface | 
+| `defineRelations()` | `defineRelations()` | Same surface |
+| `db.query.*.findMany()` | `db.query.*.findMany()` | Same surface via `ctx.orm` |
+| `db.query.*.findFirst()` | `db.query.*.findFirst()` | Same surface via `ctx.orm` |
+| n/a | `db.query.*.findFirstOrThrow()` | ORM sugar; throws if no row exists |
+| `where` object filters | `where` object filters | Same shape |
+| `orderBy` | `orderBy` | Same shape, index-aware |
+| `columns` | `columns` | Post-fetch projection |
+| `with` | `with` | Relation loading |
+| `insert/update/delete` | `insert/update/delete` | Same surface |
+| `count/sum/avg/max/min` in query builder | Use components | Use [Aggregates](/docs/server/advanced/aggregates) (`@convex-dev/aggregate`) |
+| SQL joins | Not available | Use `with` |
+| Raw SQL | Not available | Convex is document-based |
+| Custom types | Not available | Use app-level encoding |
+| Table introspection | `getTableColumns`, `getTableConfig` | Runtime metadata helpers |
+
+## Not Available In Convex
+
+These Drizzle features are SQL-specific and do not map to Convex:
+
+- SQL joins
+- SQL subqueries and operators that depend on them (`exists`, `notExists`)
+- ORM query-builder aggregations (`count`, `sum`, `avg`, `max`, `min`) should use Convex aggregate components
+- Raw SQL execution
+- RQB SQL-only features: `RAW` filters and SQL placeholders in `where`/`limit`/`offset` are not supported at runtime
+- Database migrations and database-side constraints/triggers
+- Custom SQL data types
+
+Use relation filters for Convex-style existence checks:
+
+```ts showLineNumbers
+// Has at least one related post
+await db.query.users.findMany({
+  where: { posts: true },
+});
+
+// Has no related posts
+await db.query.users.findMany({
+  where: { NOT: { posts: true } },
+});
+```
+
+For aggregation use cases today, use the Convex aggregate component:
+- `@convex-dev/aggregate`
+- Guide: [/docs/server/advanced/aggregates](/docs/server/advanced/aggregates)
+
+## Post-Fetch Behavior
+
+These features keep Drizzle's API shape but run after data is fetched:
+
+**Column selection**
+```ts showLineNumbers
+const users = await db.query.users.findMany({
+  columns: { name: true, email: true },
+});
+```
+
+**String operators**
+```ts showLineNumbers
+const users = await db.query.users.findMany({
+  where: { email: { ilike: '%@example.com' } },
+});
+```
+
+**Extras (computed fields)**
+```ts showLineNumbers
+const users = await db.query.users.findMany({
+  extras: {
+    emailDomain: (row) => row.email.split('@')[1]!,
+  },
+});
+```
+
+**Relation filters on `many()`**
+```ts showLineNumbers
+const users = await db.query.users.findMany({
+  with: {
+    posts: {
+      where: { published: true },
+      orderBy: { createdAt: 'desc' },
+      limit: 5,
+    },
+  },
+});
+```
+
+## Indexes And Ordering
+
+- `findMany({ cursor, limit })` relies on the first `orderBy` field for cursor ordering
+- Sorting without an index falls back to `createdAt` ordering
+- Post-fetch sorting (multi-field or non-indexable orderBy) sorts before `offset`/`limit`, so the ORM must read the full filtered candidate set first
+- For these post-fetch sort paths, size non-paginated queries intentionally (`limit`, schema `defaultLimit`, or `allowFullScan`)
+- Compound index planning follows prefix validity for index compilation. Non-leading-only predicates (for example `numLikes` on `[type, numLikes]`) can run, but they don't use the compound index prefix unless you also constrain the leading field (or explicitly anchor with `.withIndex(...)`)
+- Add `index('...').on(t.field)` on fields used for filter or sort
+
+```ts showLineNumbers
+const posts = convexTable(
+  'posts',
+  {
+    title: text().notNull(),
+    numLikes: integer().notNull(),
+  },
+  (t) => [index('by_likes').on(t.numLikes)]
+);
+```
+
+## Constraints And Defaults
+
+- Unique, foreign keys, and `check()` constraints are enforced only through ORM mutations
+- Foreign key actions require an index on the referencing columns
+- Relation loading requires indexes on relation fields (missing indexes throw unless `allowFullScan`)
+- Relation loading fail-fasts when unique relation lookup keys exceed `defaults.relationFanOutMaxKeys` (default `1000`) unless `allowFullScan`
+- Non-paginated `findMany()` must be explicitly sized (`limit`, cursor pagination (`cursor` + `limit`), schema `defaultLimit`, or `allowFullScan`)
+- `many()` relation loading must be explicitly sized per parent (`with.<relation>.limit`, schema `defaultLimit`, or `allowFullScan`)
+- System tables (`_storage`, `_scheduled_functions`) are accessed via raw `db.system.get/query`, not `db.query.<table>.findMany()`
+- Predicate `where` requires explicit `.withIndex(name, range?)` and runs post‑fetch via stream filtering
+- Search mode (`findMany({ search })`) is relevance-ordered; `orderBy` is not supported
+- Search mode supports base-table object `where`, but not predicate `where` or relation-based `where`
+- Vector mode (`findMany({ vectorSearch })`) does not support `cursor`, `limit`, `maxScan`, `where`, `orderBy`, `.withIndex(...)`, or `offset`
+- Update/delete without `where()` throws unless `allowFullScan`
+- Update/delete matched rows are capped by `mutationMaxRows` (default `1000`) and collected in `mutationBatchSize` pages (default `100`)
+- Async FK fan-out uses `mutationLeafBatchSize` for non-recursive actions (default `900`)
+- Async FK fan-out enforces measured-byte budget `mutationMaxBytesPerBatch` (default `2_097_152`)
+- Async FK fan-out enforces schedule-call cap `mutationScheduleCallCap` (default `100`)
+- For large update/delete workloads, use builder-level `paginate({ cursor, limit })` to process one mutation page at a time
+- Async execution (`execute({ mode: 'async', batchSize?, delayMs? })` or `.executeAsync(...)`) runs the first update/delete batch inline and schedules remaining batches
+- Async execution also applies to FK/cascade fan-out paths; large fan-out is paged and continued via scheduler instead of volume-fail-fast
+- FK cascade fan-out is system-driven after root-row authorization; child-table RLS policies are not re-evaluated during fan-out
+- Explicit async APIs (`execute({ mode: 'async' })` / `.executeAsync(...)`) are incompatible with builder-level `paginate(...)`; use one strategy per call
+- Async execution is incompatible with resolved scheduled delete mode (`.scheduled(...)` or table-level `deletion('scheduled')`)
+- Paged update/delete currently does not support multi-probe filter plans (`inArray`, some `OR`, complement ranges)
+- Check constraints follow SQL-like NULL semantics: the check fails only when the expression is `false` (and passes on `unknown`)
+- Defaults are applied only by ORM inserts/updates (`.default(...)`, `$defaultFn(...)`, `$onUpdateFn(...)`)
+- Direct `ctx.db` writes bypass all ORM enforcement
+
+**Default policy**
+- Query sizing has no implicit fallback (no hidden row default unless you set `defaults.defaultLimit`).
+- Relation fan-out guardrails default to `relationFanOutMaxKeys=1000`.
+- Mutation safety has built-in guardrail defaults (`mutationBatchSize=100`, `mutationMaxRows=1000`).
+- Async fan-out defaults: `mutationLeafBatchSize=900`, `mutationMaxBytesPerBatch=2_097_152`, `mutationScheduleCallCap=100`.
+- Non-paginated mutation mode defaults to sync (`defaults.mutationExecutionMode='sync'`) unless configured otherwise.
+
+<Callout icon={<AlertTriangle />}>
+**Uniqueness under concurrency**: runtime uniqueness checks are best‑effort within a mutation. Concurrent mutations can still race (including 1:1 relations).
+Recommended patterns:
+- Use `onConflictDoNothing()` / `onConflictDoUpdate()` for idempotent writes
+- Retry on conflict when appropriate
+- Serialize writes per unique key in application logic when strict guarantees are required
+</Callout>
+
+## Soft & Scheduled Deletes
+
+- Soft/scheduled deletes are **optional helpers** and not part of Drizzle
+- Soft deletes require a `deletionTime` field in your table
+- Table-level defaults are supported via `deletion('hard'|'soft'|'scheduled', options?)` in `convexTable(...)` extra config
+- Per-query delete mode methods (`.hard()`, `.soft()`, `.scheduled(...)`) override table defaults
+- Scheduled deletes require wiring `scheduler` + `scheduledDelete` when you build `ctx.orm`
+- Async mutation batches require wiring `scheduler` + `scheduledMutationBatch` when you build `ctx.orm`
+
+## Performance Guidance
+
+- Index every field you filter or order by frequently
+- Use search indexes for large text filtering
+- Use vector indexes only for embedding search
+- Prefer cursor pagination (`cursor` + `limit`) for infinite scroll and large datasets
+- Avoid deep offset pagination for large tables
+- Use `with` to avoid N+1 queries
+
+## Temporal Types On Convex
+
+For Drizzle parity, `date()` and `timestamp()` exist in the ORM, but storage follows Convex rules:
+
+- `timestamp()` is the recommended type for point-in-time fields (`createdAt`, `updatedAt`, `expiresAt`).
+- `date()` is calendar-only (`YYYY-MM-DD` semantics).
+- Public ORM APIs use `createdAt`; Convex internal `_creationTime` is hidden.
+- `timestamp().defaultNow()` yields `Date` in ORM reads while underlying Convex storage stays numeric.
+
+## Gotchas
+
+| Issue | Cause | Fix |
+|---|---|---|
+| **`ctx.orm` is missing** | ORM not attached to context | Attach ORM once (`createOrm({ schema }).db(ctx)`) |
+| **Convex internal IDs** | Convex stores `_id` internally | Use public `id` in ORM APIs |
+| **Convex internal creation time** | Convex stores `_creationTime` internally | Use public `createdAt` in ORM APIs |
+| **Nullable fields** | Nullable by default | Add `.notNull()` |
+| **No SQL joins** | Convex is document-based | Use `with` relation loading |
+| **Custom SQL types** | Not available | Use app-level encoding |
+| Slow ordering | Missing index | Add `index('...').on(t.field)` in schema |
+| `findMany({ cursor, limit })` order changes | No index on primary sort | Add index on first `orderBy` field |
+| `findMany()` throws explicit sizing error | Non-paginated query has no `limit` and no schema `defaultLimit` | Add `limit`, use cursor pagination (`cursor` + `limit`), set `defaults.defaultLimit`, or opt in with `allowFullScan` |
+| `like` or `ilike` is slow | Post-fetch filtering | Use search indexes |
+| `vectorSearch` throws provider error | `createOrm(...).db(ctx)` was called without `vectorSearch` | Pass `vectorSearch: ctx.vectorSearch` when building ORM db |
+| Relations not loading | Incomplete relation metadata | Define both relation sides or explicit `from`/`to` |
+| `update()`/`delete()` exceeds row cap | Matched rows > `mutationMaxRows` | Narrow filters, increase `defaults.mutationMaxRows`, or switch to paged mutation execution |
+| Paged update/delete throws multi-probe error | Filter compiles to multiple index probes | Rewrite filter to a single index range (or use non-paged mode with row cap) |
+| Missing defaults | Direct `ctx.db` bypasses ORM defaults | Use ORM inserts or set defaults in code |
+
+## Schema Introspection
+
+The ORM exposes Drizzle-style helpers for runtime schema metadata:
+
+```ts showLineNumbers
+import { getTableColumns, getTableConfig } from 'better-convex/orm';
+
+const columns = getTableColumns(users); // includes id/createdAt
+const config = getTableConfig(users);   // indexes/unique/fks/rls/checks
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Schema Definition" href="/docs/orm/schema">
+    Define tables, relations, and indexes
+  </Card>
+  <Card title="Querying Data" href="/docs/orm/queries">
+    Learn filters, ordering, and pagination
+  </Card>
+</Cards>

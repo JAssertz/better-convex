@@ -1,12 +1,10 @@
-import type { GenericCtx } from '@convex-dev/better-auth';
-import { isRunMutationCtx } from '@convex-dev/better-auth/utils';
 import type { BetterAuthOptions, Where } from 'better-auth';
 import {
   type AdapterFactoryOptions,
   createAdapterFactory,
   type DBAdapterDebugLogOption,
 } from 'better-auth/adapters';
-import { getAuthTables } from 'better-auth/db';
+import { type BetterAuthDBSchema, getAuthTables } from 'better-auth/db';
 import {
   createFunctionHandle,
   type FunctionHandle,
@@ -15,9 +13,11 @@ import {
   type PaginationResult,
   type SchemaDefinition,
 } from 'convex/server';
-import { asyncMap } from 'convex-helpers';
-import { prop, sortBy, unique } from 'remeda';
+import { prop, sortBy, uniqueBy } from 'remeda';
 import type { SetOptional } from 'type-fest';
+import { asyncMap } from '../internal/upstream';
+import type { GenericCtx } from '../server/context-utils';
+import { isRunMutationCtx } from '../server/context-utils';
 import {
   createHandler,
   deleteManyHandler,
@@ -115,6 +115,15 @@ const parseWhere = (
   }) as ConvexCleanedWhere[];
 };
 
+const uniqueDocs = (docs: any[]) =>
+  uniqueBy(docs, (doc) => {
+    if (doc && typeof doc === 'object') {
+      return doc._id ?? doc.id ?? doc;
+    }
+
+    return doc;
+  });
+
 export const adapterConfig = {
   adapterId: 'convex',
   adapterName: 'Convex Adapter',
@@ -150,6 +159,29 @@ export const adapterConfig = {
   },
 } satisfies AdapterFactoryOptions['config'];
 
+const ORM_SCHEMA_OPTIONS = Symbol.for('better-convex:OrmSchemaOptions');
+
+const hasOrmSchemaMetadata = (schema: unknown) =>
+  !!schema && typeof schema === 'object' && ORM_SCHEMA_OPTIONS in schema;
+
+const createAuthSchema = async ({
+  file,
+  schema,
+  tables,
+}: {
+  tables: BetterAuthDBSchema;
+  file?: string;
+  schema?: SchemaDefinition<any, any>;
+}) => {
+  if (hasOrmSchemaMetadata(schema)) {
+    const { createSchemaOrm } = await import('./create-schema-orm');
+    return createSchemaOrm({ file, tables });
+  }
+
+  const { createSchema } = await import('./create-schema');
+  return createSchema({ file, tables });
+};
+
 export const httpAdapter = <
   DataModel extends GenericDataModel,
   Schema extends SchemaDefinition<any, any>,
@@ -158,10 +190,12 @@ export const httpAdapter = <
   {
     authFunctions,
     debugLogs,
+    schema,
     triggers,
   }: {
     authFunctions: AuthFunctions;
     debugLogs?: DBAdapterDebugLogOption;
+    schema?: Schema;
     triggers?: Triggers<DataModel, Schema>;
   }
 ) => {
@@ -171,6 +205,9 @@ export const httpAdapter = <
       debugLogs: debugLogs || false,
     },
     adapter: ({ options }) => {
+      const getTriggers = (model: string) =>
+        triggers?.[model as keyof Triggers<DataModel, Schema>];
+
       // Disable telemetry in all cases because it requires Node
       options.telemetry = { enabled: false };
 
@@ -192,7 +229,7 @@ export const httpAdapter = <
                   })
               )
             );
-            const docs = unique(results.flatMap((r) => r.docs));
+            const docs = uniqueDocs(results.flatMap((r) => r.docs));
 
             return docs.length;
           }
@@ -214,13 +251,13 @@ export const httpAdapter = <
           }
 
           const onCreateHandle =
-            authFunctions.onCreate && triggers?.[model]?.onCreate
+            authFunctions.onCreate && getTriggers(model)?.onCreate
               ? ((await createFunctionHandle(
                   authFunctions.onCreate
                 )) as FunctionHandle<'mutation'>)
               : undefined;
           const beforeCreateHandle =
-            authFunctions.beforeCreate && triggers?.[model]?.beforeCreate
+            authFunctions.beforeCreate && getTriggers(model)?.beforeCreate
               ? ((await createFunctionHandle(
                   authFunctions.beforeCreate
                 )) as FunctionHandle<'mutation'>)
@@ -233,24 +270,21 @@ export const httpAdapter = <
             onCreateHandle,
           });
         },
-        createSchema: async ({ file, tables }) => {
-          const { createSchema } = await import('./create-schema');
-
-          return createSchema({ file, tables });
-        },
+        createSchema: async ({ file, tables }) =>
+          createAuthSchema({ file, schema, tables }),
         delete: async (data) => {
           if (!('runMutation' in ctx)) {
             throw new Error('ctx is not a mutation ctx');
           }
 
           const onDeleteHandle =
-            authFunctions.onDelete && triggers?.[data.model]?.onDelete
+            authFunctions.onDelete && getTriggers(data.model)?.onDelete
               ? ((await createFunctionHandle(
                   authFunctions.onDelete
                 )) as FunctionHandle<'mutation'>)
               : undefined;
           const beforeDeleteHandle =
-            authFunctions.beforeDelete && triggers?.[data.model]?.beforeDelete
+            authFunctions.beforeDelete && getTriggers(data.model)?.beforeDelete
               ? ((await createFunctionHandle(
                   authFunctions.beforeDelete
                 )) as FunctionHandle<'mutation'>)
@@ -270,13 +304,13 @@ export const httpAdapter = <
           }
 
           const onDeleteHandle =
-            authFunctions.onDelete && triggers?.[data.model]?.onDelete
+            authFunctions.onDelete && getTriggers(data.model)?.onDelete
               ? ((await createFunctionHandle(
                   authFunctions.onDelete
                 )) as FunctionHandle<'mutation'>)
               : undefined;
           const beforeDeleteHandle =
-            authFunctions.beforeDelete && triggers?.[data.model]?.beforeDelete
+            authFunctions.beforeDelete && getTriggers(data.model)?.beforeDelete
               ? ((await createFunctionHandle(
                   authFunctions.beforeDelete
                 )) as FunctionHandle<'mutation'>)
@@ -312,7 +346,7 @@ export const httpAdapter = <
                 { limit: data.limit }
               )
             );
-            const docs = unique(results.flatMap((r) => r.docs));
+            const docs = uniqueDocs(results.flatMap((r) => r.docs));
 
             if (data.sortBy) {
               const result = sortBy(docs, [
@@ -395,13 +429,14 @@ export const httpAdapter = <
             }
 
             const onUpdateHandle =
-              authFunctions.onUpdate && triggers?.[data.model]?.onUpdate
+              authFunctions.onUpdate && getTriggers(data.model)?.onUpdate
                 ? ((await createFunctionHandle(
                     authFunctions.onUpdate
                   )) as FunctionHandle<'mutation'>)
                 : undefined;
             const beforeUpdateHandle =
-              authFunctions.beforeUpdate && triggers?.[data.model]?.beforeUpdate
+              authFunctions.beforeUpdate &&
+              getTriggers(data.model)?.beforeUpdate
                 ? ((await createFunctionHandle(
                     authFunctions.beforeUpdate
                   )) as FunctionHandle<'mutation'>)
@@ -426,13 +461,13 @@ export const httpAdapter = <
           }
 
           const onUpdateHandle =
-            authFunctions.onUpdate && triggers?.[data.model]?.onUpdate
+            authFunctions.onUpdate && getTriggers(data.model)?.onUpdate
               ? ((await createFunctionHandle(
                   authFunctions.onUpdate
                 )) as FunctionHandle<'mutation'>)
               : undefined;
           const beforeUpdateHandle =
-            authFunctions.beforeUpdate && triggers?.[data.model]?.beforeUpdate
+            authFunctions.beforeUpdate && getTriggers(data.model)?.beforeUpdate
               ? ((await createFunctionHandle(
                   authFunctions.beforeUpdate
                 )) as FunctionHandle<'mutation'>)
@@ -463,7 +498,7 @@ export const dbAdapter = <
   Schema extends SchemaDefinition<any, any>,
 >(
   ctx: GenericCtx<DataModel>,
-  createAuthOptions: (ctx: any) => BetterAuthOptions,
+  getAuthOptions: (ctx: any) => BetterAuthOptions,
   {
     authFunctions,
     debugLogs,
@@ -476,7 +511,7 @@ export const dbAdapter = <
     triggers?: Triggers<DataModel, Schema>;
   }
 ) => {
-  const betterAuthSchema = getAuthTables(createAuthOptions({} as any));
+  const betterAuthSchema = getAuthTables(getAuthOptions({} as any));
 
   return createAdapterFactory({
     config: {
@@ -484,6 +519,9 @@ export const dbAdapter = <
       debugLogs: debugLogs || false,
     },
     adapter: ({ options }) => {
+      const getTriggers = (model: string) =>
+        triggers?.[model as keyof Triggers<DataModel, Schema>];
+
       // Disable telemetry in all cases because it requires Node
       options.telemetry = { enabled: false };
 
@@ -509,7 +547,7 @@ export const dbAdapter = <
                   )
               )
             );
-            const docs = unique(results.flatMap((r) => r.docs));
+            const docs = uniqueDocs(results.flatMap((r) => r.docs));
 
             return docs.length;
           }
@@ -532,13 +570,13 @@ export const dbAdapter = <
         },
         create: async ({ data, model, select }): Promise<any> => {
           const onCreateHandle =
-            authFunctions.onCreate && triggers?.[model]?.onCreate
+            authFunctions.onCreate && getTriggers(model)?.onCreate
               ? ((await createFunctionHandle(
                   authFunctions.onCreate
                 )) as FunctionHandle<'mutation'>)
               : undefined;
           const beforeCreateHandle =
-            authFunctions.beforeCreate && triggers?.[model]?.beforeCreate
+            authFunctions.beforeCreate && getTriggers(model)?.beforeCreate
               ? ((await createFunctionHandle(
                   authFunctions.beforeCreate
                 )) as FunctionHandle<'mutation'>)
@@ -556,20 +594,17 @@ export const dbAdapter = <
             betterAuthSchema
           );
         },
-        createSchema: async ({ file, tables }) => {
-          const { createSchema } = await import('./create-schema');
-
-          return createSchema({ file, tables });
-        },
+        createSchema: async ({ file, tables }) =>
+          createAuthSchema({ file, schema, tables }),
         delete: async (data) => {
           const onDeleteHandle =
-            authFunctions.onDelete && triggers?.[data.model]?.onDelete
+            authFunctions.onDelete && getTriggers(data.model)?.onDelete
               ? ((await createFunctionHandle(
                   authFunctions.onDelete
                 )) as FunctionHandle<'mutation'>)
               : undefined;
           const beforeDeleteHandle =
-            authFunctions.beforeDelete && triggers?.[data.model]?.beforeDelete
+            authFunctions.beforeDelete && getTriggers(data.model)?.beforeDelete
               ? ((await createFunctionHandle(
                   authFunctions.beforeDelete
                 )) as FunctionHandle<'mutation'>)
@@ -591,13 +626,13 @@ export const dbAdapter = <
         },
         deleteMany: async (data) => {
           const onDeleteHandle =
-            authFunctions.onDelete && triggers?.[data.model]?.onDelete
+            authFunctions.onDelete && getTriggers(data.model)?.onDelete
               ? ((await createFunctionHandle(
                   authFunctions.onDelete
                 )) as FunctionHandle<'mutation'>)
               : undefined;
           const beforeDeleteHandle =
-            authFunctions.beforeDelete && triggers?.[data.model]?.beforeDelete
+            authFunctions.beforeDelete && getTriggers(data.model)?.beforeDelete
               ? ((await createFunctionHandle(
                   authFunctions.beforeDelete
                 )) as FunctionHandle<'mutation'>)
@@ -644,7 +679,7 @@ export const dbAdapter = <
                 { limit: data.limit }
               )
             );
-            const docs = unique(results.flatMap((r) => r.docs));
+            const docs = uniqueDocs(results.flatMap((r) => r.docs));
 
             if (data.sortBy) {
               const result = sortBy(docs, [
@@ -741,13 +776,14 @@ export const dbAdapter = <
             }
 
             const onUpdateHandle =
-              authFunctions.onUpdate && triggers?.[data.model]?.onUpdate
+              authFunctions.onUpdate && getTriggers(data.model)?.onUpdate
                 ? ((await createFunctionHandle(
                     authFunctions.onUpdate
                   )) as FunctionHandle<'mutation'>)
                 : undefined;
             const beforeUpdateHandle =
-              authFunctions.beforeUpdate && triggers?.[data.model]?.beforeUpdate
+              authFunctions.beforeUpdate &&
+              getTriggers(data.model)?.beforeUpdate
                 ? ((await createFunctionHandle(
                     authFunctions.beforeUpdate
                   )) as FunctionHandle<'mutation'>)
@@ -773,13 +809,13 @@ export const dbAdapter = <
         },
         updateMany: async (data) => {
           const onUpdateHandle =
-            authFunctions.onUpdate && triggers?.[data.model]?.onUpdate
+            authFunctions.onUpdate && getTriggers(data.model)?.onUpdate
               ? ((await createFunctionHandle(
                   authFunctions.onUpdate
                 )) as FunctionHandle<'mutation'>)
               : undefined;
           const beforeUpdateHandle =
-            authFunctions.beforeUpdate && triggers?.[data.model]?.beforeUpdate
+            authFunctions.beforeUpdate && getTriggers(data.model)?.beforeUpdate
               ? ((await createFunctionHandle(
                   authFunctions.beforeUpdate
                 )) as FunctionHandle<'mutation'>)

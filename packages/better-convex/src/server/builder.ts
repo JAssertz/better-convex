@@ -4,20 +4,33 @@
  *
  * Core library - no project-specific dependencies
  */
-import type {
-  GenericActionCtx,
-  GenericDataModel,
-  GenericMutationCtx,
-  GenericQueryCtx,
+import {
+  actionGeneric,
+  type GenericActionCtx,
+  type GenericDataModel,
+  type GenericMutationCtx,
+  type GenericQueryCtx,
+  httpActionGeneric,
+  internalActionGeneric,
+  internalMutationGeneric,
+  internalQueryGeneric,
+  mutationGeneric,
+  queryGeneric,
 } from 'convex/server';
-import { customCtx } from 'convex-helpers/server/customFunctions';
+import { z } from 'zod';
+import {
+  type DataTransformerOptions,
+  getTransformer,
+} from '../crpc/transformer';
+import { customCtx } from '../internal/upstream/server/customFunctions';
 import {
   zCustomAction,
   zCustomMutation,
   zCustomQuery,
-} from 'convex-helpers/server/zod4';
-import { z } from 'zod';
-
+  zodOutputToConvex,
+  zodToConvex,
+} from '../internal/upstream/server/zod4';
+import { toCRPCError } from './error';
 import {
   createHttpProcedureBuilder,
   type HttpProcedureBuilder,
@@ -91,6 +104,8 @@ type FunctionBuilderConfig = {
 type InternalFunctionConfig = FunctionBuilderConfig & {
   /** Transform raw Convex context to the base context for procedures */
   createContext: (ctx: any) => unknown;
+  /** Wire transformer for request/response serialization. */
+  transformer: ReturnType<typeof getTransformer>;
 };
 
 /** Context creators for each function type - all optional, defaults to passthrough */
@@ -119,9 +134,9 @@ type InferActionCtx<T, DataModel extends GenericDataModel> = T extends {
 
 /** Function builders for each function type */
 type FunctionsConfig = {
-  query: unknown;
+  query?: unknown;
   internalQuery?: unknown;
-  mutation: unknown;
+  mutation?: unknown;
   internalMutation?: unknown;
   action?: unknown;
   internalAction?: unknown;
@@ -131,6 +146,8 @@ type FunctionsConfig = {
 /** Config for create() including optional defaultMeta */
 type CreateConfig<TMeta extends object> = FunctionsConfig & {
   defaultMeta?: TMeta;
+  /** Optional cRPC payload transformer (always composed with built-in Date support). */
+  transformer?: DataTransformerOptions;
 };
 
 // =============================================================================
@@ -271,6 +288,150 @@ type ProcedureBuilderDef<TMeta = object> = {
   isInternal?: boolean;
 };
 
+const replaceUnencodableOutputTypes = (schema: z.ZodTypeAny): z.ZodTypeAny => {
+  if (schema instanceof z.ZodDate) {
+    return z.any();
+  }
+
+  if (schema instanceof z.ZodArray) {
+    return z.array(
+      replaceUnencodableOutputTypes(schema.element as z.ZodTypeAny)
+    );
+  }
+
+  if (schema instanceof z.ZodObject) {
+    const nextShape: Record<string, z.ZodTypeAny> = {};
+    for (const [key, value] of Object.entries(schema.shape)) {
+      nextShape[key] = replaceUnencodableOutputTypes(value as z.ZodTypeAny);
+    }
+    return z.object(nextShape);
+  }
+
+  if (schema instanceof z.ZodUnion) {
+    return z.union(
+      schema.options.map((option) =>
+        replaceUnencodableOutputTypes(option as z.ZodTypeAny)
+      ) as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]
+    );
+  }
+
+  if (schema instanceof z.ZodOptional) {
+    return replaceUnencodableOutputTypes(
+      schema.unwrap() as z.ZodTypeAny
+    ).optional();
+  }
+
+  if (schema instanceof z.ZodNullable) {
+    return replaceUnencodableOutputTypes(
+      schema.unwrap() as z.ZodTypeAny
+    ).nullable();
+  }
+
+  if (schema instanceof z.ZodRecord) {
+    return z.record(
+      schema.keyType as z.ZodString,
+      replaceUnencodableOutputTypes(schema.valueType as z.ZodTypeAny)
+    );
+  }
+
+  return schema;
+};
+
+const replaceUnencodableInputTypes = (schema: z.ZodTypeAny): z.ZodTypeAny => {
+  if (schema instanceof z.ZodDate) {
+    return z.any();
+  }
+
+  if (schema instanceof z.ZodArray) {
+    return z.array(
+      replaceUnencodableInputTypes(schema.element as z.ZodTypeAny)
+    );
+  }
+
+  if (schema instanceof z.ZodObject) {
+    const nextShape: Record<string, z.ZodTypeAny> = {};
+    for (const [key, value] of Object.entries(schema.shape)) {
+      nextShape[key] = replaceUnencodableInputTypes(value as z.ZodTypeAny);
+    }
+    return z.object(nextShape);
+  }
+
+  if (schema instanceof z.ZodUnion) {
+    return z.union(
+      schema.options.map((option) =>
+        replaceUnencodableInputTypes(option as z.ZodTypeAny)
+      ) as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]
+    );
+  }
+
+  if (schema instanceof z.ZodOptional) {
+    return replaceUnencodableInputTypes(
+      schema.unwrap() as z.ZodTypeAny
+    ).optional();
+  }
+
+  if (schema instanceof z.ZodNullable) {
+    return replaceUnencodableInputTypes(
+      schema.unwrap() as z.ZodTypeAny
+    ).nullable();
+  }
+
+  if (schema instanceof z.ZodRecord) {
+    return z.record(
+      schema.keyType as z.ZodString,
+      replaceUnencodableInputTypes(schema.valueType as z.ZodTypeAny)
+    );
+  }
+
+  if (schema instanceof z.ZodDefault) {
+    return replaceUnencodableInputTypes(schema.removeDefault() as z.ZodTypeAny);
+  }
+
+  return schema;
+};
+
+const resolveConvexArgsShape = (
+  inputShape?: Record<string, z.ZodTypeAny>
+): Record<string, z.ZodTypeAny> | undefined => {
+  if (!inputShape) return;
+
+  const rawSchema = z.object(inputShape);
+  try {
+    zodToConvex(rawSchema as any);
+    return inputShape;
+  } catch {
+    const compatibleSchema = replaceUnencodableInputTypes(rawSchema);
+    try {
+      zodToConvex(compatibleSchema as any);
+      return (compatibleSchema as z.ZodObject<any>).shape;
+    } catch {
+      const permissiveShape = Object.fromEntries(
+        Object.keys(inputShape).map((key) => [key, z.any()])
+      ) as Record<string, z.ZodTypeAny>;
+      return permissiveShape;
+    }
+  }
+};
+
+const resolveConvexReturnsSchema = (
+  schema?: z.ZodTypeAny
+): z.ZodTypeAny | undefined => {
+  if (!schema) return;
+
+  try {
+    zodOutputToConvex(schema);
+    return schema;
+  } catch {
+    const compatibleSchema = replaceUnencodableOutputTypes(schema);
+    try {
+      zodOutputToConvex(compatibleSchema);
+      return compatibleSchema;
+    } catch {
+      return;
+    }
+  }
+};
+
 /**
  * Fluent procedure builder with full type inference
  *
@@ -283,12 +444,9 @@ type ProcedureBuilderDef<TMeta = object> = {
  */
 export class ProcedureBuilder<
   TBaseCtx,
-  // biome-ignore lint/correctness/noUnusedVariables: used in subclasses for type inference
-  TContext,
+  _TContext,
   TContextOverrides extends UnsetMarker | object = UnsetMarker,
-  // biome-ignore lint/correctness/noUnusedVariables: used in subclasses for type inference
   TInput extends UnsetMarker | z.ZodObject<any> = UnsetMarker,
-  // biome-ignore lint/correctness/noUnusedVariables: used in subclasses for type inference
   TOutput extends UnsetMarker | z.ZodTypeAny = UnsetMarker,
   TMeta extends object = object,
 > {
@@ -369,32 +527,71 @@ export class ProcedureBuilder<
   ) {
     const { middlewares, outputSchema, meta, functionConfig, isInternal } =
       this._def;
-    const mergedInput = this._getMergedInput();
+    const mergedInput = this._getMergedInput() as
+      | Record<string, z.ZodTypeAny>
+      | undefined;
+    const inputSchema = mergedInput ? z.object(mergedInput) : undefined;
+    const convexArgs = resolveConvexArgsShape(mergedInput);
 
     // Use customCtx for initial context transformation only
     const customFunction = customFn(
       baseFunction,
       customCtx(async (_ctx) => functionConfig.createContext(_ctx))
     );
+    const returnsSchema = resolveConvexReturnsSchema(outputSchema);
+    const typedReturnsSchema = returnsSchema as
+      | (TOutput extends z.ZodTypeAny ? TOutput : never)
+      | undefined;
+    const typedArgs = (convexArgs ?? {}) as TInput extends z.ZodObject<
+      infer TShape
+    >
+      ? TShape
+      : Record<string, never>;
+    const shouldValidateOutputWithZod =
+      !!outputSchema && returnsSchema !== outputSchema;
 
     const fn = customFunction({
-      args: mergedInput ?? {},
-      ...(outputSchema ? { returns: outputSchema } : {}),
+      args: typedArgs,
+      ...(typedReturnsSchema ? { returns: typedReturnsSchema } : {}),
       handler: async (ctx: any, rawInput: any) => {
+        const decodedInput =
+          functionConfig.transformer.input.deserialize(rawInput);
+        const parsedInput = inputSchema
+          ? inputSchema.parse(decodedInput)
+          : decodedInput;
         // Create getRawInput function for middleware
-        const getRawInput: GetRawInputFn = async () => rawInput;
+        const getRawInput: GetRawInputFn = async () => parsedInput;
 
-        // Execute middleware chain with input access
-        const result = await executeMiddlewares(
-          middlewares,
-          ctx,
-          meta,
-          rawInput,
-          getRawInput
-        );
+        try {
+          // Execute middleware chain with input access
+          const result = await executeMiddlewares(
+            middlewares,
+            ctx,
+            meta,
+            parsedInput,
+            getRawInput
+          );
 
-        // Call handler with middleware-modified context and input
-        return handler({ ctx: result.ctx, input: result.input ?? rawInput });
+          // Call handler with middleware-modified context and input
+          const handlerInput =
+            result.input === parsedInput
+              ? parsedInput
+              : functionConfig.transformer.input.deserialize(
+                  result.input ?? parsedInput
+                );
+          const output = await handler({
+            ctx: result.ctx,
+            input: handlerInput,
+          });
+          const validatedOutput = shouldValidateOutputWithZod
+            ? outputSchema.parse(output)
+            : output;
+          return functionConfig.transformer.output.serialize(validatedOutput);
+        } catch (cause) {
+          const err = toCRPCError(cause);
+          if (err) throw err;
+          throw cause;
+        }
       },
     });
 
@@ -509,7 +706,7 @@ export class QueryProcedureBuilder<
     TContextOverrides,
     IntersectIfDefined<TInput, PaginatedInputSchema>,
     z.ZodObject<{
-      continueCursor: z.ZodString;
+      continueCursor: z.ZodUnion<[z.ZodString, z.ZodNull]>;
       isDone: z.ZodBoolean;
       page: z.ZodArray<TItem>;
     }>,
@@ -526,7 +723,7 @@ export class QueryProcedureBuilder<
 
     // Auto-wrap output with pagination result structure
     const outputSchema = z.object({
-      continueCursor: z.string(),
+      continueCursor: z.union([z.string(), z.null()]),
       isDone: z.boolean(),
       page: z.array(opts.item),
     });
@@ -868,13 +1065,13 @@ export class ActionProcedureBuilder<
 // Factory - tRPC-style Builder Chain
 // =============================================================================
 
-/** Return type for create() - action/httpAction only present when configured */
+/** Return type for create() */
 type CRPCInstance<
   _DataModel extends GenericDataModel,
   TQueryCtx,
   TMutationCtx,
   TActionCtx,
-  THttpActionCtx = never,
+  THttpActionCtx,
   TMeta extends object = object,
 > = {
   query: QueryProcedureBuilder<
@@ -893,6 +1090,24 @@ type CRPCInstance<
     UnsetMarker,
     TMeta
   >;
+  action: ActionProcedureBuilder<
+    TActionCtx,
+    TActionCtx,
+    UnsetMarker,
+    UnsetMarker,
+    UnsetMarker,
+    TMeta
+  >;
+  httpAction: HttpProcedureBuilder<
+    THttpActionCtx,
+    THttpActionCtx,
+    UnsetMarker,
+    UnsetMarker,
+    UnsetMarker,
+    UnsetMarker,
+    TMeta,
+    HttpMethod
+  >;
   /** Create reusable middleware - defaults to query context, override with generic */
   middleware: <TContext = TQueryCtx, $ContextOverridesOut = object>(
     fn: MiddlewareFunction<TContext, TMeta, object, $ContextOverridesOut>
@@ -901,32 +1116,7 @@ type CRPCInstance<
   router: <TRecord extends HttpRouterRecord>(
     record: TRecord
   ) => CRPCHttpRouter<TRecord>;
-} & ([TActionCtx] extends [never]
-  ? object
-  : {
-      action: ActionProcedureBuilder<
-        TActionCtx,
-        TActionCtx,
-        UnsetMarker,
-        UnsetMarker,
-        UnsetMarker,
-        TMeta
-      >;
-    }) &
-  ([THttpActionCtx] extends [never]
-    ? object
-    : {
-        httpAction: HttpProcedureBuilder<
-          THttpActionCtx,
-          THttpActionCtx,
-          UnsetMarker,
-          UnsetMarker,
-          UnsetMarker,
-          UnsetMarker,
-          TMeta,
-          HttpMethod
-        >;
-      });
+};
 
 /**
  * Builder with context configured, ready to create instance
@@ -935,8 +1125,8 @@ class CRPCBuilderWithContext<
   DataModel extends GenericDataModel,
   TQueryCtx,
   TMutationCtx,
-  TActionCtx = never,
-  THttpActionCtx = never,
+  TActionCtx = GenericActionCtx<DataModel>,
+  THttpActionCtx = GenericActionCtx<DataModel>,
   TMeta extends object = object,
 > {
   private readonly contextConfig: ContextConfig<DataModel>;
@@ -970,7 +1160,7 @@ class CRPCBuilderWithContext<
    * Create the CRPC instance with function builders
    */
   create(
-    config: CreateConfig<TMeta>
+    config?: CreateConfig<TMeta>
   ): CRPCInstance<
     DataModel,
     TQueryCtx,
@@ -979,7 +1169,19 @@ class CRPCBuilderWithContext<
     THttpActionCtx,
     TMeta
   > {
-    const { defaultMeta = {} as TMeta, ...functionsConfig } = config;
+    const {
+      defaultMeta = {} as TMeta,
+      query = queryGeneric,
+      internalQuery = internalQueryGeneric,
+      mutation = mutationGeneric,
+      internalMutation = internalMutationGeneric,
+      action = actionGeneric,
+      internalAction = internalActionGeneric,
+      httpAction = httpActionGeneric,
+      transformer: transformerOptions,
+    } = config ?? {};
+    const transformer = getTransformer(transformerOptions);
+    const mutationCreateContext = this.contextConfig.mutation ?? ((ctx) => ctx);
 
     const result = {
       query: new QueryProcedureBuilder<
@@ -994,9 +1196,10 @@ class CRPCBuilderWithContext<
         inputSchemas: [],
         meta: defaultMeta,
         functionConfig: {
-          base: functionsConfig.query,
-          internal: functionsConfig.internalQuery,
+          base: query,
+          internal: internalQuery,
           createContext: this.contextConfig.query ?? ((ctx) => ctx),
+          transformer,
         },
       }),
       mutation: new MutationProcedureBuilder<
@@ -1011,35 +1214,13 @@ class CRPCBuilderWithContext<
         inputSchemas: [],
         meta: defaultMeta,
         functionConfig: {
-          base: functionsConfig.mutation,
-          internal: functionsConfig.internalMutation,
-          createContext: this.contextConfig.mutation ?? ((ctx) => ctx),
+          base: mutation,
+          internal: internalMutation,
+          createContext: mutationCreateContext,
+          transformer,
         },
       }),
-      middleware: createMiddlewareFactory<TQueryCtx, TMeta>(),
-      router: createHttpRouterFactory(),
-    } as CRPCInstance<
-      DataModel,
-      TQueryCtx,
-      TMutationCtx,
-      TActionCtx,
-      THttpActionCtx,
-      TMeta
-    >;
-
-    if (functionsConfig.action) {
-      (
-        result as {
-          action: ActionProcedureBuilder<
-            TActionCtx,
-            TActionCtx,
-            UnsetMarker,
-            UnsetMarker,
-            UnsetMarker,
-            TMeta
-          >;
-        }
-      ).action = new ActionProcedureBuilder<
+      action: new ActionProcedureBuilder<
         TActionCtx,
         TActionCtx,
         UnsetMarker,
@@ -1051,35 +1232,32 @@ class CRPCBuilderWithContext<
         inputSchemas: [],
         meta: defaultMeta,
         functionConfig: {
-          base: functionsConfig.action,
-          internal: functionsConfig.internalAction,
+          base: action,
+          internal: internalAction,
           // Use custom action context or default to identity
           createContext: this.contextConfig.action ?? ((ctx) => ctx),
+          transformer,
         },
-      });
-    }
-
-    if (functionsConfig.httpAction) {
-      (
-        result as {
-          httpAction: HttpProcedureBuilder<
-            THttpActionCtx,
-            THttpActionCtx,
-            UnsetMarker,
-            UnsetMarker,
-            UnsetMarker,
-            UnsetMarker,
-            TMeta,
-            HttpMethod
-          >;
-        }
-      ).httpAction = createHttpProcedureBuilder({
-        base: functionsConfig.httpAction as HttpActionConstructor,
+      }),
+      httpAction: createHttpProcedureBuilder({
+        base: httpAction as HttpActionConstructor,
         // httpAction uses action context or default to identity
-        createContext: this.contextConfig.action ?? ((ctx: any) => ctx),
+        createContext: (this.contextConfig.action ?? ((ctx) => ctx)) as (
+          ctx: GenericActionCtx<GenericDataModel>
+        ) => THttpActionCtx,
         meta: defaultMeta,
-      });
-    }
+        transformer: transformerOptions,
+      }),
+      middleware: createMiddlewareFactory<TQueryCtx, TMeta>(),
+      router: createHttpRouterFactory(),
+    } as CRPCInstance<
+      DataModel,
+      TQueryCtx,
+      TMutationCtx,
+      TActionCtx,
+      THttpActionCtx,
+      TMeta
+    >;
 
     return result;
   }
@@ -1111,7 +1289,7 @@ class CRPCBuilderWithMeta<
   /**
    * Create the CRPC instance directly (uses default passthrough context)
    */
-  create(config: CreateConfig<TMeta>): CRPCInstance<
+  create(config?: CreateConfig<TMeta>): CRPCInstance<
     DataModel,
     GenericQueryCtx<DataModel>,
     GenericMutationCtx<DataModel>,
@@ -1159,7 +1337,7 @@ class CRPCBuilder<DataModel extends GenericDataModel> {
   /**
    * Create the CRPC instance directly (uses default passthrough context)
    */
-  create(config: CreateConfig<object>): CRPCInstance<
+  create(config?: CreateConfig<object>): CRPCInstance<
     DataModel,
     GenericQueryCtx<DataModel>,
     GenericMutationCtx<DataModel>,
@@ -1186,12 +1364,12 @@ class CRPCBuilder<DataModel extends GenericDataModel> {
  * const c = initCRPC
  *   .dataModel<DataModel>()
  *   .context({...})
- *   .create({...});
+ *   .create();
  *
  * // Without DataModel (uses GenericDataModel)
  * const c = initCRPC
  *   .context({...})
- *   .create({...});
+ *   .create();
  * ```
  */
 export const initCRPC = {
@@ -1227,7 +1405,7 @@ export const initCRPC = {
   /**
    * Create the CRPC instance directly (uses GenericDataModel and default passthrough context)
    */
-  create(config: CreateConfig<object>): CRPCInstance<
+  create(config?: CreateConfig<object>): CRPCInstance<
     GenericDataModel,
     GenericQueryCtx<GenericDataModel>,
     GenericMutationCtx<GenericDataModel>,

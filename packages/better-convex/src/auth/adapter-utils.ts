@@ -10,8 +10,17 @@ import type {
   TableNamesInDataModel,
 } from 'convex/server';
 import { type GenericId, type Infer, v } from 'convex/values';
-import { asyncMap } from 'convex-helpers';
-import { mergedStream, stream } from 'convex-helpers/server/stream';
+import { asyncMap } from '../internal/upstream';
+import {
+  mergedStream,
+  type StreamPaginateOptions,
+  stream,
+} from '../orm/stream';
+
+type AdapterPaginationOptions = PaginationOptions & {
+  endCursor?: string | null;
+  maximumRowsRead?: number;
+};
 
 export const adapterWhereValidator = v.object({
   connector: v.optional(v.union(v.literal('AND'), v.literal('OR'))),
@@ -516,7 +525,7 @@ export const paginate = async <
   schema: SchemaDefinition<any, any>,
   betterAuthSchema: BetterAuthDBSchema,
   args: Infer<typeof adapterArgsValidator> & {
-    paginationOpts: PaginationOptions;
+    paginationOpts: AdapterPaginationOptions;
   }
 ): Promise<PaginationResult<Doc>> => {
   if (args.offset) {
@@ -582,11 +591,19 @@ export const paginate = async <
     };
   }
 
-  const paginationOpts = {
-    ...args.paginationOpts,
-    // If maximumRowsRead is not at least 1 higher than numItems, bad cursors
-    // and incorrect paging will result (at least with convex-test).
-    maximumRowsRead: Math.max((args.paginationOpts.numItems ?? 0) + 1, 200),
+  const paginationLimit = args.paginationOpts.numItems ?? args.limit ?? 200;
+  // If maxScan is not at least 1 higher than limit, bad cursors and
+  // incorrect paging will result (at least with convex-test).
+  const paginationMaxScan = Math.max(
+    args.paginationOpts.maximumRowsRead ?? 0,
+    paginationLimit + 1,
+    200
+  );
+  const paginationOpts: StreamPaginateOptions = {
+    cursor: args.paginationOpts.cursor,
+    endCursor: args.paginationOpts.endCursor,
+    limit: paginationLimit,
+    maxScan: paginationMaxScan,
   };
 
   // Large queries using "in" clause will crash, but these are only currently

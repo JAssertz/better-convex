@@ -22,8 +22,8 @@
     "sync:jwks": "convex run auth:getLatestJwks | convex env set JWKS",
     "sync:plate": "node tooling/sync-plate.cjs",
     "sync:rotate": "convex run auth:rotateKeys | convex env set JWKS",
-    "typecheck": "tsgo --noEmit && bun run typecheck:convex",
-    "typecheck:convex": "tsgo --noEmit --project convex/tsconfig.json",
+    "typecheck": "tsc --noEmit && bun run typecheck:convex",
+    "typecheck:convex": "tsc --noEmit --project convex/tsconfig.json",
     "typecheck:watch": "tsc --noEmit --watch"
   },
   "dependencies": {
@@ -44,7 +44,7 @@
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
     "common-tags": "1.8.2",
-    "convex-ents": "0.18.1",
+    "convex": "1.31.7",
     "date-fns": "4.1.0",
     "embla-carousel-react": "8.6.0",
     "input-otp": "1.4.2",

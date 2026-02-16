@@ -1,0 +1,6 @@
+---
+name: convex-best-practices
+description: Guidelines for building production-ready Convex apps covering function organization, query patterns, validation, TypeScript usage, error handling, and the Zen of Convex design philosophy
+---
+
+@.claude/skills/convex-native/convex-native.mdc

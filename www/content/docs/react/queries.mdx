@@ -144,7 +144,7 @@ const { data: user } = useQuery(crpc.user.get.queryOptions({ id: userId }));
 // Only fetch settings after user is loaded
 const { data: settings } = useQuery(
   crpc.user.getSettings.queryOptions(
-    { userId: user?._id },
+    { userId: user?.id },
     { enabled: !!user }
   )
 );
@@ -194,36 +194,18 @@ Procedures with `.meta({ auth: 'required' })` have two key behaviors:
 
 This prevents "unauthenticated" errors on first page load - the query won't run until we know the user's auth state.
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```tsx showLineNumbers {4,12}
-    // Server-side (convex/functions/user.ts)
-    export const getSettings = c
-      .query()
-      .meta({ auth: 'required' })  // Won't run if not authenticated
-      .handler(async ({ ctx }) => {
-        return ctx.db.get(ctx.user._id);
-      });
+```tsx showLineNumbers {4,12}
+// Server-side (convex/functions/user.ts)
+export const getSettings = c
+  .query()
+  .meta({ auth: 'required' })  // Won't run if not authenticated
+  .handler(async ({ ctx }) => {
+    return ctx.orm.query.user.findFirst({ where: { id: ctx.user.id } });
+  });
 
-    // Client-side - automatically skips when logged out
-    const { data } = useQuery(crpc.user.getSettings.queryOptions({}));
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```tsx showLineNumbers {4,12}
-    // Server-side (convex/functions/user.ts)
-    export const getSettings = c
-      .query()
-      .meta({ auth: 'required' })  // Won't run if not authenticated
-      .handler(async ({ ctx }) => {
-        return ctx.table('user').get(ctx.user._id);
-      });
-
-    // Client-side - automatically skips when logged out
-    const { data } = useQuery(crpc.user.getSettings.queryOptions({}));
-    ```
-  </Tab>
-</Tabs>
+// Client-side - automatically skips when logged out
+const { data } = useQuery(crpc.user.getSettings.queryOptions({}));
+```
 
 <Callout icon={<InfoIcon />}>
 **How Auth Loading Works:**
@@ -259,8 +241,8 @@ const { data, isPlaceholderData } = useQuery(
     {
       placeholderData: {
         users: [
-          { _id: '0' as Id<'user'>, name: 'Loading...' },
-          { _id: '2' as Id<'user'>, name: 'Loading...' },
+          { id: '0' as Id<'user'>, name: 'Loading...' },
+          { id: '2' as Id<'user'>, name: 'Loading...' },
         ],
       },
     }
@@ -270,7 +252,7 @@ const { data, isPlaceholderData } = useQuery(
 return (
   <div>
     {data?.users.map((user) => (
-      <WithSkeleton key={user._id} isLoading={isPlaceholderData}>
+      <WithSkeleton key={user.id} isLoading={isPlaceholderData}>
         <UserCard user={user} />
       </WithSkeleton>
     ))}
@@ -405,30 +387,31 @@ If you're coming from vanilla Convex, here's what changes.
 
 ### What's new
 
-**Before (vanilla Convex):**
+<Compare>
+  <CompareItem title="Before (vanilla Convex)">
+    ```tsx showLineNumbers
+    import { useQuery } from 'convex/react';
+    import { api } from '@convex/_generated/api';
+    import type { FunctionReturnType } from 'convex/server';
 
-```tsx showLineNumbers
-import { useQuery } from 'convex/react';
-import { api } from '@convex/_generated/api';
-import type { FunctionReturnType } from 'convex/server';
+    const data = useQuery(api.user.list, {});
 
-const data = useQuery(api.user.list, {});
+    type User = FunctionReturnType<typeof api.user.get>;
+    ```
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```tsx showLineNumbers {1-2,5-6,8}
+    import { useQuery } from '@tanstack/react-query';
+    import { useCRPC } from '@/lib/convex/crpc';
+    import type { ApiOutputs } from '@convex/types';
 
-type User = FunctionReturnType<typeof api.user.get>;
-```
+    const crpc = useCRPC();
+    const { data } = useQuery(crpc.user.list.queryOptions({}));
 
-**After (cRPC):**
-
-```tsx showLineNumbers {1-2,5-6,8}
-import { useQuery } from '@tanstack/react-query';
-import { useCRPC } from '@/lib/convex/crpc';
-import type { ApiOutputs } from '@convex/types';
-
-const crpc = useCRPC();
-const { data } = useQuery(crpc.user.list.queryOptions({}));
-
-type User = ApiOutputs['user']['get'];
-```
+    type User = ApiOutputs['user']['get'];
+    ```
+  </CompareItem>
+</Compare>
 
 **Key differences:**
 
@@ -442,11 +425,20 @@ type User = ApiOutputs['user']['get'];
 
 **Imperative queries (event handlers, effects):**
 
-```tsx showLineNumbers {1,3-4}
-// Before                              // After
-const convex = useConvex();            const client = useCRPCClient();
-await convex.query(api.user.get, {});  await client.user.get.query({});
-```
+<Compare>
+  <CompareItem title="Before (vanilla Convex)">
+    ```tsx showLineNumbers
+    const convex = useConvex();
+    await convex.query(api.user.get, {});
+    ```
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```tsx showLineNumbers
+    const client = useCRPCClient();
+    await client.user.get.query({});
+    ```
+  </CompareItem>
+</Compare>
 
 ## Troubleshooting
 

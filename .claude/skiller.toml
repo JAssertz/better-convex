@@ -16,7 +16,7 @@ enabled = true
 
 # Automatic .gitignore management
 [gitignore]
-enabled = true
+enabled = false
 
 # MCP (Model Context Protocol) server configuration
 [mcp]
@@ -31,10 +31,6 @@ args = ["-y", "next-devtools-mcp@latest"]
 
 [agents.claude]
 enabled = true
-gitignore = false
-
-[agents.cursor]
-enabled = false
 
 [agents.codex]
-enabled = false
+enabled = true

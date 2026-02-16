@@ -45,6 +45,8 @@
     "dist",
     "**/dist",
     "example",
-    "www"
+    "www",
+    "tmp",
+    "**/tmp"
   ]
 }

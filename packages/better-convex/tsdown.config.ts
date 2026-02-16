@@ -27,14 +27,16 @@ export default defineConfig([
     plugins: [babelPlugin],
     checks: { pluginTimings: false },
   },
-  // Server-safe builds (crpc, rsc, server) - no "use client"
+  // Server-safe builds (crpc, rsc, server, orm) - no "use client"
   {
     entry: {
+      'auth-config/index': 'src/auth-config/index.ts',
       'auth/index': 'src/auth/index.ts',
       'auth-nextjs/index': 'src/auth-nextjs/index.ts',
       'crpc/index': 'src/crpc/index.ts',
       'rsc/index': 'src/rsc/index.ts',
       'server/index': 'src/server/index.ts',
+      'orm/index': 'src/orm/index.ts',
     },
     platform: 'neutral',
     target: 'esnext',
@@ -43,10 +45,10 @@ export default defineConfig([
     dts: true,
     checks: { pluginTimings: false },
   },
-  // CLI builds (CJS) - skip bundling node_modules like tsup
+  // CLI builds (ESM) - skip bundling node_modules like tsup
   {
     entry: ['src/cli/cli.ts', 'src/cli/watcher.ts'],
-    format: 'cjs',
+    format: 'esm',
     platform: 'node',
     target: 'esnext',
     tsconfig: 'tooling/tsconfig.build.json',

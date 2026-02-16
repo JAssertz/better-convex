@@ -60,7 +60,7 @@ type Meta = {
 const c = initCRPC
   .dataModel<DataModel>()
   .meta<Meta>()
-  .create({ ... });
+  .create();
 ```
 
 Now TypeScript knows what metadata properties are valid.
@@ -73,14 +73,18 @@ Use `.meta()` to set metadata on procedures:
 export const adminOnly = authQuery
   .meta({ role: 'admin' })
   .query(async ({ ctx }) => {
-    return ctx.db.query('user').collect();
+    return ctx.orm.query.user.findMany({ limit: 100 });
   });
 
 export const createSession = authMutation
   .meta({ rateLimit: 'session/create' })
   .input(z.object({ token: z.string() }))
   .mutation(async ({ ctx, input }) => {
-    return ctx.db.insert('session', { token: input.token, userId: ctx.userId });
+    const [row] = await ctx.orm
+      .insert(session)
+      .values({ token: input.token, userId: ctx.userId })
+      .returning({ id: session.id });
+    return row.id;
   });
 ```
 
@@ -117,8 +121,6 @@ const c = initCRPC
   .meta<Meta>()
   .create({
     defaultMeta: { auth: 'optional' },
-    query,
-    mutation,
   });
 
 // All procedures start with { auth: 'optional' }
@@ -213,7 +215,7 @@ export const adminQuery = authQuery
 // Usage
 export const list = adminQuery
   .query(async ({ ctx }) => {
-    return ctx.db.query('user').collect();
+    return ctx.orm.query.user.findMany({ limit: 100 });
   });
 ```
 
@@ -276,24 +278,25 @@ If you're coming from vanilla Convex, here's what changes.
 
 ### What's new
 
-**Before (vanilla Convex):**
+<Compare>
+  <CompareItem title="Before (vanilla Convex)">
+    No built-in metadata system. You'd need to implement custom patterns.
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```ts showLineNumbers {1,5,8-9}
+    type Meta = { role?: 'admin' };
 
-No built-in metadata system - you'd need to implement custom patterns.
+    const c = initCRPC
+      .dataModel<DataModel>()
+      .meta<Meta>()
+      .create();
 
-**After (cRPC):**
-
-```ts showLineNumbers {1,5,8-9}
-type Meta = { role?: 'admin' };
-
-const c = initCRPC
-  .dataModel<DataModel>()
-  .meta<Meta>()
-  .create({ ... });
-
-export const adminQuery = authQuery
-  .meta({ role: 'admin' })
-  .use(roleMiddleware);
-```
+    export const adminQuery = authQuery
+      .meta({ role: 'admin' })
+      .use(roleMiddleware);
+    ```
+  </CompareItem>
+</Compare>
 
 Key differences:
 - Type-safe metadata with `Meta` type
@@ -305,6 +308,6 @@ Key differences:
 
 <Cards>
   <Card title="Middlewares" href="/docs/server/middlewares" />
-  <Card title="Rate Limiting" href="/docs/server/rate-limiting" />
+  <Card title="Rate Limiting" href="/docs/server/advanced/rate-limiting" />
   <Card title="Error Handling" href="/docs/server/error-handling" />
 </Cards>

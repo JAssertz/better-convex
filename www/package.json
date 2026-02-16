@@ -5,9 +5,8 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "postinstall": "fumadocs-mdx",
+    "postinstall": "fumadocs-mdx source.config.ts .source",
     "start": "next start",
-    "typecheck": "fumadocs-mdx && next typegen && tsgo --noEmit",
     "types:check": "bun typecheck"
   },
   "dependencies": {

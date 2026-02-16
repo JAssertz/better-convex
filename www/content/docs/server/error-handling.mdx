@@ -151,40 +151,22 @@ const authMiddleware = c.middleware(async ({ ctx, next }) => {
 
 Throw `NOT_FOUND` when a resource doesn't exist:
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts title="convex/functions/posts.ts" showLineNumbers {5-9}
-    export const getById = authQuery
-      .input(z.object({ id: zid('posts') }))
-      .query(async ({ ctx, input }) => {
-        const post = await ctx.db.get(input.id);
-        if (!post) {
-          throw new CRPCError({
-            code: 'NOT_FOUND',
-            message: 'Post not found',
-          });
-        }
-        return post;
+```ts title="convex/functions/posts.ts" showLineNumbers {5-15}
+export const getById = authQuery
+  .input(z.object({ id: z.string() }))
+  .query(async ({ ctx, input }) => {
+    const post = await ctx.orm.query.posts.findFirst({
+      where: { id: input.id },
+    });
+    if (!post) {
+      throw new CRPCError({
+        code: 'NOT_FOUND',
+        message: 'Post not found',
       });
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts title="convex/functions/posts.ts" showLineNumbers {5-9}
-    export const getById = authQuery
-      .input(z.object({ id: zid('posts') }))
-      .query(async ({ ctx, input }) => {
-        const post = await ctx.table('posts').get(input.id);
-        if (!post) {
-          throw new CRPCError({
-            code: 'NOT_FOUND',
-            message: 'Post not found',
-          });
-        }
-        return post;
-      });
-    ```
-  </Tab>
-</Tabs>
+    }
+    return post;
+  });
+```
 
 ### Rate Limiting
 
@@ -236,26 +218,27 @@ If you're coming from vanilla Convex, here's what changes.
 
 ### What's new
 
-**Before (vanilla Convex):**
+<Compare>
+  <CompareItem title="Before (vanilla Convex)">
+    ```ts showLineNumbers
+    import { ConvexError } from 'convex/values';
 
-```ts showLineNumbers
-import { ConvexError } from 'convex/values';
+    throw new ConvexError('Post not found');
+    // or
+    throw new ConvexError({ message: 'Post not found' });
+    ```
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```ts showLineNumbers {1,3-6}
+    import { CRPCError } from 'better-convex/server';
 
-throw new ConvexError('Post not found');
-// or
-throw new ConvexError({ message: 'Post not found' });
-```
-
-**After (cRPC):**
-
-```ts showLineNumbers {1,3-6}
-import { CRPCError } from 'better-convex/server';
-
-throw new CRPCError({
-  code: 'NOT_FOUND',
-  message: 'Post not found',
-});
-```
+    throw new CRPCError({
+      code: 'NOT_FOUND',
+      message: 'Post not found',
+    });
+    ```
+  </CompareItem>
+</Compare>
 
 Key differences:
 - Typed error codes instead of free-form messages
@@ -268,5 +251,5 @@ Key differences:
 <Cards>
   <Card title="Server Side Calls" href="/docs/server/server-side-calls" />
   <Card title="Client Error Handling" href="/docs/react/error-handling" />
-  <Card title="Rate Limiting" href="/docs/server/rate-limiting" />
+  <Card title="Rate Limiting" href="/docs/server/advanced/rate-limiting" />
 </Cards>

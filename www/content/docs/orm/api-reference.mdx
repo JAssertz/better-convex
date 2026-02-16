@@ -1,0 +1,701 @@
+---
+title: API
+description: Complete API reference for the ORM with functions, operators, and types
+---
+
+import { InfoIcon } from "lucide-react"
+
+This is the full API surface for the ORM. The goal is to match Drizzle’s relational query builder while adapting to Convex’s document model.
+
+## Schema
+
+### `convexTable()`
+
+```ts showLineNumbers
+convexTable<TName extends string, TColumns>(
+  name: TName,
+  columns: TColumns,
+  extraConfig?: (t) => [
+    index('by_field').on(t.someField),
+    uniqueIndex('by_unique').on(t.someField),
+    check('check_name', gt(t.someField, 0)),
+    searchIndex('by_text').on(t.title),
+    vectorIndex('embedding_vec').on(t.embedding).dimensions(1536),
+  ]
+): ConvexTable<TableConfig<TName, TColumns>>
+```
+
+**Example**
+```ts showLineNumbers
+const users = convexTable('users', {
+  name: text().notNull(),
+  email: text().notNull(),
+  age: integer(),
+});
+```
+
+**Auto‑generated fields**
+- `id: Id<TName>`
+- `createdAt: number` (default)
+- `createdAt: Date` when your table defines `createdAt: timestamp().notNull().defaultNow()`
+- `_creationTime` is internal-only; public ORM APIs always use `createdAt`
+- Use `timestamp()` for point-in-time fields and `date()` for calendar-only fields
+
+### `convexTable.withRLS()`
+
+```ts showLineNumbers
+convexTable.withRLS(name, columns, (t) => [
+  rlsPolicy('policy_name', {
+    for: 'select',
+    using: (ctx) => eq(t.ownerId, ctx.viewerId),
+  }),
+])
+```
+
+Enables RLS for the table. If RLS is enabled and no permissive policies apply,
+access is denied by default.
+
+### `index()` / `uniqueIndex()`
+
+```ts showLineNumbers
+import { index, uniqueIndex } from 'better-convex/orm';
+
+const posts = convexTable(
+  'posts',
+  {
+    title: text().notNull(),
+    authorId: id('users'),
+  },
+  (t) => [
+    index('by_author').on(t.authorId),
+    uniqueIndex('by_title').on(t.title),
+  ]
+);
+```
+
+### `unique()`
+
+```ts showLineNumbers
+import { unique } from 'better-convex/orm';
+
+const users = convexTable(
+  'users',
+  {
+    firstName: text(),
+    lastName: text(),
+  },
+  (t) => [unique('full_name').on(t.firstName, t.lastName)]
+);
+```
+
+Use `.nullsNotDistinct()` to treat `null` as a value (PG parity).
+
+### `foreignKey()`
+
+```ts showLineNumbers
+import { foreignKey } from 'better-convex/orm';
+
+const memberships = convexTable(
+  'memberships',
+  {
+    userSlug: text().notNull(),
+  },
+  (t) => [foreignKey({ columns: [t.userSlug], foreignColumns: [users.slug] })]
+);
+```
+
+Use `.onUpdate()` / `.onDelete()` to configure foreign key actions.
+Actions are enforced at runtime by ORM mutations.
+
+For `cascade` / `set null` / `set default`, add an index on the referencing columns.
+Without an index, the ORM will throw when it detects referencing rows.
+
+### `check()`
+
+```ts showLineNumbers
+import { check, convexTable, gt, integer } from 'better-convex/orm';
+
+const users = convexTable(
+  'users',
+  {
+    age: integer(),
+  },
+  (t) => [check('adult_age', gt(t.age, 18))]
+);
+```
+
+Checks are enforced at runtime by ORM mutations and follow SQL-like NULL semantics (the check fails only when the expression is `false`).
+
+### `searchIndex()`
+
+```ts showLineNumbers
+import { searchIndex } from 'better-convex/orm';
+
+const posts = convexTable(
+  'posts',
+  {
+    title: text().notNull(),
+    authorId: id('users'),
+  },
+  (t) => [searchIndex('by_title').on(t.title).filter(t.authorId)]
+);
+```
+
+Use `.staged()` to stage a search index for later activation.
+
+### `vectorIndex()`
+
+```ts showLineNumbers
+import { vector, vectorIndex } from 'better-convex/orm';
+
+const posts = convexTable(
+  'posts',
+  {
+    authorId: id('users'),
+    embedding: vector(1536).notNull(),
+  },
+  (t) => [
+    vectorIndex('embedding_vec')
+      .on(t.embedding)
+      .dimensions(1536)
+      .filter(t.authorId),
+  ]
+);
+```
+
+Vector indexes require `.dimensions(n)` and can be staged with `.staged()`.
+
+### `deletion()`
+
+```ts showLineNumbers
+import { deletion } from 'better-convex/orm';
+
+const users = convexTable(
+  'users',
+  {
+    slug: text().notNull(),
+    deletionTime: integer(),
+  },
+  () => [deletion('scheduled', { delayMs: 60_000 })]
+);
+```
+
+Sets table-level default delete mode:
+- `deletion('hard')`
+- `deletion('soft')`
+- `deletion('scheduled', { delayMs? })`
+
+Per-query delete mode methods still take precedence: `.hard()`, `.soft()`, `.scheduled({ delayMs })`.
+
+### `vector()`
+
+```ts
+vector(1536)
+vector('embedding', 768)
+```
+
+### Column Modifiers
+
+```ts showLineNumbers
+const users = convexTable('users', {
+  slug: text().notNull(),
+});
+
+text().notNull()
+text().default('member')
+text().$type<'admin' | 'member'>()
+integer().$defaultFn(() => Date.now())
+integer().$onUpdateFn(() => Date.now())
+text().unique()
+text().unique('handle_unique', { nulls: 'not distinct' })
+id('users').references(() => users.id)
+text().references(() => users.slug, { onDelete: 'cascade' })
+```
+
+### `rlsPolicy()`
+
+```ts showLineNumbers
+rlsPolicy(name, {
+  as: 'permissive' | 'restrictive',
+  for: 'all' | 'select' | 'insert' | 'update' | 'delete',
+  to: 'public' | 'current_user' | RlsRole | string | Array<...>,
+  using: (ctx, t) => FilterExpression<boolean>,
+  withCheck: (ctx, t) => FilterExpression<boolean>,
+})
+```
+
+`using` controls read/update/delete visibility. `withCheck` controls insert/update
+values. When omitted, `withCheck` falls back to `using`.
+
+### `rlsRole()`
+
+```ts
+rlsRole('admin', { createRole: true }).existing();
+```
+
+### `defineRelations()`
+
+```ts showLineNumbers
+defineRelations(schema, (r) => ({
+  users: { posts: r.many.posts() },
+  posts: {
+    author: r.one.users({ from: r.posts.authorId, to: r.users.id }),
+  },
+}))
+```
+
+## Database
+
+### `createOrm()`
+
+```ts
+const orm = createOrm({ schema: relations });
+const db = orm.db(ctx);
+```
+
+Creates a unified ORM setup object. Use `orm.db(ctx)` to build a typed query/mutation client.
+
+`createdAt` is always public in ORM rows. Its type is:
+- `number` for the system alias
+- `Date` when your schema defines `createdAt: timestamp().notNull().defaultNow()`
+
+For async mutation batching, pass scheduler function refs and export generated handlers:
+
+```ts showLineNumbers
+import { createOrm } from 'better-convex/orm';
+import { internal } from './_generated/api';
+import { internalMutation } from './functions';
+
+const orm = createOrm({
+  schema: relations,
+  ormFunctions: internal.orm,
+  internalMutation,
+});
+
+export const { scheduledMutationBatch, scheduledDelete } = orm.api();
+```
+
+<Callout icon={<InfoIcon />}>
+Recommended: create `orm` once in your context layer and attach `orm.db(ctx)` to `ctx.orm`.
+</Callout>
+
+**RLS options**
+
+```ts showLineNumbers
+const ormDb = orm.db(ctx, {
+  rls: {
+    ctx,
+    roleResolver: (ctx) => ctx.roles ?? [],
+  },
+  vectorSearch: ctx.vectorSearch,
+})
+```
+
+Use `ctx.orm.skipRules` (or `ormDb.skipRules`) for an explicit bypass of RLS.
+Pass `vectorSearch` when you want ORM `findMany({ vectorSearch })` support.
+
+### `db.system`
+
+`db.system` exposes raw Convex system-table reads for `_storage` and `_scheduled_functions`.
+
+```ts
+await db.system.get(jobId);
+await db.system.query('_scheduled_functions').collect();
+await db.system.query('_storage').take(20);
+```
+
+**Scope**
+- Raw passthrough methods like `get` and `query`
+- Not ORM query-builder APIs (`findMany`, `findFirst`)
+- Not relation loading (`with`) or ORM-specific helpers/rules
+
+## Query Builder
+
+### `findMany()`
+
+```ts showLineNumbers
+await db.query.users.findMany({
+  where: { role: 'admin' },
+  orderBy: { createdAt: 'desc' },
+  limit: 10,
+  offset: 0,
+  with: { posts: true },
+  columns: { name: true },
+});
+```
+
+**Options**
+- `where`: object filter, callback expression (`(table, ops) => ...`), or callback predicate via `ops.predicate(...)`
+- `search`: `{ index, query, filters? }` (full‑text search mode; only on tables with search indexes)
+- `vectorSearch`: `{ index, vector, limit, includeScore?, filter? }` (vector similarity mode; only on tables with vector indexes)
+- `orderBy`: `{ field: 'asc' | 'desc' }`
+- `limit`, `offset`
+- `cursor`: `string | null` (cursor pagination; first page is `null`)
+- `maxScan`: `number` (only valid with cursor pagination; caps scan-fallback paths like predicate/object post-filter and index-union pagination)
+- `allowFullScan`: opt‑in for unsized non-cursor scans and relation fan-out overrides (not supported with cursor pagination; not used with `search` or `vectorSearch`)
+- `with`: relation loading
+- `columns`: post‑fetch projection
+- `extras`: post‑fetch computed fields
+
+**Sizing rules (non-paginated)**
+- Provide `limit`, or
+- Use cursor pagination (`cursor` + `limit`), or
+- Configure `defineSchema(..., { defaults: { defaultLimit } })`, or
+- Use `allowFullScan: true` to opt into unbounded collection.
+
+For `with` + `many()` relations, set relation `limit` or `defaults.defaultLimit`; otherwise use `allowFullScan`.
+Relation loading also enforces fan-out key caps: if unique relation lookup keys exceed `defaults.relationFanOutMaxKeys` (default `1000`), the query throws unless `allowFullScan` is set.
+
+**Search mode constraints**
+- `orderBy` is not allowed (results stay in Convex relevance order)
+- function `where` (callback/predicate) is not allowed
+- relation-based `where` is not allowed
+- object `where` on base table fields is allowed (post-search filter)
+- `with` is allowed
+
+**Vector mode constraints**
+- `limit` is required inside `vectorSearch` (`1..256`)
+- `orderBy` is not allowed
+- `cursor` is not allowed
+- `maxScan` is not allowed
+- `where` is not allowed
+- `.withIndex(...)` is not allowed
+- `offset` is not allowed
+- top-level `limit` is not allowed (use `vectorSearch.limit`)
+- `includeScore: true` adds `_score` to each returned row
+- `with` is allowed
+
+### `findMany({ search })`
+
+```ts showLineNumbers
+await db.query.posts.findMany({
+  search: {
+    index: 'text_search',
+    query: 'galaxy',
+    filters: { type: 'news' },
+  },
+  cursor: null,
+  limit: 20,
+});
+```
+
+### `findMany({ vectorSearch })`
+
+```ts showLineNumbers
+await db.query.posts.findMany({
+  vectorSearch: {
+    index: 'embedding_vec',
+    vector: args.embedding,
+    limit: 10,
+    includeScore: true,
+    filter: (q) => q.eq('type', 'news'),
+  },
+  with: { author: true },
+});
+```
+
+### `findFirst()`
+
+```ts showLineNumbers
+await db.query.users.findFirst({ where: { email: 'a@b.com' } });
+await db.query.posts.findFirst({
+  search: { index: 'text_search', query: 'galaxy' },
+});
+```
+
+### `findFirstOrThrow()`
+
+Like `findFirst()`, but throws if no row exists.
+
+```ts showLineNumbers
+await db.query.users.findFirstOrThrow({ where: { email: 'a@b.com' } });
+await db.query.posts.findFirstOrThrow({
+  search: { index: 'text_search', query: 'galaxy' },
+});
+```
+
+### `findMany({ cursor, limit })`
+
+```ts showLineNumbers
+await db.query.posts.findMany({
+  where: { published: true },
+  orderBy: { createdAt: 'desc' },
+  cursor: null,
+  limit: 20,
+});
+```
+
+### `select()` composition (advanced)
+
+```ts showLineNumbers
+const page = await db.query.messages
+  .withIndex('by_from_to')
+  .select()
+  .union([
+    { where: { from: me, to: them } },
+    { where: { from: them, to: me } },
+  ])
+  .interleaveBy(['createdAt', 'id'])
+  .filter(async (m) => !m.deletedAt)
+  .map(async (m) => ({ ...m, preview: m.body.slice(0, 120) }))
+  .paginate({ cursor: null, limit: 20 });
+```
+
+Composition stage output is inferred in order:
+
+```ts
+const page = await db.query.messages
+  .select()
+  .map(async (m) => ({ ...m, preview: m.body.slice(0, 120) }))
+  .filter(async (m) => m.preview.length > 0)
+  .paginate({ cursor: null, limit: 20 });
+
+page.page[0].preview; // string
+```
+
+`flatMap` infers relation-targeted output:
+
+```ts
+const expanded = await db.query.users
+  .select()
+  .flatMap('posts', { includeParent: false })
+  .paginate({ cursor: null, limit: 20 });
+
+expanded.page[0].text; // post field
+```
+
+Use `select()` when you need pre-pagination transforms (`filter`, `map`, `distinct`, relation `flatMap`) or SQL-like unions/interleaving.
+
+### `findMany({ pageByKey })` (advanced)
+
+```ts showLineNumbers
+const page = await db.query.messages.findMany({
+  pageByKey: {
+    index: 'by_channel',
+    order: 'asc',
+    startKey: previousEndKey,
+    targetMaxRows: 100,
+  },
+});
+```
+
+`pageByKey` returns:
+
+```ts
+{
+  page: T[];
+  indexKeys: (Value | undefined)[][];
+  hasMore: boolean;
+}
+```
+
+Use this mode when you need deterministic key boundaries (explicit adjacency control) instead of opaque cursor tokens.
+
+## Query Filters (object `where`)
+
+**Core operators**
+- `eq`, `ne`, `gt`, `gte`, `lt`, `lte`
+- `between`, `notBetween`
+- `in`, `notIn`
+- `isNull`, `isNotNull`
+- `AND`, `OR`, `NOT`
+
+**String operators (post‑fetch)**
+- `like`, `ilike`, `notLike`, `notIlike`
+- `startsWith`, `endsWith`, `contains`
+
+**Not supported (SQL subquery operators)**
+- `exists`, `notExists` (require SQL subqueries, which Convex does not support at runtime)
+- Use relation existence filters instead (`where: { posts: true }` or `where: { NOT: { posts: true } }`)
+
+**Index compilation**
+- Index-backed by default when possible.
+- Currently index-compiled: `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `between`, `notBetween`, `in`, `notIn`, `isNull`, `isNotNull`, `startsWith`, `like('prefix%')`, and same-field equality `OR`.
+- Object/callback expression filters can run without `.withIndex(...)`; if not index-compiled, they run as bounded scans.
+- Post-fetch operators are typed to require explicit `.withIndex(...)` (`contains`, `endsWith`, `ilike`, `notLike`, `notIlike`, array operators, `NOT`, `RAW`).
+
+**Workarounds for remaining full-scan operators**
+- `arrayContains` / `arrayContained` / `arrayOverlaps`: use an inverted/join table indexed by element.
+- `contains`: use a search index or tokenized denormalized field.
+- `endsWith`: store and index a reversed-string column, then use `startsWith`.
+- `ilike` / `notIlike`: normalize to lowercase in a dedicated indexed field.
+- `notLike`: index a positive pre-filter, then post-filter with `notLike`.
+- `RAW`: narrow with indexed pre-filters and call `.withIndex(...)`.
+- Predicate `where`: call `.withIndex(name, range?)` and use `maxScan` for bounded scans (cursor pagination only).
+
+## Mutations
+
+### `insert()`
+
+```ts
+await db.insert(users).values({ name: 'Ada', email: 'ada@example.com' });
+```
+
+### `update()`
+
+```ts showLineNumbers
+await db
+  .update(users)
+  .set({ name: 'Ada Lovelace' })
+  .where(eq(users.id, userId));
+```
+
+**`set()` semantics**
+- `undefined` values passed to `.set(...)` are ignored (no-op).
+- To remove a top-level field, use `unsetToken`: `.set({ field: unsetToken })`.
+
+**Full-scan guardrail**
+- `update()` without `where()` throws unless you call `.allowFullScan()`.
+- Non‑`id` filters require `.allowFullScan()` only when no index is available.
+- Matched rows are capped by `mutationMaxRows` (default `1000`), collected in `mutationBatchSize` pages (default `100`).
+- Async fan-out uses `mutationLeafBatchSize` (default `900`) for non-recursive FK actions.
+- Async fan-out enforces `mutationMaxBytesPerBatch` (default `2_097_152` measured bytes) and `mutationScheduleCallCap` (default `100`).
+- Override defaults via `defineSchema(..., { defaults: { mutationMaxRows, mutationBatchSize, mutationLeafBatchSize, mutationMaxBytesPerBatch, mutationScheduleCallCap, mutationExecutionMode, mutationAsyncDelayMs } })`.
+- For large workloads, use `.paginate({ cursor, limit })` to execute one batch per mutation call.
+- Use `execute({ mode: 'async', batchSize?, delayMs? })` (or `.executeAsync(...)`) to run the first batch inline and schedule continuation.
+- Explicit async APIs cannot be combined with `.paginate()`.
+- Paged mode returns `{ continueCursor, isDone, numAffected }` (+ `page` when using `.returning()`).
+- Async `execute()` returns the same shape as sync `execute()` (`void` or first-batch `returning()` rows).
+- Paged mode currently supports single-range index plans only.
+
+```ts showLineNumbers
+await db
+  .update(users)
+  .set({ name: 'Ada Lovelace' })
+  .where(eq(users.email, email));
+// If email is not indexed:
+// .allowFullScan();
+```
+
+### `delete()`
+
+```ts showLineNumbers
+await db.delete(users).where(eq(users.id, userId));
+```
+
+**Full-scan guardrail**
+- `delete()` without `where()` throws unless you call `.allowFullScan()`.
+- Non‑`id` filters require `.allowFullScan()` only when no index is available.
+- Matched rows are capped by `mutationMaxRows` (default `1000`), collected in `mutationBatchSize` pages (default `100`).
+- Async fan-out uses `mutationLeafBatchSize` (default `900`) for non-recursive FK actions.
+- Async fan-out enforces `mutationMaxBytesPerBatch` (default `2_097_152` measured bytes) and `mutationScheduleCallCap` (default `100`).
+- Override defaults via `defineSchema(..., { defaults: { mutationMaxRows, mutationBatchSize, mutationLeafBatchSize, mutationMaxBytesPerBatch, mutationScheduleCallCap, mutationExecutionMode, mutationAsyncDelayMs } })`.
+- For large workloads, use `.paginate({ cursor, limit })` to execute one batch per mutation call.
+- Use `execute({ mode: 'async', batchSize?, delayMs? })` (or `.executeAsync(...)`) to run the first batch inline and schedule continuation.
+- Explicit async APIs cannot be combined with `.paginate()` or resolved scheduled delete mode (`.scheduled(...)` or table-level `deletion('scheduled')`).
+- Paged mode returns `{ continueCursor, isDone, numAffected }` (+ `page` when using `.returning()`).
+- Async `execute()` returns the same shape as sync `execute()` (`void` or first-batch `returning()` rows).
+- Paged mode currently supports single-range index plans only.
+
+```ts showLineNumbers
+await db
+  .delete(users)
+  .where(eq(users.email, email));
+// If email is not indexed:
+// .allowFullScan();
+```
+
+**Delete helpers**
+```ts showLineNumbers
+// Soft delete (sets deletionTime)
+await db.delete(users).where(eq(users.id, userId)).soft();
+
+// Force hard delete even if table default is soft/scheduled
+await db.delete(users).where(eq(users.id, userId)).hard();
+
+// Cascade behavior for FK actions
+await db.delete(users).where(eq(users.id, userId)).cascade({ mode: 'hard' });
+
+// Scheduled delete (soft now, hard later)
+await db
+  .delete(users)
+  .where(eq(users.id, userId))
+  .scheduled({ delayMs: 60_000 });
+```
+
+Scheduled deletes require passing `{ scheduler, scheduledDelete }` when building `ctx.orm`
+and exposing `scheduledDeleteFactory(schema, edges, scheduledMutationBatchRef)` as an internal mutation.
+The scheduled worker validates the original `deletionTime` token before hard-deleting, so clearing/changing `deletionTime` cancels a pending scheduled delete.
+
+Async mutation batches (`execute({ mode: 'async' })` / `.executeAsync()` for update/delete) require passing
+`{ scheduler, scheduledMutationBatch }` when building `ctx.orm` and exposing
+`scheduledMutationBatchFactory(schema, edges, internalRef)` as an internal mutation.
+
+### `returning()`
+
+```ts showLineNumbers
+const [user] = await db
+  .insert(users)
+  .values({ name: 'Ada', email: 'ada@example.com' })
+  .returning({ id: users.id, email: users.email });
+```
+
+### `onConflictDoUpdate()`
+
+```ts showLineNumbers
+await db
+  .insert(users)
+  .values({ email: 'ada@example.com', name: 'Ada' })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: 'Ada Lovelace' },
+  });
+```
+
+If the conflict target has no index, call `.allowFullScan()` to opt in:
+
+```ts showLineNumbers
+await db
+  .insert(users)
+  .values({ email: 'ada@example.com', name: 'Ada' })
+  .onConflictDoUpdate({ target: users.email, set: { name: 'Ada' } })
+  .allowFullScan();
+```
+
+## Filter Expression Helpers
+
+Use these in mutation `where(...)` clauses:
+
+```ts showLineNumbers
+eq(field, value)
+ne(field, value)
+gt(field, value)
+gte(field, value)
+lt(field, value)
+lte(field, value)
+between(field, min, max)
+notBetween(field, min, max)
+inArray(field, values)
+notInArray(field, values)
+and(...filters)
+or(...filters)
+not(filter)
+isNull(field)
+isNotNull(field)
+```
+
+`between` is inclusive of endpoints.
+`notBetween` matches values strictly outside the range.
+
+## Type Helpers
+
+```ts
+InferSelectModel<typeof users>
+InferInsertModel<typeof users>
+users.$inferSelect
+users.$inferInsert
+```
+
+## Introspection Helpers
+
+```ts
+getTableColumns(users) // includes id/createdAt
+getTableConfig(users)  // indexes/unique/fks/rls/checks
+```
+
+## Notes
+
+- `columns` projection is post‑fetch
+- String operators are post‑fetch
+- `extras` are computed post‑fetch
+- `findMany({ cursor, limit })` uses the first `orderBy` field for cursor ordering

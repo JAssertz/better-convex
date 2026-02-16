@@ -48,12 +48,14 @@ Run after the database write. Use for side effects.
 
 Pass triggers to `createClient`:
 
-```ts title="convex/functions/auth.ts" showLineNumbers {4-15}
+```ts title="convex/functions/auth.ts" showLineNumbers {1-2,6-20}
 import { createClient } from 'better-convex/auth';
+import { withOrm } from '../lib/orm';
 
 export const authClient = createClient({
   authFunctions: internal.auth,
   schema,
+  context: withOrm, // inject ctx.orm once for auth mutation + trigger handlers
   triggers: {
     user: {
       beforeCreate: async (ctx, data) => { /* ... */ },
@@ -69,6 +71,10 @@ export const authClient = createClient({
   },
 });
 ```
+
+<Callout icon={<InfoIcon />}>
+Use `context: withOrm` so auth trigger handlers can use `ctx.orm`.
+</Callout>
 
 ## User Triggers
 
@@ -100,122 +106,59 @@ triggers: {
 
 Create related records after user signup:
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers {3-18}
-    triggers: {
-      user: {
-        onCreate: async (ctx, user) => {
-          // Create default profile
-          await ctx.db.insert('profiles', {
-            userId: user._id,
-            bio: '',
-            avatar: user.image,
-          });
+```ts showLineNumbers {3-19}
+triggers: {
+  user: {
+    onCreate: async (ctx, user) => {
+      // Create default profile
+      await ctx.orm.insert(profiles).values({
+        userId: user.id,
+        bio: '',
+        avatar: user.image,
+      });
 
-          // Create personal organization
-          await ctx.db.insert('organizations', {
-            name: `${user.name}'s Workspace`,
-            ownerId: user._id,
-            type: 'personal',
-          });
+      // Create personal organization
+      await ctx.orm.insert(organizations).values({
+        name: `${user.name}'s Workspace`,
+        ownerId: user.id,
+        type: 'personal',
+      });
 
-          // Schedule welcome email
-          await ctx.scheduler.runAfter(0, internal.emails.sendWelcome, {
-            userId: user._id,
-            email: user.email,
-          });
-        },
-      },
-    }
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers {1-2,6-7,10-18}
-    import { entsTableFactory } from 'convex-ents';
-    import { entDefinitions } from '../lib/ents';
-
-    triggers: {
-      user: {
-        onCreate: async (ctx, user) => {
-          const table = entsTableFactory(ctx, entDefinitions);
-
-          // Create default profile
-          await table('profiles').insert({
-            userId: user._id,
-            bio: '',
-            avatar: user.image,
-          });
-
-          // Create personal organization
-          await table('organizations').insert({
-            name: `${user.name}'s Workspace`,
-            ownerId: user._id,
-            type: 'personal',
-          });
-
-          // Schedule welcome email
-          await ctx.scheduler.runAfter(0, internal.emails.sendWelcome, {
-            userId: user._id,
-            email: user.email,
-          });
-        },
-      },
-    }
-    ```
-  </Tab>
-</Tabs>
+      // Schedule welcome email
+      await ctx.scheduler.runAfter(0, internal.emails.sendWelcome, {
+        userId: user.id,
+        email: user.email,
+      });
+    },
+  },
+}
+```
 
 ### onUpdate
 
 Sync changes to related records:
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers {3-14}
-    triggers: {
-      user: {
-        onUpdate: async (ctx, newDoc, oldDoc) => {
-          // Sync avatar change to profiles
-          if (newDoc.image !== oldDoc.image) {
-            const profile = await ctx.db
-              .query('profiles')
-              .withIndex('by_user', (q) => q.eq('userId', newDoc._id))
-              .first();
+```ts showLineNumbers {3-16}
+triggers: {
+  user: {
+    onUpdate: async (ctx, newDoc, oldDoc) => {
+      // Sync avatar change to profiles
+      if (newDoc.image !== oldDoc.image) {
+        const profile = await ctx.orm.query.profiles.findFirst({
+          where: { userId: newDoc.id },
+        });
 
-            if (profile) {
-              await ctx.db.patch(profile._id, { avatar: newDoc.image });
-            }
-          }
-        },
-      },
-    }
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers {1-2,6-7,10-14}
-    import { entsTableFactory } from 'convex-ents';
-    import { entDefinitions } from '../lib/ents';
-
-    triggers: {
-      user: {
-        onUpdate: async (ctx, newDoc, oldDoc) => {
-          const table = entsTableFactory(ctx, entDefinitions);
-
-          // Sync avatar change to profiles
-          if (newDoc.image !== oldDoc.image) {
-            const profile = await table('profiles').get('by_user', newDoc._id);
-
-            if (profile) {
-              await profile.patch({ avatar: newDoc.image });
-            }
-          }
-        },
-      },
-    }
-    ```
-  </Tab>
-</Tabs>
+        if (profile) {
+          await ctx.orm
+            .update(profiles)
+            .set({ avatar: newDoc.image })
+            .where(eq(profiles.id, profile.id));
+        }
+      }
+    },
+  },
+}
+```
 
 ### onDelete
 
@@ -225,69 +168,32 @@ Clean up related data:
 Cascade deletes in triggers are permanent. Test thoroughly and consider soft deletes for critical data.
 </Callout>
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers {3-20}
-    triggers: {
-      user: {
-        onDelete: async (ctx, user) => {
-          // Delete user's profiles
-          const profiles = await ctx.db
-            .query('profiles')
-            .withIndex('by_user', (q) => q.eq('userId', user._id))
-            .collect();
+```ts showLineNumbers {3-20}
+triggers: {
+  user: {
+    onDelete: async (ctx, user) => {
+      // Index profiles.userId and organizations.ownerId.
+      // Delete user's profiles
+      const profilesToDelete = await ctx.orm.query.profiles.findMany({
+        where: { userId: user.id },
+        limit: 1000,
+      });
+      for (const profile of profilesToDelete) {
+        await ctx.orm.delete(profiles).where(eq(profiles.id, profile.id));
+      }
 
-          for (const profile of profiles) {
-            await ctx.db.delete(profile._id);
-          }
-
-          // Delete user's organizations
-          const orgs = await ctx.db
-            .query('organizations')
-            .withIndex('by_owner', (q) => q.eq('ownerId', user._id))
-            .collect();
-
-          for (const org of orgs) {
-            await ctx.db.delete(org._id);
-          }
-        },
-      },
-    }
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers {1-2,6-7,10-21}
-    import { entsTableFactory } from 'convex-ents';
-    import { entDefinitions } from '../lib/ents';
-
-    triggers: {
-      user: {
-        onDelete: async (ctx, user) => {
-          const table = entsTableFactory(ctx, entDefinitions);
-
-          // Delete user's profiles
-          const profiles = await table('profiles', 'by_user', (q) =>
-            q.eq('userId', user._id)
-          );
-
-          for (const profile of profiles) {
-            await profile.delete();
-          }
-
-          // Delete user's organizations
-          const orgs = await table('organizations', 'by_owner', (q) =>
-            q.eq('ownerId', user._id)
-          );
-
-          for (const org of orgs) {
-            await org.delete();
-          }
-        },
-      },
-    }
-    ```
-  </Tab>
-</Tabs>
+      // Delete user's organizations
+      const orgsToDelete = await ctx.orm.query.organizations.findMany({
+        where: { ownerId: user.id },
+        limit: 1000,
+      });
+      for (const org of orgsToDelete) {
+        await ctx.orm.delete(organizations).where(eq(organizations.id, org.id));
+      }
+    },
+  },
+}
+```
 
 ## Session Triggers
 
@@ -295,53 +201,27 @@ Cascade deletes in triggers are permanent. Test thoroughly and consider soft del
 
 Set default session state:
 
-<Tabs groupId="db" items={["ctx.db", "ctx.table"]} persist>
-  <Tab value="ctx.db">
-    ```ts showLineNumbers {3-13}
-    triggers: {
-      session: {
-        onCreate: async (ctx, session) => {
-          // Set active organization from user's last active
-          if (!session.activeOrganizationId) {
-            const user = await ctx.db.get(session.userId);
+```ts showLineNumbers {3-18}
+triggers: {
+  session: {
+    onCreate: async (ctx, sessionDoc) => {
+      // Set active organization from user's last active
+      if (!sessionDoc.activeOrganizationId) {
+        const user = await ctx.orm.query.user.findFirst({
+          where: { id: sessionDoc.userId },
+        });
 
-            if (user?.lastActiveOrganizationId) {
-              await ctx.db.patch(session._id, {
-                activeOrganizationId: user.lastActiveOrganizationId,
-              });
-            }
-          }
-        },
-      },
-    }
-    ```
-  </Tab>
-  <Tab value="ctx.table">
-    ```ts showLineNumbers {1-2,6-7,10-17}
-    import { entsTableFactory } from 'convex-ents';
-    import { entDefinitions } from '../lib/ents';
-
-    triggers: {
-      session: {
-        onCreate: async (ctx, session) => {
-          const table = entsTableFactory(ctx, entDefinitions);
-
-          // Set active organization from user's last active
-          if (!session.activeOrganizationId) {
-            const user = await table('user').get(session.userId);
-
-            if (user?.lastActiveOrganizationId) {
-              await table('session').getX(session._id).patch({
-                activeOrganizationId: user.lastActiveOrganizationId,
-              });
-            }
-          }
-        },
-      },
-    }
-    ```
-  </Tab>
-</Tabs>
+        if (user?.lastActiveOrganizationId) {
+          await ctx.orm
+            .update(session)
+            .set({ activeOrganizationId: user.lastActiveOrganizationId })
+            .where(eq(session.id, sessionDoc.id));
+        }
+      }
+    },
+  },
+}
+```
 
 ## Export Trigger Functions
 
@@ -375,9 +255,9 @@ triggers: {
       return data;
     },
 
-    // `doc` includes _id and system fields
+    // `doc` includes id and system fields
     onCreate: async (ctx, doc) => {
-      doc._id;           // Id<'user'>
+      doc.id;           // Id<'user'>
       doc._creationTime; // number
       doc.email;         // string
     },

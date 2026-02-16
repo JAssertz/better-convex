@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0-m6",
+  "description": "ORM code examples (M1-M6) - Schema with column builders, relations, queries, filtering, and mutations",
+  "lastUpdated": "2026-02-02",
+  "status": "Examples for implemented features using column builder syntax. Relation loading (with:) examples removed (coming Phase 4)",
+
+  "examples": {
+    "schema": {
+      "basic_table": {
+        "title": "Define a basic table",
+        "tags": ["schema", "table", "basic"],
+        "code": "const users = convexTable('users', {\n  name: text().notNull(),\n  email: text().notNull(),\n  age: integer(),\n});",
+        "docUrl": "/docs/orm/schema#table-definition"
+      },
+      "one_to_many_relation": {
+        "title": "User has many posts (one-to-many)",
+        "tags": ["schema", "relations", "one-to-many"],
+        "code": "const usersRelations = relations(users, ({ many }) => ({\n  posts: many(posts),\n}));\n\nconst postsRelations = relations(posts, ({ one }) => ({\n  author: one(users, {\n    fields: [posts.userId],\n    references: [users.id],\n  }),\n}));",
+        "docUrl": "/docs/orm/relations-deep-dive#one-to-many-relations"
+      },
+      "one_to_one_relation": {
+        "title": "User has one profile (one-to-one)",
+        "tags": ["schema", "relations", "one-to-one"],
+        "code": "const usersRelations = relations(users, ({ one }) => ({\n  profile: one(profiles),\n}));\n\nconst profilesRelations = relations(profiles, ({ one }) => ({\n  user: one(users, {\n    fields: [profiles.userId],\n    references: [users.id],\n  }),\n}));",
+        "docUrl": "/docs/orm/relations-deep-dive#one-to-one-relations"
+      },
+      "self_referencing_relation": {
+        "title": "Self-referencing relation (categories with parent)",
+        "tags": ["schema", "relations", "self-referencing"],
+        "code": "const categoriesRelations = relations(categories, ({ one, many }) => ({\n  parent: one(categories, {\n    fields: [categories.parentId],\n    references: [categories.id],\n  }),\n  children: many(categories),\n}));",
+        "docUrl": "/docs/orm/relations-deep-dive#self-referencing-relations"
+      },
+      "many_to_many_junction": {
+        "title": "Many-to-many via junction table",
+        "tags": ["schema", "relations", "many-to-many"],
+        "code": "const userGroups = convexTable('user_groups', {\n  userId: id('users'),\n  groupId: id('groups'),\n});\n\nconst usersRelations = relations(users, ({ many }) => ({\n  userGroups: many(userGroups),\n}));\n\nconst groupsRelations = relations(groups, ({ many }) => ({\n  userGroups: many(userGroups),\n}));",
+        "docUrl": "/docs/orm/relations-deep-dive#many-to-many-relations"
+      }
+    },
+
+    "queries": {
+      "find_many_basic": {
+        "title": "Query all users",
+        "tags": ["queries", "findMany", "basic"],
+        "code": "const users = await db(ctx).query.users.findMany();",
+        "docUrl": "/docs/orm/queries#findmany"
+      },
+      "find_many_with_filter": {
+        "title": "Query users with filter",
+        "tags": ["queries", "findMany", "filter", "where"],
+        "code": "const admins = await db(ctx).query.users.findMany({\n  where: eq(users.role, 'admin'),\n});",
+        "docUrl": "/docs/orm/queries#filtering-with-where"
+      },
+      "find_first_by_email": {
+        "title": "Find user by email",
+        "tags": ["queries", "findFirst", "filter"],
+        "code": "const user = await db(ctx).query.users.findFirst({\n  where: eq(users.email, 'alice@example.com'),\n});",
+        "docUrl": "/docs/orm/queries#findfirst"
+      },
+      "complex_and_filter": {
+        "title": "Complex AND filter",
+        "tags": ["queries", "filter", "and", "operators"],
+        "code": "const admins = await db(ctx).query.users.findMany({\n  where: and(\n    eq(users.role, 'admin'),\n    gt(users.age, 18),\n    isNotNull(users.email)\n  ),\n});",
+        "docUrl": "/docs/orm/queries#combining-conditions"
+      },
+      "complex_or_filter": {
+        "title": "Complex OR filter",
+        "tags": ["queries", "filter", "or", "operators"],
+        "code": "const moderators = await db(ctx).query.users.findMany({\n  where: or(\n    eq(users.role, 'admin'),\n    eq(users.role, 'moderator')\n  ),\n});",
+        "docUrl": "/docs/orm/queries#combining-conditions"
+      },
+      "offset_pagination": {
+        "title": "Offset-based pagination",
+        "tags": ["queries", "pagination", "offset", "limit"],
+        "code": "const pageSize = 20;\nconst users = await db(ctx).query.users.findMany({\n  offset: page * pageSize,\n  limit: pageSize,\n});",
+        "docUrl": "/docs/orm/ordering-pagination#offset-pagination"
+      }
+    },
+
+    "type_safety": {
+      "infer_select_type": {
+        "title": "Infer select type from table",
+        "tags": ["types", "inference", "$inferSelect"],
+        "code": "type User = typeof users.$inferSelect;\n// { id: Id<'users'>, name: string, email: string, createdAt: number }",
+        "docUrl": "/docs/orm/type-safety#type-extraction"
+      },
+      "infer_insert_type": {
+        "title": "Infer insert type from table",
+        "tags": ["types", "inference", "$inferInsert"],
+        "code": "type NewUser = typeof users.$inferInsert;\n// { name: string, email: string, age?: number }",
+        "docUrl": "/docs/orm/type-safety#type-extraction"
+      },
+      "query_result_type": {
+        "title": "Extract query result type",
+        "tags": ["types", "inference", "utility"],
+        "code": "type QueryResult<T> = Awaited<ReturnType<T>>;\ntype UsersResult = QueryResult<typeof getUsersWithPosts>;",
+        "docUrl": "/docs/orm/type-safety#generic-helper-types"
+      }
+    },
+
+    "migration_patterns": {
+      "drizzle_to_convex_findMany": {
+        "title": "Drizzle findMany → Convex",
+        "tags": ["migration", "drizzle", "queries"],
+        "code": "// Drizzle:\nconst users = await db.query.users.findMany();\n\n// ORM (identical!):\nconst users = await db(ctx).query.users.findMany();",
+        "docUrl": "/docs/orm/from-drizzle#find-operations"
+      },
+      "drizzle_to_convex_include": {
+        "title": "Drizzle include → Convex with",
+        "tags": ["migration", "drizzle", "relations"],
+        "code": "// Drizzle:\nconst users = await db.query.users.findMany({\n  include: { posts: true },\n});\n\n// ORM:\nconst users = await db(ctx).query.users.findMany({\n  with: { posts: true },\n});",
+        "docUrl": "/docs/orm/from-drizzle#relation-loading"
+      },
+      "prisma_to_convex_create": {
+        "title": "Prisma create → Convex insert",
+        "tags": ["migration", "prisma", "mutations"],
+        "code": "// Prisma:\nconst user = await prisma.user.create({\n  data: { name: 'Alice', email: 'alice@example.com' },\n});\n\n// ORM:\nconst userId = await db(ctx).insert.users.values({\n  name: 'Alice',\n  email: 'alice@example.com',\n});",
+        "docUrl": "/docs/orm/from-prisma#create"
+      }
+    }
+  },
+
+  "searchIndex": {
+    "byTag": {
+      "schema": [
+        "basic_table",
+        "one_to_many_relation",
+        "one_to_one_relation",
+        "self_referencing_relation",
+        "many_to_many_junction"
+      ],
+      "queries": [
+        "find_many_basic",
+        "find_many_with_filter",
+        "find_first_by_email",
+        "complex_and_filter",
+        "complex_or_filter",
+        "offset_pagination"
+      ],
+      "types": ["infer_select_type", "infer_insert_type", "query_result_type"]
+    },
+    "byKeyword": {
+      "filter": [
+        "find_many_with_filter",
+        "complex_and_filter",
+        "complex_or_filter"
+      ],
+      "relation": [
+        "one_to_many_relation",
+        "one_to_one_relation",
+        "self_referencing_relation",
+        "many_to_many_junction"
+      ],
+      "pagination": ["offset_pagination"],
+      "typescript": [
+        "infer_select_type",
+        "infer_insert_type",
+        "query_result_type"
+      ]
+    }
+  },
+
+  "usage": {
+    "description": "Search examples by tag or keyword using the searchIndex",
+    "searchByTag": "examples-registry.json#searchIndex.byTag[tagName]",
+    "searchByKeyword": "examples-registry.json#searchIndex.byKeyword[keyword]"
+  }
+}

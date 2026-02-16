@@ -10,32 +10,32 @@ import { InfoIcon } from "lucide-react"
 
 ## Introduction
 
-Better Convex is a complete framework for Convex. It brings tRPC-style APIs, TanStack Query, Convex Ents, and Better Auth together into a cohesive developer experience.
+Better Convex is a complete framework for Convex. It brings tRPC-style APIs, TanStack Query, a Drizzle-style ORM, and Better Auth into one cohesive developer experience.
 
 **This is not just a query wrapper.** It's how you build production Convex applications.
 
 ## Philosophy
 
-We didn't reinvent the wheel. Better Convex integrates battle-tested tools—Convex Ents for relationships, TanStack Query for caching, Better Auth for authentication—into a unified developer experience.
+We didn't reinvent the wheel. Better Convex integrates battle-tested tools - Convex for realtime data, TanStack Query for caching, and Better Auth for authentication - behind a consistent API.
 
 Instead of assembling these yourself with custom glue code, you get:
 
-- **Type safety end-to-end** — From schema to procedures to client, with full inference
-- **Real-time by default** — WebSocket subscriptions flow into TanStack Query cache
-- **TanStack Query native** — No wrapper hooks, use `useQuery` and `useMutation` directly
-- **Incremental adoption** — Add features as you need them, migrate function by function
+- **Type safety end-to-end** - From schema to procedures to client, with full inference
+- **Real-time by default** - WebSocket subscriptions flow into TanStack Query cache
+- **TanStack Query native** - Use `useQuery` and `useMutation` directly with cRPC options
+- **Incremental adoption** - Add features as you need them, migrate function by function
 
 ## What's Included
 
 | Layer | Feature | Description |
 |-------|---------|-------------|
 | **Server** | cRPC | tRPC-style procedure builder with `.input()`, `.use()`, middleware |
-| **Database** | Ents | Relationships, fluent queries, `ctx.table()` |
+| **Database** | Drizzle ORM | Drizzle-style queries, relations, runtime constraints, `ctx.orm` |
 | **Database** | Triggers | Automatic side effects on data changes |
 | **Database** | Aggregates | O(log n) counts, sums, leaderboards |
 | **Client** | React | TanStack Query integration with real-time sync |
 | **Client** | Next.js | RSC prefetching, hydration, server caller |
-| **Auth** | Better Auth | Lifecycle hooks, session management, guards |
+| **Auth** | Better Auth | Triggers, session management, guards |
 | **CLI** | Codegen | Procedure metadata for auth-aware queries |
 
 ## Quick Look
@@ -45,7 +45,7 @@ Instead of assembling these yourself with custom glue code, you get:
 export const list = authQuery
   .input(z.object({ limit: z.number().optional() }))
   .query(async ({ ctx, input }) => {
-    return ctx.table('posts').take(input.limit ?? 10);
+    return ctx.orm.query.posts.findMany({ limit: input.limit ?? 10 });
   });
 
 // Client: Use it with TanStack Query
@@ -57,6 +57,7 @@ const { data: posts } = useQuery(crpc.posts.list.queryOptions({ limit: 10 }));
 | Export | Description |
 |--------|-------------|
 | `better-convex/server` | cRPC builder, middleware, server caller |
+| `better-convex/orm` | Drizzle-style ORM schema and query helpers |
 | `better-convex/react` | React client, providers, auth hooks |
 | `better-convex/rsc` | RSC prefetching, hydration |
 | `better-convex/auth` | Better Auth adapter |
@@ -88,7 +89,7 @@ If you're an AI agent integrating better-convex, **ask the user to select their 
 |---------|---------|---------|
 | **Approach** | Top-down (copy from Templates), Bottom-up (follow docs step-by-step) | Top-down |
 | **React Framework** | Next.js App Router, Vite, Remix, Other | Next.js |
-| **Database API** | `ctx.table` (Ents), `ctx.db` (vanilla) | ctx.table |
+| **Database** | ORM (`ctx.orm`) | ORM |
 
 ### Optional Features
 
@@ -104,9 +105,7 @@ If you're an AI agent integrating better-convex, **ask the user to select their 
 
 **Top-down approach:**
 1. Copy relevant sections from [Templates](/docs/templates) based on choices
-2. For `ctx.table`: use the "ctx.table" tab in code examples
-3. For `ctx.db`: use the "ctx.db" tab in code examples
-4. Skip sections for features not selected
+2. Skip sections for features not selected
 
 **Bottom-up approach:**
 1. Follow [Quickstart](/docs/quickstart) for initial setup
@@ -117,9 +116,8 @@ If you're an AI agent integrating better-convex, **ask the user to select their 
 
 | Stack | Key Docs |
 |-------|----------|
-| Next.js + Better Auth + Ents | [Templates](/docs/templates), [Next.js Setup](/docs/nextjs/setup), [Auth Server](/docs/auth/server) |
-| Next.js + Better Auth + ctx.db | [Templates](/docs/templates) (ctx.db tabs), [Next.js Setup](/docs/nextjs/setup) |
-| Vite + No Auth | [React Setup](/docs/react/setup), [Server Setup](/docs/server/setup) |
+| Next.js + Better Auth | [Templates](/docs/templates), [Next.js Setup](/docs/nextjs), [Auth Server](/docs/auth/server) |
+| Vite + No Auth | [React Setup](/docs/react), [Server Setup](/docs/server/setup) |
 | Any + Custom Auth | [Server Setup](/docs/server/setup), [Middlewares](/docs/server/middlewares) |
 
 ---
@@ -142,26 +140,26 @@ Complete reference for all documentation pages.
 |------|-------------|
 | [Server Setup](/docs/server/setup) | Initialize cRPC builder with `initCRPC`. Configure `dataModel`, `context`, `meta`. |
 | [Procedures](/docs/server/procedures) | Define queries, mutations, actions with `.input()`, `.output()`, `.query()/.mutation()/.action()`. Paginated queries with `.paginated()`. |
-| [Context](/docs/server/context) | Extend context with `ctx.db`, `ctx.table`, `ctx.auth`. Add custom properties via `.context()`. |
+| [Context](/docs/server/context) | Extend context with `ctx.orm`, `ctx.auth`. Add custom properties via `.context()`. |
 | [Middlewares](/docs/server/middlewares) | Create reusable middleware with `.use()`. Auth guards, logging, rate limiting. Chain with `.pipe()`. |
 | [Metadata](/docs/server/metadata) | Add procedure metadata with `.meta()`. Used by CLI for auth-aware query handling. |
 | [Error Handling](/docs/server/error-handling) | Throw `CRPCError` with codes like `UNAUTHORIZED`, `NOT_FOUND`, `BAD_REQUEST`. |
 | [Server-Side Calls](/docs/server/server-side-calls) | Call procedures from server with `createCallerFactory`. RSC data fetching. |
-| [Rate Limiting](/docs/server/rate-limiting) | Token bucket and fixed window rate limiting with `@convex-dev/rate-limiter`. |
+| [Rate Limiting](/docs/server/advanced/rate-limiting) | Token bucket and fixed window rate limiting with `@convex-dev/rate-limiter`. |
 
 ### Database
 
 | Page | When to Use |
 |------|-------------|
-| [Ents](/docs/db/ents) | Use `ctx.table()` instead of `ctx.db`. Relationships, fluent queries, `.edge()`, `.edges()`. |
-| [Triggers](/docs/db/triggers) | Automatic side effects on insert/update/delete. Use `convex-helpers/server/triggers`. |
-| [Aggregates](/docs/db/aggregates) | O(log n) counts and sums with `@convex-dev/aggregate`. Leaderboards, running totals. |
+| [ORM](/docs/orm) | Drizzle-style schema, queries, mutations, RLS, runtime constraints via `ctx.orm`. |
+| [Triggers](/docs/orm/triggers) | Automatic side effects on insert/update/delete with schema triggers. |
+| [Aggregates](/docs/server/advanced/aggregates) | O(log n) counts and sums with `@convex-dev/aggregate`. Leaderboards, running totals. |
 
 ### React (Client)
 
 | Page | When to Use |
 |------|-------------|
-| [React Setup](/docs/react/setup) | Configure providers: `QueryClientProvider`, `CRPCProvider`. Singleton helpers. |
+| [React Setup](/docs/react) | Configure providers: `QueryClientProvider`, `CRPCProvider`. Singleton helpers. |
 | [Queries](/docs/react/queries) | `useQuery` with `crpc.path.queryOptions()`. Real-time updates, `skipToken` for conditional queries. |
 | [Mutations](/docs/react/mutations) | `useMutation` with `crpc.path.mutationOptions()`. Toast patterns, optimistic updates. |
 | [Infinite Queries](/docs/react/infinite-queries) | `useInfiniteQuery` with `crpc.path.infiniteQueryOptions()`. Cursor-based pagination. |
@@ -172,7 +170,7 @@ Complete reference for all documentation pages.
 
 | Page | When to Use |
 |------|-------------|
-| [Next.js Setup](/docs/nextjs/setup) | Configure `convexBetterAuth` for RSC. Server caller factory, JWT caching. |
+| [Next.js Setup](/docs/nextjs) | Configure `convexBetterAuth` for RSC. Server caller factory, JWT caching. |
 | [RSC](/docs/nextjs/rsc) | Server components with `prefetch`, `preloadQuery`, `HydrateClient`. SSR data fetching. |
 
 ### Auth (Better Auth)
@@ -182,15 +180,15 @@ Complete reference for all documentation pages.
 | [Auth Overview](/docs/auth) | Architecture overview. When to use Better Auth vs other auth solutions. |
 | [Auth Server](/docs/auth/server) | Complete Better Auth setup: schema, adapters, HTTP routes, helpers. |
 | [Auth Client](/docs/auth/client) | `useAuth`, `Authenticated`/`Unauthenticated` components. |
-| [Auth Triggers](/docs/auth/triggers) | User lifecycle hooks: `beforeCreate`, `onCreate`, `onDelete`. |
+| [Auth Triggers](/docs/auth/triggers) | User triggers: `beforeCreate`, `onCreate`, `onDelete`. |
 
 ### Reference
 
 | Page | When to Use |
 |------|-------------|
 | [CLI](/docs/cli) | `better-convex dev` for codegen. Procedure metadata generation. |
-| [Migration](/docs/migration) | Migrate from vanilla Convex. Function-by-function upgrade guide. |
-| [Comparison](/docs/comparison) | Compare with tRPC, Convex hooks, other patterns. |
+| [Migrations](/docs/migrations/convex) | Migration hub with paths for Core, ORM, and Auth. |
+| [Comparison](/docs/comparison/convex) | Compare with tRPC, Convex hooks, other patterns. |
 
 ### Common Workflows
 
@@ -205,10 +203,10 @@ Complete reference for all documentation pages.
 3. [Middlewares](/docs/server/middlewares) → protect procedures
 
 **Add database features:**
-1. [Ents](/docs/db/ents) → relationships with `ctx.table()`
-2. [Triggers](/docs/db/triggers) → automatic side effects
-3. [Aggregates](/docs/db/aggregates) → counts and sums
+1. [ORM](/docs/orm) → schema + queries via `ctx.orm`
+2. [Triggers](/docs/orm/triggers) → automatic side effects
+3. [Aggregates](/docs/server/advanced/aggregates) → counts and sums
 
 **Server components (RSC):**
-1. [Next.js Setup](/docs/nextjs/setup) → configure caller
+1. [Next.js Setup](/docs/nextjs) → configure caller
 2. [RSC](/docs/nextjs/rsc) → prefetch and hydrate

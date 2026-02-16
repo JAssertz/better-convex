@@ -118,24 +118,25 @@ If you're coming from vanilla Convex, here's what changes.
 
 ### What's new
 
-**Before (vanilla Convex):**
+<Compare>
+  <CompareItem title="Before (vanilla Convex)">
+    ```tsx showLineNumbers
+    import type { FunctionReturnType, FunctionArgs } from 'convex/server';
+    import { api } from '@convex/_generated/api';
 
-```tsx showLineNumbers
-import type { FunctionReturnType, FunctionArgs } from 'convex/server';
-import { api } from '@convex/_generated/api';
+    type User = FunctionReturnType<typeof api.user.get>;
+    type GetUserArgs = FunctionArgs<typeof api.user.get>;
+    ```
+  </CompareItem>
+  <CompareItem title="After (cRPC)">
+    ```tsx showLineNumbers {1,3-4}
+    import type { ApiInputs, ApiOutputs } from '@convex/types';
 
-type User = FunctionReturnType<typeof api.user.get>;
-type GetUserArgs = FunctionArgs<typeof api.user.get>;
-```
-
-**After (cRPC):**
-
-```tsx showLineNumbers {1,3-4}
-import type { ApiInputs, ApiOutputs } from '@convex/types';
-
-type User = ApiOutputs['user']['get'];
-type GetUserArgs = ApiInputs['user']['get'];
-```
+    type User = ApiOutputs['user']['get'];
+    type GetUserArgs = ApiInputs['user']['get'];
+    ```
+  </CompareItem>
+</Compare>
 
 **Key differences:**
 

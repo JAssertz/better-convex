@@ -127,7 +127,7 @@ export function BreadcrumbNav() {
                     ? 'text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
-                href={`/org/${user.activeOrganization.slug}`}
+                href={`/org/${encodeURIComponent(user.activeOrganization.slug)}`}
               >
                 <Building2 className="size-4" />
                 Organization

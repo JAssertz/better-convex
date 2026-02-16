@@ -2,7 +2,12 @@
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "extends": ["ultracite/core", "ultracite/react", "ultracite/next"],
   "files": {
-    "includes": ["!!tmp", "!**/_generated", "!!**/convex.json"]
+    "includes": [
+      "!!tmp",
+      "!**/_generated",
+      "!!**/convex.json",
+      "!!packages/better-convex/src/internal/upstream/server/zod4.ts"
+    ]
   },
   "javascript": {
     "formatter": {
@@ -36,7 +41,9 @@
         "noUnknownAtRules": "off", // allow for Tailwind @ rules
         "noEmptyBlockStatements": "off", // chill
         "useAwait": "off", // chill
-        "noDocumentCookie": "off" // shadcn
+        "noDocumentCookie": "off", // shadcn
+        "noThenProperty": "off", // drizzle,
+        "noBitwiseOperators": "off"
       },
       "style": {
         "noMagicNumbers": "off", // chill
@@ -44,7 +51,8 @@
         "noNestedTernary": "off", // chill
         "noNonNullAssertion": "off", // ts chill
         "useDefaultSwitchClause": "off", // chill
-        "useBlockStatements": "off" // chill
+        "useBlockStatements": "off", // chill,
+        "noParameterProperties": "off" // drizzle
       },
       "nursery": {
         "noShadow": "off", // chill
@@ -55,7 +63,8 @@
         "useSimplifiedLogicExpression": "off", // false +
         "noExcessiveCognitiveComplexity": "off", // chill
         "noForEach": "off", // chill
-        "noVoid": "off" // chill
+        "noVoid": "off", // chill
+        "noBannedTypes": "off" // chill
       },
       "a11y": {
         "noNoninteractiveElementInteractions": "off", // region role not supported
@@ -79,8 +88,10 @@
         "**/*.tsx",
         "!**/_generated",
         "!**/*.spec.*",
+        "!**/*.test.*",
         "!tmp/**",
-        "!tooling/**"
+        "!tooling/**",
+        "!test/**"
       ],
       "linter": {
         "rules": {
@@ -197,6 +208,12 @@
             "noBarrelFile": "off"
           }
         }
+      }
+    },
+    {
+      "includes": ["convex/**", "test/**", "**/*.test.*"],
+      "linter": {
+        "enabled": false
       }
     }
   ]

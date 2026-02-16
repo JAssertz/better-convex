@@ -64,3 +64,36 @@
   height: 8px;
   width: 8px;
 }
+
+/* Denser compare blocks: keep split view but fit more code per pane */
+[data-compare-item] > .prose-no-margin > figure.shiki {
+  --padding-left: calc(var(--spacing) * 2.5);
+  --padding-right: calc(var(--spacing) * 2.5);
+  margin-block: 0;
+  border-radius: calc(var(--radius) - 4px);
+  box-shadow: none;
+}
+
+[data-compare-item] > .prose-no-margin > figure.shiki > [role="region"] {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  padding-block: calc(var(--spacing) * 2.5);
+}
+
+[data-compare-item] > .prose-no-margin > figure.shiki[data-line-numbers] .line {
+  padding-left: var(--padding-left);
+}
+
+[data-compare-item]
+  > .prose-no-margin
+  > figure.shiki[data-line-numbers]
+  .twoslash-meta-line {
+  padding-left: var(--padding-left);
+}
+
+[data-compare-item]
+  > .prose-no-margin
+  > figure.shiki[data-line-numbers]
+  .line::after {
+  content: none;
+}

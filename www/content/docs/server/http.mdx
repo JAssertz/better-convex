@@ -45,7 +45,7 @@ export function TodoList() {
   return (
     <div>
       {todos.map(todo => (
-        <div key={todo._id}>{todo.title}</div>
+        <div key={todo.id}>{todo.title}</div>
       ))}
       {/* JSON body at root level (tRPC-style) */}
       <button onClick={() => createTodo.mutate({ title: 'New Todo' })}>
@@ -106,13 +106,12 @@ Export HTTP route builders from your cRPC setup. These determine whether endpoin
 
 ```ts title="convex/lib/crpc.ts" showLineNumbers
 import { CRPCError, initCRPC } from 'better-convex/server';
-import type { DataModel, Id } from '../_generated/dataModel';
-import { httpAction } from '../_generated/server';
+import type { DataModel } from '../functions/_generated/dataModel';
 
 const c = initCRPC
   .dataModel<DataModel>()
   .context({ /* your context setup */ })
-  .create({ /* your options */, httpAction });
+  .create({ /* your options */ });
 
 // Public HTTP route - no auth required
 export const publicRoute = c.httpAction;
@@ -124,7 +123,7 @@ export const authRoute = c.httpAction.use(async ({ ctx, next }) => {
     throw new CRPCError({ code: 'UNAUTHORIZED' });
   }
   return next({
-    ctx: { ...ctx, userId: identity.subject as Id<'user'> },
+    ctx: { ...ctx, userId: identity.subject },
   });
 });
 
@@ -196,12 +195,11 @@ Use `.params()` for URL path parameters. Define placeholders with `:paramName` i
 
 ```ts title="convex/routers/todos.ts" showLineNumbers {5-6,9}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
 import { publicRoute } from '../lib/crpc';
 
 export const get = publicRoute
   .get('/api/todos/:id')
-  .params(z.object({ id: zid('todos') }))
+  .params(z.object({ id: z.string() }))
   .output(todoSchema.nullable())
   .query(async ({ ctx, params }) => {
     // params.id is typed as Id<'todos'>
@@ -215,7 +213,6 @@ Use `.post()` with `.input()` and `.mutation()` for create operations.
 
 ```ts title="convex/routers/todos.ts" showLineNumbers {5-9,12-16}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
 import { authRoute } from '../lib/crpc';
 
 export const create = authRoute
@@ -224,7 +221,7 @@ export const create = authRoute
     title: z.string().min(1, 'Title is required'),
     description: z.string().optional(),
   }))
-  .output(z.object({ id: zid('todos') }))
+  .output(z.object({ id: z.string() }))
   .mutation(async ({ ctx, input }) => {
     // input.title and input.description are validated
     const id = await ctx.runMutation(internal.todos.create, {
@@ -241,12 +238,11 @@ Use `.patch()` for partial updates. Combine `.params()` for the resource ID and 
 
 ```ts title="convex/routers/todos.ts" showLineNumbers {5-11,14-18}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
 import { authRoute } from '../lib/crpc';
 
 export const update = authRoute
   .patch('/api/todos/:id')
-  .params(z.object({ id: zid('todos') }))
+  .params(z.object({ id: z.string() }))
   .input(z.object({
     title: z.string().optional(),
     completed: z.boolean().optional(),
@@ -268,12 +264,11 @@ Use `.delete()` for resource deletion. Typically only needs `.params()` for the 
 
 ```ts title="convex/routers/todos.ts" showLineNumbers {5-8,11-13}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
 import { authRoute } from '../lib/crpc';
 
 export const deleteTodo = authRoute
   .delete('/api/todos/:id')
-  .params(z.object({ id: zid('todos') }))
+  .params(z.object({ id: z.string() }))
   .output(z.object({ success: z.boolean() }))
   .mutation(async ({ ctx, params }) => {
     await ctx.runMutation(internal.todos.delete, { id: params.id });
@@ -298,11 +293,10 @@ Group related endpoints into routers for better organization and code splitting.
 
 ```ts title="convex/routers/todos.ts" showLineNumbers {18-24}
 import { z } from 'zod';
-import { zid } from 'convex-helpers/server/zod4';
 import { router, publicRoute, authRoute } from '../lib/crpc';
 
 const todoSchema = z.object({
-  _id: zid('todos'),
+  id: z.string(),
   title: z.string(),
   completed: z.boolean(),
   description: z.string().optional(),
@@ -357,7 +351,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { router } from '../lib/crpc';
 
-import { createAuth } from './auth';
+import { getAuth } from './auth';
 import { health } from '../routers/health';
 import { todosRouter } from '../routers/todos';
 
@@ -375,7 +369,7 @@ app.use(
 );
 
 // Better Auth middleware
-app.use(authMiddleware(createAuth));
+app.use(authMiddleware(getAuth));
 
 // cRPC router
 export const appRouter = router({
@@ -391,7 +385,7 @@ export default createHttpRouter(app, appRouter);
 | Component | Purpose |
 |-----------|---------|
 | `Hono` | Route handling, middleware, CORS |
-| `authMiddleware(createAuth)` | Better Auth routes middleware |
+| `authMiddleware(getAuth)` | Better Auth routes middleware |
 | `createHttpRouter(app, appRouter)` | Creates Convex HttpRouter with Hono + cRPC |
 
 ## CORS
@@ -439,7 +433,7 @@ import { CRPCError } from 'better-convex/server';
 
 export const get = publicRoute
   .get('/api/todos/:id')
-  .params(z.object({ id: zid('todos') }))
+  .params(z.object({ id: z.string() }))
   .output(todoSchema)
   .query(async ({ ctx, params }) => {
     const todo = await ctx.runQuery(api.todos.get, { id: params.id });
@@ -503,7 +497,7 @@ export const download = authRoute
     if (params.format === 'csv') {
       const csv = [
         'id,title,completed',
-        ...todos.map((t) => `${t._id},${t.title},${t.completed}`),
+        ...todos.map((t) => `${t.id},${t.title},${t.completed}`),
       ].join('\n');
       return c.text(csv);
     }
@@ -664,6 +658,8 @@ export const { CRPCProvider, useCRPC } = createCRPCContext<Api>({
 });
 ```
 
+If you customize wire serialization, pass `transformer` here too. `Date` stays always-on (`$date`), and your custom transformer is additive.
+
 ### GET Requests
 
 Use `queryOptions` with TanStack Query's `useQuery` or `useSuspenseQuery`.
@@ -688,7 +684,7 @@ export function TodoList() {
   return (
     <ul>
       {todos.map(todo => (
-        <li key={todo._id}>{todo.title}</li>
+        <li key={todo.id}>{todo.title}</li>
       ))}
     </ul>
   );

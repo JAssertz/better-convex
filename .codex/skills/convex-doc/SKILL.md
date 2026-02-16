@@ -1,0 +1,158 @@
+---
+name: convex-doc
+description: Use when updating or maintaining Convex documentation rules (convex.mdc and convex-*.mdc files) - provides content guidelines, context optimization principles, and usage vs setup separation patterns
+---
+
+# Convex Documentation Guidelines
+
+Rules for maintaining `convex.mdc` and related `convex-*.mdc` documentation files.
+
+## Core Principles
+
+### 1. Context Optimization
+
+**convex.mdc is included in EVERY LLM request**, so it must be:
+
+- **Compact** - Every line counts
+- **E2E feature-focused** - Everything needed to build complete features
+- **Usage + Performance** - Patterns optimized from the start
+- **No setup instructions** - Setup is one-time, in convex-setup skill
+
+### 2. File Organization
+
+**convex.mdc** (always loaded):
+
+- ✅ All patterns needed for e2e features
+- ✅ Performance patterns inline (not separate skill)
+- ✅ Platform limits, query caching, rules performance
+- ✅ Links to specialized skills for advanced patterns
+- ❌ NO setup/installation instructions
+
+**convex-setup skill**:
+
+- Installation commands
+- Configuration files
+- Environment variables
+- One-time initialization
+
+**convex-\*.mdc** (loaded on demand):
+
+- Specialized patterns not needed for most features
+- Advanced use cases (aggregates, streams, triggers)
+- Complete reference for specific topics
+
+## Content Guidelines
+
+### What Stays in convex.mdc
+
+1. **Authentication & Functions** - cRPC builders, rate limiting, validators
+2. **Schema Guidelines** - Ents, edges, indexes, field options
+3. **React Integration** - Query hooks, mutations, infinite queries, auth
+4. **Relationship Patterns** - Edge traversal, getX/edgeX, .has()
+5. **Query/Mutation Guidelines** - Filtering, writing, bulk operations
+6. **Performance Section** - Platform limits, caching, rules, lazy loading
+7. **File Path References** - `**Edit:**` markers throughout
+
+### What Goes to convex-\*.mdc
+
+| Skill             | When to use                       |
+| ----------------- | --------------------------------- |
+| convex-aggregate  | Efficient counting at scale       |
+| convex-streams    | Complex filtering with pagination |
+| convex-search     | Full-text search patterns         |
+| convex-trigger    | Database triggers                 |
+| convex-ents       | Advanced entity relationships     |
+| convex-scheduling | Cron jobs, scheduled functions    |
+| convex-http       | HTTP endpoints, webhooks          |
+
+## Formatting Rules
+
+### Code Examples
+
+```typescript
+// Keep examples minimal but complete
+export const example = authQuery
+  .input(z.object({ id: zid("items") }))
+  .output(z.object({ name: z.string() }).nullable())
+  .query(async ({ ctx, input }) => {
+    return await ctx.table("items").get(input.id);
+  });
+```
+
+### Quick References
+
+Use compact formats:
+
+```
+**Quick Reference:**
+- `zid('table')` - Document IDs in functions
+- `v.id('table')` - Document IDs in schema
+```
+
+### File Path Markers
+
+Always indicate where to edit:
+
+```
+**Edit:** `convex/lib/crpc.ts`
+**Edit:** `convex/functions/*.ts` files
+```
+
+### Warnings and Rules
+
+```
+**CRITICAL:** NEVER use raw `query`, `mutation`, `action`
+**PERFORMANCE:** 1:many edges fetch ALL by default - always limit
+```
+
+## Linking Strategy
+
+### Basic Usage + Link Pattern
+
+Provide basic usage in convex.mdc, link for advanced:
+
+```markdown
+## Convex Aggregate
+
+**CRITICAL for Scale:** Use aggregates instead of `.collect().length`.
+
+For setup and advanced patterns, see [convex-aggregate.mdc](mdc:.claude/skills/convex-aggregate/convex-aggregate.mdc).
+```
+
+## Optimization Techniques
+
+### 1. Consolidate Examples
+
+```typescript
+// All function types in one example
+export const example = authQuery // or publicQuery, authMutation, etc.
+  .input(z.object({ id: zid('items') }))
+  .output(z.object({ name: z.string() }).nullable())
+  .query(async ({ ctx, input }) => { ... });
+```
+
+### 2. Use Tables for Comparisons
+
+| Feature    | `.filter()` | streams    |
+| ---------- | ----------- | ---------- |
+| Page sizes | Variable    | Consistent |
+
+### 3. Inline Short Rules
+
+```
+**Performance:** N+1 is fast (~1ms/doc) | Arrays max 10 items | Use indexes
+```
+
+## Maintenance Workflow
+
+1. **When adding features**: Add to convex.mdc if used in most features
+2. **When updating**: Keep convex.mdc ~1200-1400 lines
+3. **Regular reviews**: Remove obsolete patterns, consolidate examples
+
+## Key Reminders
+
+- **convex.mdc** = e2e features + performance (loaded every request)
+- **convex-setup** = one-time setup instructions
+- **convex-\*.mdc** = specialized patterns (loaded on demand)
+- **ctx.table()** not ctx.db in all examples
+- **cRPC builders** not raw query/mutation/action

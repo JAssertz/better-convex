@@ -7,12 +7,62 @@
 export type Maybe<TType> = TType | null | undefined;
 
 /**
+ * Check if two types are exactly equal.
+ * Pattern from Drizzle ORM and type-challenges.
+ * Uses conditional type distribution to detect exact equality.
+ *
+ * @example
+ * Equal<string, string> // true
+ * Equal<string, number> // false
+ * Equal<string, string | number> // false (string extends string | number but not equal)
+ * @public
+ */
+export type Equal<X, Y> =
+  (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
+    ? true
+    : false;
+
+/**
+ * Filter object type to only known keys from reference type.
+ * Pattern from Drizzle ORM: drizzle-orm/src/utils.ts:151-156
+ *
+ * Prevents extra properties from widening inferred types.
+ *
+ * @example
+ * type Config = { name: string; age: number };
+ * type Input = { name: string; age: number; extra: boolean };
+ * type Filtered = KnownKeysOnly<Input, Config>; // { name: string; age: number }
+ * @public
+ */
+export type KnownKeysOnly<T, K> = {
+  [P in keyof T]: P extends keyof K ? T[P] : never;
+};
+
+/**
+ * Narrow a type to an expected shape without losing inference.
+ * Pattern from Drizzle ORM: drizzle-orm/src/utils.ts
+ * @public
+ */
+export type Assume<T, U> = T extends U ? T : U;
+
+/**
+ * Extract return type if function, otherwise use the value type.
+ * Pattern from Drizzle ORM: drizzle-orm/src/relations.ts
+ * @public
+ */
+export type ReturnTypeOrValue<T> = T extends (...args: any[]) => infer R
+  ? R
+  : T;
+
+/**
  * Simplify complex type intersections for better IDE display.
- * @see https://github.com/ianstormtaylor/superstruct/blob/7973400cd04d8ad92bbdc2b6f35acbfb3c934079/src/utils.ts#L323-L325
+ * Pattern from Drizzle ORM: The & {} intersection "seals" the type to prevent
+ * distributive conditional behavior that can cause union widening.
+ * @see https://github.com/drizzle-team/drizzle-orm/blob/main/drizzle-orm/src/utils.ts#L144-L149
  */
 export type Simplify<TType> = TType extends any[] | Date
   ? TType
-  : { [K in keyof TType]: TType[K] };
+  : { [K in keyof TType]: TType[K] } & {};
 
 /** @public */
 export type MaybePromise<TType> = Promise<TType> | TType;

@@ -1,6 +1,6 @@
 'use client';
 
-import { Code2, Globe, Lock, Radio, Server, Shield } from 'lucide-react';
+import { Code2, Database, Globe, Lock, Server, Shield } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -8,15 +8,17 @@ const features = [
   {
     icon: Code2,
     title: 'cRPC',
-    description: 'tRPC, ported to Convex. AI-ready.',
+    description: 'tRPC, ported to Convex. Real-time, AI-ready.',
     color: 'bg-indigo-500/10 text-indigo-500',
+    href: '/docs/server/setup',
   },
   {
-    icon: Radio,
-    title: 'Real-time',
+    icon: Database,
+    title: 'ORM',
     description:
-      'WebSocket subscriptions flow directly into TanStack Query cache. No extra setup.',
-    color: 'bg-amber-500/10 text-amber-500',
+      'Drizzle v1-style schema, relations, queries, and mutations for Convex. Performance guardrails built in.',
+    color: 'bg-emerald-500/10 text-emerald-500',
+    href: '/docs/orm',
   },
   {
     icon: Shield,
@@ -24,6 +26,7 @@ const features = [
     description:
       'useQuery, useMutation, useInfiniteQuery. All the patterns you know, with real-time updates.',
     color: 'bg-pink-500/10 text-pink-500',
+    href: '/docs/react',
   },
   {
     icon: Globe,
@@ -31,20 +34,23 @@ const features = [
     description:
       'Switch from real-time to HTTP with no extra setup. Same API, both sides.',
     color: 'bg-orange-500/10 text-orange-500',
+    href: '/docs/server/http',
   },
   {
     icon: Lock,
-    title: 'Auth that works',
+    title: 'Auth',
     description:
       'Better Auth integration with session management and lifecycle hooks.',
     color: 'bg-lime-500/10 text-lime-500',
+    href: '/docs/auth',
   },
   {
     icon: Server,
-    title: 'RSC ready',
+    title: 'RSC',
     description:
       'Fire-and-forget prefetch or awaited preloading. Hydration included.',
     color: 'bg-sky-500/10 text-sky-500',
+    href: '/docs/nextjs',
   },
 ];
 
@@ -98,40 +104,121 @@ function PopoverBox({
 }
 
 // Code blocks with syntax highlighting
-function Step1Code() {
+function SchemaCode() {
   return (
     <>
-      {cm('// convex/functions/greeting.ts')}
+      {cm('// convex/functions/schema.ts')}
+      {'\n'}
+      {kw('import ')}
+      {'{ '}
+      {pr('convexTable')}, {pr('defineRelations')}, {pr('text')},{' '}
+      {pr('boolean')}, {pr('id')}, {pr('index')}
+      {' }'} {kw('from ')}
+      {str("'better-convex/orm'")}
+      {';'}
+      {'\n'}
       {'\n'}
       {kw('export const ')}
       {T({
-        children: fn('greeting'),
-        lsp: 'const greeting: Query<{ name: string }, string>',
+        children: fn('users'),
+        lsp: 'const users: ConvexTable<"users">',
+      })}{' '}
+      {op('=')} {fn('convexTable')}({str("'users'")}, {'{\n'}
+      {'  '}
+      {pr('name')}: {fn('text')}().{fn('notNull')}(),{'\n'}
+      {'  '}
+      {pr('email')}: {fn('text')}().{fn('notNull')}(),{'\n'}
+      {'}'});
+      {'\n'}
+      {'\n'}
+      {kw('export const ')}
+      {T({
+        children: fn('posts'),
+        lsp: 'const posts: ConvexTable<"posts">',
+      })}{' '}
+      {op('=')} {fn('convexTable')}({str("'posts'")}, {'{\n'}
+      {'  '}
+      {pr('title')}: {fn('text')}().{fn('notNull')}(),{'\n'}
+      {'  '}
+      {pr('published')}: {fn('boolean')}(),{'\n'}
+      {'  '}
+      {pr('userId')}: {fn('id')}({str("'users'")}).{fn('notNull')}(),{'\n'}
+      {'}'}, ({pr('t')}) {op('=>')} [{fn('index')}({str("'by_user'")}).
+      {fn('on')}({pr('t')}.{pr('userId')})]);
+      {'\n'}
+      {'\n'}
+      {kw('export const ')}
+      {pr('relations')} {op('=')} {fn('defineRelations')}({'{ '}
+      {pr('users')}, {pr('posts')}
+      {' }'}, ({pr('r')}) {op('=>')} ({'{'}
+      {'\n'}
+      {'  '}
+      {pr('users')}: {'{ '}
+      {pr('posts')}: {pr('r')}.{pr('many')}.{fn('posts')}(){' }'},{'\n'}
+      {'  '}
+      {pr('posts')}: {'{\n'}
+      {'    '}
+      {pr('author')}: {pr('r')}.{pr('one')}.{fn('users')}({'{ '}
+      {pr('from')}: {pr('r')}.{pr('posts')}.{pr('userId')}, {pr('to')}:{' '}
+      {pr('r')}.{pr('users')}.{pr('id')}
+      {' }'}),
+      {'\n'}
+      {'  }'},{'\n'}
+      {'}'}));
+    </>
+  );
+}
+
+function Step1Code() {
+  return (
+    <>
+      {cm('// convex/functions/posts.ts')}
+      {'\n'}
+      {kw('export const ')}
+      {T({
+        children: fn('list'),
+        lsp: 'const list: Query<{ limit?: number }, Post[]>',
       })}{' '}
       {op('=')} {pr('publicQuery')}
       {'\n'}
       {'  '}.{fn('input')}({pr('z')}.{fn('object')}({'{ '}
-      {pr('name')}: {pr('z')}.{fn('string')}(){' }'}))
-      {'\n'}
-      {'  '}.{fn('output')}({pr('z')}.{fn('string')}())
+      {pr('limit')}: {pr('z')}.{fn('number')}().{fn('optional')}(){' }'}))
       {'\n'}
       {'  '}.{fn('query')}({kw('async ')}({'{ '}
       {T({
+        children: pr('ctx'),
+        lsp: 'ctx: { orm: ORM }',
+      })}
+      {', '}
+      {T({
         children: pr('input'),
-        lsp: 'input: { name: string }',
+        lsp: 'input: { limit?: number }',
         showPopover: true,
       })}
       {' }'}) {op('=>')} {'{'}
       {'\n'}
-      <PopoverBox indent={18}>{'input: { name: string }'}</PopoverBox>
+      <PopoverBox indent={22}>{'input: { limit?: number }'}</PopoverBox>
       {'\n'}
       {'    '}
       {kw('return ')}
-      {str('`Hello ${')}
-      {T({ children: pr('input'), lsp: 'input: { name: string }' })}.
-      {pr('name')}
-      {str('}`')}
-      {';'}
+      {pr('ctx')}.{pr('orm')}.{pr('query')}.{pr('posts')}.{fn('findMany')}
+      {'({'}
+      {'\n'}
+      {'      '}
+      {pr('where')}: {'{ '}
+      {pr('published')}: {_num('true')}
+      {' }'},{'\n'}
+      {'      '}
+      {pr('orderBy')}: {'{ '}
+      {pr('createdAt')}: {str("'desc'")}
+      {' }'},{'\n'}
+      {'      '}
+      {pr('limit')}: {pr('input')}.{pr('limit')} {op('??')} {_num('10')},{'\n'}
+      {'      '}
+      {pr('with')}: {'{ '}
+      {pr('author')}: {_num('true')}
+      {' }'},{'\n'}
+      {'    }'});
       {'\n'}
       {'  }'});
     </>
@@ -177,7 +264,6 @@ function Step2Code() {
       {' }'});{'\n'}
       <PopoverBox indent={16}>
         <div className="flex flex-col text-left text-[11px]">
-          <span className="text-white/60">▶ greeting</span>
           <span className="text-white/60">▶ posts</span>
           <span className="text-white/60">▶ users</span>
         </div>
@@ -199,26 +285,26 @@ function Step3Code() {
       {'{ '}
       {T({
         children: pr('data'),
-        lsp: 'const data: string | undefined',
+        lsp: 'const data: Post[] | undefined',
         showPopover: true,
       })}
       {' }'} {op('=')} {fn('useQuery')}({'\n'}
-      <PopoverBox indent={8}>{'const data: string | undefined'}</PopoverBox>
+      <PopoverBox indent={8}>{'const data: Post[] | undefined'}</PopoverBox>
       {'\n'}
       {'  '}
       {T({
         children: pr('crpc'),
         lsp: 'const crpc: CRPCProxy',
       })}
-      .{pr('greeting')}.{fn('queryOptions')}({'{ '}
+      .{pr('posts')}.{pr('list')}.{fn('queryOptions')}({'{ '}
       {T({
-        children: pr('name'),
-        lsp: 'name: string',
+        children: pr('limit'),
+        lsp: 'limit?: number',
         showPopover: true,
       })}
-      : {str("'World'")}
+      : {_num('10')}
       {' }'}){'\n'}
-      <PopoverBox indent={30}>{'name: string'}</PopoverBox>
+      <PopoverBox indent={30}>{'limit?: number'}</PopoverBox>
       );
       {'\n'}
       {'\n'}
@@ -239,20 +325,27 @@ function Step3Code() {
 const steps = [
   {
     num: 1,
-    title: 'Define your procedures',
+    title: 'Define your schema',
     description:
-      'Chain .input(), .output(), .query() to build type-safe procedures.',
-    code: <Step1Code />,
+      'Drizzle-style tables, columns, indexes, and relations. All in one file.',
+    code: <SchemaCode />,
   },
   {
     num: 2,
+    title: 'Define your procedures',
+    description:
+      'Query with the ORM — relations, filtering, ordering, pagination. All type-safe.',
+    code: <Step1Code />,
+  },
+  {
+    num: 3,
     title: 'Create your client',
     description:
       'Bridge Convex with TanStack Query. The useCRPC hook gives you a typed proxy to all your procedures.',
     code: <Step2Code />,
   },
   {
-    num: 3,
+    num: 4,
     title: 'Connect and start querying!',
     description:
       'Full TypeScript autocompletion from server to client. Queries subscribe to real-time updates via WebSocket.',
@@ -280,6 +373,15 @@ function Hero() {
           target="_blank"
         >
           tRPC
+        </a>
+        {' + '}
+        <a
+          className="font-medium text-fd-foreground underline decoration-fd-muted-foreground/50 decoration-dashed underline-offset-2 hover:decoration-fd-foreground"
+          href="https://orm.drizzle.team"
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Drizzle
         </a>
         {' + '}
         <a
@@ -339,19 +441,23 @@ function Features() {
         <SectionTitle title="What's included" />
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {features.map((feature) => (
-            <div key={feature.title}>
+            <Link
+              className="group -m-4 rounded-xl p-4 transition-colors hover:bg-fd-accent/50"
+              href={feature.href}
+              key={feature.title}
+            >
               <div
                 className={`mb-4 grid h-12 w-12 place-items-center rounded-xl ${feature.color}`}
               >
                 <feature.icon className="size-6" />
               </div>
-              <h3 className="font-bold text-fd-foreground text-lg md:text-xl">
+              <h3 className="font-bold text-fd-foreground text-lg group-hover:text-fd-primary md:text-xl">
                 {feature.title}
               </h3>
               <p className="mt-2 text-fd-muted-foreground text-sm md:text-base">
                 {feature.description}
               </p>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

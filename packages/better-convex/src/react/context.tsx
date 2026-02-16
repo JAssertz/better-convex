@@ -9,6 +9,7 @@
 import type { ConvexReactClient } from 'convex/react';
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
 import type { HttpClientError } from '../crpc/http-types';
+import type { DataTransformerOptions } from '../crpc/transformer';
 import type {
   CRPCClient,
   FnMeta,
@@ -86,6 +87,8 @@ export type CRPCHttpOptions = {
 export type CreateCRPCContextOptions<TApi> = {
   api: TApi;
   meta: Meta;
+  /** Optional payload transformer (always composed with built-in Date support). */
+  transformer?: DataTransformerOptions;
 } & Partial<CRPCHttpOptions>;
 
 /**
@@ -224,15 +227,20 @@ export function createCRPCContext<TApi extends Record<string, unknown>>(
         },
         fetch: httpOptions.fetch,
         onError: httpOptions.onError,
+        transformer: options.transformer,
       });
     }, [authStore, fetchAccessToken]);
 
     // Memoize the proxy to prevent recreation on every render
-    const proxy = useMemo(() => createCRPCOptionsProxy(api, meta), []);
+    const proxy = useMemo(
+      () => createCRPCOptionsProxy(api, meta, options.transformer),
+      []
+    );
 
     // Create vanilla client proxy for direct procedural calls
     const vanillaClient = useMemo(
-      () => createVanillaCRPCProxy(api, meta, convexClient),
+      () =>
+        createVanillaCRPCProxy(api, meta, convexClient, options.transformer),
       [convexClient]
     );
 
