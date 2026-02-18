@@ -180,7 +180,7 @@ Next.js application with Convex backend, Better Auth authentication, and Tailwin
 
 - **TypeScript**
 - **Node.js**: v22
-- **Package Manager**: Bun v1.3.3
+- **Package Manager**: Bun v1.3.9
 
 ## Frontend
 

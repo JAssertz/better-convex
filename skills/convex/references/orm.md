@@ -85,6 +85,12 @@ authorId: id("users")
     onDelete: "cascade", // cascade | set null | set default | restrict | no action
   });
 
+// Self-referencing (use AnyColumn return type)
+import { type AnyColumn } from "better-convex/orm";
+parentId: text().references((): AnyColumn => commentsTable.id, {
+  onDelete: "cascade",
+});
+
 // Table-level (foreignKey builder, for non-id references)
 import { foreignKey } from "better-convex/orm";
 (t) => [foreignKey({ columns: [t.userSlug], foreignColumns: [users.slug] })];

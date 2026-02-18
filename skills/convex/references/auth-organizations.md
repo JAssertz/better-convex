@@ -229,6 +229,9 @@ export const hasPermission = async (
 
 **Pattern:** Better Auth API for multi-table ops (create, delete, invitations). `ctx.orm` for simple reads/updates.
 
+Example-parity helper module:
+- `convex/lib/organization-helpers.ts` for shared organization listing and personal-organization bootstrap logic.
+
 ### Check Slug
 
 ```ts

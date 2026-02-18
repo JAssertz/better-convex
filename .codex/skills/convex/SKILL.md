@@ -1,1390 +1,635 @@
 ---
 name: convex
-description: Use when working with Convex backend (convex/** files) - provides foundational patterns for queries/mutations/actions, Convex Ents schema, authentication, rate limiting, React hooks, pagination, triggers. Load FIRST before specialized convex-* skills. Use when using Convex with TanStack Query in React/Next.js - provides cRPC hooks (useCRPC, queryOptions, mutationOptions), skeleton loading patterns, and RSC prefetching
+description: This skill should be used when adding end-to-end features to a better-convex app, working with "cRPC procedures", "ORM queries", "Convex schema", "auth middleware", "triggers", "ctx.orm", "useCRPC", or implementing server/client patterns with better-convex. Core runtime patterns for cRPC + ORM + auth + triggers. Load first for any better-convex feature work.
 ---
 
-## Overview
+# Better Convex Core Skill (80% Path)
+
+Use this file first for everyday feature delivery in an already configured better-convex app.
+
+- If setup/bootstrap/env/auth wiring or project structure mirroring is missing, use `references/setup.md`.
+- If the task is advanced or niche, load only the specific reference listed at the end.
+
+## Scope
+
+In scope:
+- Add or update schema tables, indexes, relations, and triggers.
+- Implement cRPC procedures (`query`, `mutation`, `action`, `httpAction`) with runtime auth + rate limits.
+- Implement feature UI with `useCRPC()` + TanStack Query.
+- Add minimal high-value tests for auth, errors, and side effects.
+
+Out of scope:
+- Greenfield setup/install/env/bootstrap.
+- Full plugin deep-dives (admin/organizations/polar).
+- Internal package-level parity testing.
+
+## Skill Contract
+
+1. Favor `ctx.orm` for app data access.
+2. Keep list/read paths bounded and index-aware.
+3. Use cRPC builders and middleware; avoid raw handler objects for new feature code.
+4. Use `CRPCError` for expected failures.
+5. Put cross-row invariants in schema triggers, not duplicated in mutations.
+6. Keep auth/rate-limit checks server-side.
+
+## Shortcut Mode (tRPC + Drizzle Mental Model)
+
+Default assumption:
+- cRPC behavior is tRPC-like (builder chain + middleware + TanStack options).
+- ORM behavior is Drizzle-like (schema, relations, `findMany/findFirst`, `insert/update/delete`).
+
+Only remember these non-parity deltas:
+
+1. Procedure input root must be `z.object(...)` (no primitive root args).
+2. No `z.void()` outputs; use `.output(z.null())` for no-value mutations.
+3. Stacked `.input(...)` calls merge input shapes.
+4. `.paginated({ limit, item })` must be before `.query()` and auto-adds `input.cursor` + `input.limit`, output `{ page, continueCursor, isDone }`.
+5. Metadata is codegen’d to client (`@convex/meta`) so never put secrets in `.meta(...)`; chaining `.meta(...)` is shallow merge and supports `defaultMeta`.
+6. Auth metadata drives client behavior: `auth: "optional"` waits for auth load then runs, `auth: "required"` waits then skips when logged out.
+7. `ctx.orm` enforces constraints + RLS; `ctx.db` bypasses them.
+8. Non-paginated `findMany()` must be explicitly sized (`limit`, cursor mode, schema `defaultLimit`, or explicit `allowFullScan`).
+9. Predicate `where` requires explicit `.withIndex(...)`; no implicit full scan fallback.
+10. Cursor pagination uses the first `orderBy` field; index that field for stable paging.
+11. `maxScan` applies to cursor mode only; `allowFullScan` is for non-cursor full-scan opt-in.
+12. String operators / `columns` projection / many-relation subfilters can run post-fetch; bound result size early.
+13. Search mode is relevance-ordered and does not support `orderBy`; vector mode has stricter limits (no cursor/offset/top-level where/order).
+14. Update/delete without `where` throws unless `allowFullScan()`.
+15. cRPC React queries are real-time by default (`subscribe: true`), so invalidation is usually needed only for `subscribe: false` paths.
+16. In RSC, `prefetch` hydrates client, `caller` is server-only and not hydrated, `preloadQuery` hydrates but can cause stale split ownership if also rendered client-side.
+17. Better Auth Next.js shortcut is `convexBetterAuth(...)`; generic server-only shortcut is `createCallerFactory(...)`.
+18. Use `createAuthMutations(authClient)` wrappers so logout unsubscribes auth queries before sign out.
+
+## Directory Boundary (Important)
+
+This skill is directory-scoped. Do not depend on reading files outside `skills/convex/**`.
+
+Use `references/setup.md` when the task needs:
+1. Project/file structure setup.
+2. Canonical template mirroring.
+3. Scaffolding that should match `templates.mdx` and `/example`.
+
+For full `example/convex` recreation: start with `references/setup.md`, then load only selected deep refs (`auth-admin.md`, `auth-organizations.md`, `auth-polar.md`, `aggregates.md`, `http.md`, `scheduling.md`, `testing.md`).
+
+## First-Pass Feature Intake (Do This Before Edits)
+
+Lock these decisions first:
+
+1. Auth level per endpoint: `public` / `optionalAuth` / `auth` / `private`.
+2. Data invariants: what must always be true after writes?
+3. Query shape: list, detail, relation-loaded, search, or stream composition.
+4. Pagination mode: offset, cursor, infinite.
+5. Side effects: trigger vs scheduled function vs inline mutation.
+6. UI consumption: client hook only, RSC prefetch, or server-only caller.
+7. Risk paths: unauthorized, forbidden, not found, conflicts, rate limit.
+
+## Canonical File Targets
+
+Typical feature touches:
+
+- `convex/functions/schema.ts`
+- `convex/functions/<feature>.ts`
+- `convex/lib/crpc.ts` (only if middleware/procedure builder changes)
+- `src/lib/convex/crpc.tsx` (only if cRPC context/meta wiring changes)
+- `src/**` feature UI files
+- `convex/functions/http.ts` or `convex/routers/**` for HTTP endpoints
+- `convex/functions/crons.ts` or scheduled handlers if needed
+
+## E2E Build Order (Default)
+
+1. Schema + indexes + relations.
+2. Trigger hooks for cross-row invariants.
+3. Procedures with strict input/output + auth + rate limits.
+4. React hooks (query/mutation/infinite) using cRPC options.
+5. Optional: HTTP route(s), scheduling hooks.
+6. Tests for auth/error/trigger behavior.
+
+---
 
-Type-safe serverless backend with real-time subscriptions using better-convex cRPC builder pattern. Core rules: Use `ctx.table()` (Ents) not `ctx.db`, use cRPC procedure builders not raw query/mutation/action, rate-limit all user-facing mutations via `.meta({ rateLimit })`.
+## Core Patterns
 
-## Common Mistakes
-
-| Mistake                                  | Fix                                             |
-| ---------------------------------------- | ----------------------------------------------- |
-| `ctx.db.query()`                         | `ctx.table()` (Ents)                            |
-| Raw `query/mutation/action`              | cRPC builders: `authQuery`, `authMutation`      |
-| `createAuthQuery()({...})`               | `authQuery.input(...).query(...)`               |
-| Missing rate limit                       | Add `.meta({ rateLimit: "scope/action" })`      |
-| `ctx.table('user').get(ctx.userId)`      | Use `ctx.user` directly                         |
-| `.collect().length` for counts           | Use aggregates (O(log n))                       |
-| `asyncMap` on Ents query                 | Use built-in `.map()`                           |
-| `.index('userId', ['userId'])` with edge | Edge auto-creates index                         |
-| `z.any()`                                | `z.unknown()`                                   |
-| `await import()` in functions            | Static imports only                             |
-| Manual ID fields with edges              | Only for join tables                            |
-| `.filter()` on many:many edges           | Use `ctx.table()` instead                       |
-| `.search()` on edges                     | Use `ctx.table()` instead                       |
-| Fetch all then check existence           | Use `.has(id)` for O(1)                         |
-| `usePaginatedQuery` directly             | `useInfiniteQuery(crpc.x.infiniteQueryOptions)` |
-| Dynamic array in `z.enum()`              | Use `as const` or `z.string()`                  |
-| `ConvexError`                            | `CRPCError` from `better-convex/server`         |
-| `handler: async (ctx, args)`             | `.query(async ({ ctx, input }))`                |
-
-## Context
-
-Read as needed:
-
-- convex/functions/schema.ts - Database schema
-- convex/lib/crpc.ts - cRPC setup and procedure builders
-- .claude/skills/convex-ents/convex-ents.mdc - Advanced Ents (rules, cascading deletes, self-directed edges)
-- .claude/skills/convex-aggregate/convex-aggregate.mdc - Efficient counting
-- .claude/skills/convex-search/convex-search.mdc - Full-text search
-- .claude/skills/convex-streams/convex-streams.mdc - Advanced filtering
-- .claude/skills/convex-trigger/convex-trigger.mdc - Database triggers
-- .claude/skills/convex-scheduling/convex-scheduling.mdc - Cron and scheduled functions
-- .claude/skills/convex-http/convex-http.mdc - Advanced HTTP (Hono, streaming, webhooks)
-- .claude/skills/convex-examples/convex-examples.mdc - Reference implementations
-
-# Convex Guidelines
-
-## Authentication & Functions
-
-**Edit:** `convex/lib/crpc.ts`, `convex/functions/*.ts` files
-
-### cRPC Procedure Builders (NEVER use raw query/mutation/action)
-
-```typescript
-import { z } from "zod";
-import { zid } from "convex-helpers/server/zod4";
-import {
-  authQuery,
-  publicQuery,
-  authMutation,
-  optionalAuthQuery,
-} from "../lib/crpc";
-
-// Query with auth - ctx.user guaranteed
-export const example = authQuery
-  .input(z.object({ id: zid("items") }))
-  .output(z.object({ name: z.string() }).nullable())
-  .query(async ({ ctx, input }) => {
-    return await ctx.table("items").get(input.id);
-  });
-
-// Query without auth
-export const publicExample = publicQuery
-  .input(z.object({ id: zid("items") }))
-  .output(z.object({ name: z.string() }).nullable())
-  .query(async ({ ctx, input }) => {
-    return await ctx.table("items").get(input.id);
-  });
-
-// Query with optional auth - ctx.user may be null
-export const optionalExample = optionalAuthQuery
-  .input(z.object({ id: zid("items") }))
-  .output(z.object({ name: z.string() }).nullable())
-  .query(async ({ ctx, input }) => {
-    // ctx.userId may be null
-    return await ctx.table("items").get(input.id);
-  });
-```
-
-### Rate Limiting & Role-Based Access
-
-```typescript
-// Rate limiting via .meta() - REQUIRED for user-facing mutations
-export const createItem = authMutation
-  .meta({ rateLimit: "item/create" }) // Auto tier limits (:free/:premium suffix)
-  .input(z.object({ name: z.string().min(1).max(100) }))
-  .output(zid("items"))
-  .mutation(async ({ ctx, input }) => {
-    await ctx.user.patch({ credits: ctx.user.credits - 1 });
-    return await ctx
-      .table("items")
-      .insert({ name: input.name, userId: ctx.userId });
-  });
-
-// Admin-only mutation
-export const adminAction = authMutation
-  .meta({ rateLimit: "admin/action", role: "admin" })
-  .input(z.object({ targetId: zid("user") }))
-  .output(z.null())
-  .mutation(async ({ ctx, input }) => {
-    // Only admins can execute this
-    await ctx.table("user").getX(input.targetId).delete();
-    return null;
-  });
-```
-
-**ctx.user in auth functions:** Type `SessionUser` from `convex/shared/auth-shared.ts` - includes:
-
-- Full `EntWriter<'user'>` with ent methods
-- Computed properties: `isAdmin`, `plan`
-- `session: AuthSession` with token, expiresAt, activeOrganizationId, etc.
-  **AVOID:** `ctx.table('user').get(ctx.userId)` - ctx.user is already loaded!
-  **Always throw CRPCError:** `throw new CRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });`
-
-### Rate Limiting (REQUIRED for user-facing mutations)
-
-**Edit:** `convex/lib/rate-limiter.ts`
-
-Two-step process: (1) Add `.meta({ rateLimit })` to mutation, (2) Add definition to `rate-limiter.ts`
-
-```typescript
-// DANGEROUS: Missing rate limit
-export const update = authMutation
-  .input(...)
-  .mutation(async ({ ctx, input }) => {...});
-
-// SECURE: With rate limit
-export const update = authMutation
-  .meta({ rateLimit: "user/update" })
-  .input(...)
-  .mutation(async ({ ctx, input }) => {...});
-
-// rateLimiter.ts - define limits (auto :free/:premium suffix)
-export const rateLimiter = new RateLimiter(components.rateLimiter, {
-  'user/update:free': { kind: 'fixed window', period: MINUTE, rate: 10 },
-  'user/update:premium': { kind: 'fixed window', period: MINUTE, rate: 30 },
-});
-```
-
-### Internal (Private) Functions
-
-**Edit:** `convex/functions/*.ts` files
-
-```typescript
-import { privateQuery, privateMutation } from "../lib/crpc";
-
-// Only callable from other Convex functions, NOT from client
-export const processData = privateQuery
-  .input(z.object({ id: zid("items") }))
-  .output(z.null())
-  .query(async ({ ctx, input }) => {
-    // Internal processing logic
-    return null;
-  });
-```
-
-### HTTP Endpoints
-
-For advanced patterns (Hono, streaming, webhooks), see [convex-http.mdc](mdc:.claude/skills/convex-http/convex-http.mdc).
-
-### Validators
-
-**Edit:** `convex/functions/schema.ts` (schema files ONLY, use `v.` validators)
-**Edit:** `convex/functions/*.ts` files (function files, use `z.` validators with `.input()`/`.output()`)
-
-```typescript
-import { defineEnt, defineEntSchema, getEntDefinitions } from "convex-ents";
-import { v } from "convex/values";
-
-// Schema example (v.)
-const schema = defineEntSchema({
-  user: defineEnt({
-    name: v.string(),
-    role: v.union(v.literal("user"), v.literal("admin")),
-  })
-    .field("email", v.string(), { unique: true })
-    .edge("profile", { ref: true })
-    .edges("messages", { ref: true })
-    .index("username_name", ["username", "name"]), // ALWAYS put indexes LAST
-});
-
-export const createUser = authMutation
-  .meta({ rateLimit: "user/create" })
-  .input(
-    z.object({
-      userId: zid("user"), // CRITICAL: Always zid() for IDs
-      name: z.string().min(1).max(100),
-      email: z.string().email(),
-      tags: z.array(z.string()).max(10),
-      bio: z.string().optional(), // Use .optional(), NOT .nullable()
-    })
-  )
-  .output(zid("user"))
-  .mutation(async ({ ctx, input }) => {
-    /* ... */
-  });
-```
-
-**Quick Reference:**
-
-| Type     | Schema (v.)                       | Functions (z.)                  |
-| -------- | --------------------------------- | ------------------------------- |
-| IDs      | `v.id('table')`                   | `zid('table')`                  |
-| Strings  | `v.string()`                      | `z.string().min().max()`        |
-| Numbers  | `v.number()`                      | `z.number().positive().int()`   |
-| Arrays   | `v.array(v.string())` max 8192    | `z.array(z.string()).max(10)`   |
-| Objects  | `v.object({...})` max 1024 fields | `z.object({...}).strict()`      |
-| Optional | `v.optional(...)`                 | `.optional()` NOT `.nullable()` |
-| Enums    | `v.union(v.literal(...))`         | `z.enum([...])`                 |
-| Records  | `v.record(...)`                   | `z.record(...)`                 |
-| BigInt   | `v.int64()`                       | -                               |
-
-**z.enum with `staticApi: true`:** Only static arrays work. Dynamic arrays fail.
-
-```typescript
-z.enum(["a", "b"]); // OK: literal
-z.enum(["a", "b"] as const); // OK: as const
-z.enum(dynamicArray); // WRONG: use z.string() + runtime check instead
-```
-
-**Null vs undefined:**
-
-- **DB fields:** Returns `undefined` for missing (NOT `null` like Prisma)
-- **Function args:** `.optional()` for optional, pass `null` to unset fields
-- **Function returns:** `.optional()` for optional, `.nullable()` only for explicit null (like `continueCursor`)
-- **Patch:** Pass `undefined` to unset field when arg is `null`
-
-**Document IDs:** `zid('table')` for args/returns | `Id<'table'>` TypeScript type | Cast: `as Id<'tasks'>`
-
-### Function Types Summary
-
-| Function                       | Auth                            | Rate Limit              |
-| ------------------------------ | ------------------------------- | ----------------------- |
-| `publicQuery`                  | none (ctx.user = null)          | -                       |
-| `optionalAuthQuery`            | optional (ctx.user may be null) | -                       |
-| `authQuery`                    | required                        | -                       |
-| `publicMutation`               | optional                        | ✅ via `.meta()`        |
-| `authMutation`                 | required                        | ✅ via `.meta()`        |
-| `privateQuery/privateMutation` | internal (Convex only)          | -                       |
-| `publicAction`                 | optional                        | ✅ if calling mutations |
-| `authAction`                   | required                        | ✅ if calling mutations |
-
-**Rules:** NEVER raw `query/mutation/action` | ALWAYS `.input()` + `.output()` | `.output(z.null())` when void
-
-### Function Calling
-
-```typescript
-// Internal calls
-await ctx.runQuery(internal.example.getData, { id });
-await ctx.runMutation(internal.example.update, { id, data });
-await ctx.runAction(internal.example.process, { ids });
-```
-
-**Rules:**
-
-- Minimize action→query/mutation calls (race conditions)
-- Share code via helper functions instead of action chains
-
-### Function References
-
-**Import:** `import { api, internal } from './_generated/api'`
-
-- **Public:** `api.filename.functionName` (e.g., `api.users.create`)
-- **Internal:** `internal.filename.functionName` (e.g., `internal.users.process`)
-- **Nested:** `api.folder.file.function` (e.g., `api.messages.access.check`)
-
-### File Organization
-
-**Edit:** `convex/functions/` directory
-
-- File-based routing: `convex/functions/users.ts` → `api.users.*`
-- Group by feature: `users.ts`, `messages.ts`, `auth.ts`
-- Use private functions for sensitive operations
-
-### Pagination
-
-**OPTIMIZATION:** Always use pagination for user-facing lists.
-
-```typescript
-export const listByAuthor = publicQuery
-  .input(z.object({ author: z.string() }))
-  .paginated({
-    limit: 20,
-    item: z.object({
-      _id: zid("messages"),
-      text: z.string(),
-      author: z.string(),
-    }),
-  })
-  .query(async ({ ctx, input }) => {
-    return await ctx
-      .table("messages", "author", (q) => q.eq("author", input.author))
-      .order("desc")
-      .paginate({ cursor: input.cursor, numItems: input.limit });
-  });
-```
-
-**Pagination input/output:**
-
-- Input automatically includes: `cursor: string | null`, `limit: number`
-- Output automatically wrapped as: `{ page: T[], continueCursor: string | null, isDone: boolean }`
-
-**Complex filters:** Use streams for consistent page sizes with pagination
-
-## Schema Guidelines
-
-**Edit:** `convex/functions/schema.ts`
-
-```typescript
-const schema = defineEntSchema({
-  user: defineEnt({ name: v.string() })
-    .field("email", v.string(), { unique: true }) // Unique constraint
-    .field("role", v.string(), { default: "user" }) // Default value
-    .edge("profile", { ref: true }) // 1:1 edge (optional side)
-    .edges("messages", { ref: true }) // 1:many edge ("one" side)
-    .edges("followers", { to: "user", inverse: "following" }) // Self-referencing
-    .index("username_name", ["username", "name"]) // Compound index naming pattern
-    .searchIndex("search_username_name", {
-      // Search index naming pattern
-      searchField: "name",
-      filterFields: ["username"],
-    }),
-
-  messages: defineEnt({ text: v.string() })
-    .edge("user") // 1:many edge ("many" side)
-    .edge("author", { field: "authorId", optional: true }) // Optional edge
-    .edges("tags"), // many:many edge
-});
-
-export default schema;
-export const entDefinitions = getEntDefinitions(schema);
-```
-
-**Edge patterns:** 1:1 `.edge()` with `{ref:true}` on optional | 1:many `.edges()` on "one", `.edge()` on "many" | many:many `.edges()` both sides
-
-**IMPORTANT: Method ordering!**
-
-1. `defineEnt({...})` - Define regular fields (pass inline in constructor)
-2. `.field(...)` - Additional fields with options (unique, default, index)
-3. `.edge(...)` / `.edges(...)` - Define relationships
-4. `.index(...)` / `.searchIndex(...)` - ALWAYS put indexes LAST
-
-## Index Naming Conventions
-
-**CRITICAL: Follow exact naming patterns for consistency:**
-
-### Standard Indexes
-
-- **Single field:** Use `.field('fieldName', v.type(), { index: true })` - NEVER `.index('fieldName', ['fieldName'])`
-- **Compound fields:** `.index('field1_field2', ['field1', 'field2'])`
-- **With edge field:** `.index('userId_lastMessageAt', ['userId', 'lastMessageAt'])`
-- **Date ordering:** `.index('characterId_endDate', ['characterId', 'endDate'])`
-
-### Search Indexes
-
-- **Pattern:** `.searchIndex('search_<searchField>', { ... })`
-- **Examples:**
-  - `.searchIndex('search_name', { searchField: 'name', filterFields: ['userId', 'private'] })`
-  - `.searchIndex('search_username_name', { searchField: 'name', filterFields: ['username'] })`
-  - `.searchIndex('search_title_content', { searchField: 'title', filterFields: [...] })`
-
-### Auto-generated Indexes from Edges
-
-When you define edges, Convex Ents automatically creates indexes:
-
-- `.edge('user')` → Creates index on `userId` field
-- `.edges('followers', { to: 'user', inverse: 'following' })` → Creates indexes on join table
-
-**CRITICAL: NEVER create indexes for edge-generated fields!**
-
-- NEVER: `.index('userId', ['userId'])` when you have `.edge('user')`
-- OK: `.index('userId_status', ['userId', 'status'])` - compound indexes are fine
-- **WHY:** Edges automatically create indexes on their ID fields
-
-## Field Options
-
-**Available field options:**
-
-- `{ unique: true }` - Enforce uniqueness constraint
-- `{ default: value }` - Default value for new documents
-- `{ index: true }` - Create single-field index (alternative to .index())
-- `{ optional: true }` - For edge fields that may be null
-
-**Additional Rules:**
-
-- Edges auto-create ID fields - don't define manually
-- Create indexes for all equality filters (except edge fields)
-
-## Import Guidelines
-
-**CRITICAL: NEVER use dynamic imports in Convex functions**
-
-Dynamic imports (`await import()`) do NOT work in Convex's serverless environment. Convex requires static analysis of all dependencies at build time.
-
-**From Next.js (`src/`):**
-
-```typescript
-import { api, internal } from "@convex/api";
-import { Id, Doc } from "@convex/dataModel";
-```
-
-**From Convex function files (`convex/functions/`):**
-
-```typescript
-import { api, internal } from "./_generated/api";
-import { Id, Doc } from "./_generated/dataModel";
-import { entDefinitions } from "./schema"; // Import ent definitions
-import { entsTableFactory } from "convex-ents"; // For function context
-import { authQuery, authMutation, publicQuery } from "../lib/crpc";
-import { CRPCError } from "better-convex/server";
-import { zid } from "convex-helpers/server/zod4";
-```
-
-**From Convex lib files (`convex/lib/`):**
-
-```typescript
-import { api, internal } from "../functions/_generated/api";
-import { Id, Doc } from "../functions/_generated/dataModel";
-import schema from "../functions/schema";
-import { initCRPC, CRPCError } from "better-convex/server";
-```
-
-## Error Handling
-
-**Always use CRPCError with typed error codes:**
-
-```typescript
-import { CRPCError } from "better-convex/server";
-
-// Error codes with HTTP status mapping:
-// UNAUTHORIZED (401), FORBIDDEN (403), NOT_FOUND (404), BAD_REQUEST (400)
-// CONFLICT (409), TOO_MANY_REQUESTS (429), INTERNAL_SERVER_ERROR (500)
-
-throw new CRPCError({
-  code: "NOT_FOUND",
-  message: "Item not found",
-});
-
-throw new CRPCError({
-  code: "FORBIDDEN",
-  message: "You do not have access to this resource",
-});
-
-throw new CRPCError({
-  code: "BAD_REQUEST",
-  message: "Invalid input provided",
-});
-```
-
-## React Integration
-
-**tRPC-like with real-time:** `useCRPC()`, `queryOptions()`, `mutationOptions()`, `infiniteQueryOptions()`
-
-**cRPC-specific:**
-| Feature | Description |
-|---------|-------------|
-| `subscribe: true` (default) | Real-time WebSocket |
-| `subscribe: false` | One-time fetch |
-| `skipUnauth: true` | Skip auth queries when logged out |
-| `useInfiniteQuery` | From `better-convex/react` |
-| `.paginated({ limit })` | Server-side limit |
-
-### Query Hooks
-
-```typescript
-import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-  skipToken,
-} from "@tanstack/react-query";
-import { useInfiniteQuery } from "better-convex/react";
-import { useCRPC } from "@/lib/convex/crpc";
-
-const crpc = useCRPC();
-
-// Query - always pass {} for no args
-const { data, isPending } = useQuery(crpc.items.list.queryOptions({}));
-
-// Auth query - skips if not authenticated
-const { data } = useQuery(
-  crpc.user.profile.queryOptions({}, { skipUnauth: true })
-);
-
-// Conditional - skipToken or enabled
-const { data } = useQuery(crpc.items.get.queryOptions(id ? { id } : skipToken));
-const { data } = useQuery(
-  crpc.user.settings.queryOptions({ userId }, { enabled: !!userId })
-);
-
-// One-time fetch (no WebSocket subscription)
-const { data } = useQuery(crpc.report.queryOptions({}, { subscribe: false }));
-
-// Cache manipulation
-const queryClient = useQueryClient();
-const queryKey = crpc.user.list.queryKey({});
-queryClient.invalidateQueries(crpc.user.list.queryFilter());
-```
-
-### Mutations
-
-```typescript
-const createItem = useMutation(crpc.items.create.mutationOptions());
-createItem.mutate({ name: "New" });
-
-// toast.promise
-toast.promise(update.mutateAsync({ name }), {
-  loading: "Saving...",
-  success: "Saved!",
-  error: (e) => e.data?.message ?? "Failed",
-});
-
-// Cache operations
-const mutationKey = crpc.user.create.mutationKey();
-```
-
-### Infinite Queries
-
-```typescript
-const {
-  data,
-  fetchNextPage,
-  hasNextPage,
-  isFetchingNextPage,
-  isPlaceholderData,
-  status,
-} = useInfiniteQuery(
-  crpc.messages.list.infiniteQueryOptions({ author: "alice" })
-);
-// data = flattened array
-// status: 'LoadingFirstPage' | 'LoadingMore' | 'CanLoadMore' | 'Exhausted'
-
-// Access server limit
-const limit = crpc.messages.list.meta.limit;
-```
-
-### Skeleton Loading
-
-```typescript
-const { data, isLoading } = useQuery(
-  crpc.items.list.queryOptions({}, {
-    placeholderData: [{ _id: '0' as Id<'items'>, name: 'Loading...' }]
-  })
-);
-
-{data?.map((item, i) => (
-  <WithSkeleton key={i} isLoading={isLoading}><Card>{item.name}</Card></WithSkeleton>
-))}
-```
-
-### Other Hooks
-
-```typescript
-import { useMaybeAuth } from "better-convex/react";
-const isAuth = useMaybeAuth(); // boolean | undefined
-```
-
-### Imperative Calls (One-off)
-
-```typescript
-// useCRPCClient - for event handlers, effects, callbacks
-import { useQueryClient } from "@tanstack/react-query";
-import { useCRPC, useCRPCClient } from "@/lib/convex/crpc";
-
-const client = useCRPCClient();
-await client.items.get.query({ id });
-await client.items.update.mutate({ id, name: "test" });
-await client.http.todos.download.query({ params: { format: "json" } });
-
-// For cache-aware fetches in render context
-const crpc = useCRPC();
-const queryClient = useQueryClient();
-const user = await queryClient.fetchQuery(crpc.user.get.queryOptions({ id }));
-```
-
-| Method                  | Context     | Caching    | Use Case                |
-| ----------------------- | ----------- | ---------- | ----------------------- |
-| `client.*.query()`      | Anywhere    | None       | Event handlers, effects |
-| `crpc.*.queryOptions()` | Render only | Uses cache | Components (uses hooks) |
-
-### Error Handling
-
-```typescript
-// Server errors - access message via error.data
-const { error } = useQuery(crpc.user.profile.queryOptions({}));
-if (error) toast.error(error.data?.message ?? "Failed to load");
-
-// Client error utilities
-import { isCRPCClientError, isCRPCErrorCode } from "better-convex/crpc";
-if (isCRPCClientError(error)) console.log(error.code, error.functionName);
-if (isCRPCErrorCode(error, "UNAUTHORIZED")) router.push("/login");
-```
-
-### Type Inference
-
-```typescript
-import type { ApiInputs, ApiOutputs } from "@convex/types";
-type User = ApiOutputs["user"]["get"];
-type CreateUserArgs = ApiInputs["user"]["create"];
-```
-
-### RSC Usage
-
-```typescript
-import { crpc, prefetch, HydrateClient } from '@/lib/convex/rsc';
-
-export default async function Page() {
-  prefetch(crpc.posts.list.queryOptions());
-  return <HydrateClient><ClientComponent /></HydrateClient>;
-}
-```
-
-### Auth Hooks & Guards
-
-```typescript
-import { useAuth, useIsAuth, Authenticated, Unauthenticated, MaybeAuthenticated } from "better-convex/auth-client";
-
-// Full auth state
-const { hasSession, isAuthenticated, isLoading } = useAuth();
-
-// Server-verified auth check
-const isAuth = useIsAuth(); // boolean | undefined
-
-// Conditional rendering
-<Authenticated><Dashboard /></Authenticated>
-<Unauthenticated><LoginPage /></Unauthenticated>
-<MaybeAuthenticated><OptionalAuthFeature /></MaybeAuthenticated>
-```
-
-**Server (RSC):**
-
-```typescript
-import { authGuard, adminGuard } from "@/lib/convex/rsc";
-await authGuard(); // Redirects if not authenticated
-await adminGuard(); // 404 if not admin
-```
-
-**Client guards:**
-
-```typescript
-import { useAuthGuard, usePremiumGuard } from "@/lib/convex/hooks";
-const authGuard = useAuthGuard();
-if (authGuard(() => console.info("ok"))) return; // Blocked
-```
-
-### Relationship Patterns with Ents
-
-**Edit:** `convex/functions/*.ts` files
-
-**PERFORMANCE:** 1:many and many:many edges fetch ALL documents by default - always use `.take()` or `.paginate()`.
-
-```typescript
-// Get entities
-const user = await ctx.table("user").get(userId); // Returns null if not found
-const userX = await ctx.table("user").getX(userId); // Throws if not found
-const userByEmail = await ctx.table("user").get("email", "user@example.com"); // By unique field
-const users = await ctx.table("user").getMany([id1, id2, id3]); // Batch - returns (Doc | null)[]
-const usersX = await ctx.table("user").getManyX([id1, id2, id3]); // Batch - throws if any missing
-
-// CRITICAL: Never refetch ctx.user in authenticated contexts!
-const currentUser = await ctx.table("user").getX(ctx.userId); // WRONG - redundant query!
-// CORRECT: Use pre-loaded user from context
-const currentUser = ctx.user; // Already available in authenticated contexts
-
-// Edge traversal - PREFERRED over manual queries
-const profile = await user.edge("profile"); // Optional edge (may return null)
-const profileX = await user.edgeX("profile"); // Required edge (throws if missing)
-const messages = await user.edge("messages").order("desc").take(10); // 1:many edge
-
-// IMPORTANT: Use edgeX when you know the relationship MUST exist
-const user = await character.edgeX("user"); // Characters always have a user
-const character = await message.edgeX("author"); // If message has required author
-
-// When to use getX/edgeX vs get/edge:
-// - Use getX/edgeX: After insert, required relationships, validated entities
-// - Use get/edge: Optional relationships, user-provided IDs, deletable entities
-
-// When to use getManyX vs getMany:
-// - Use getManyX: IDs from recent query, after insert, must all exist
-// - Use getMany: User-provided IDs, potentially deleted, optional entities
-
-// EDGE LIMITATIONS:
-// - many:many edges: NO .filter() or .search() - use ctx.table() instead
-// - 1:1 and 1:many edges: DO support .filter() and .order()
-// - All edges: NO .search() - use ctx.table() instead
-// - Edge results are READ-ONLY (can't .patch()/.delete() - must re-fetch via ctx.table())
-// All edges support: .order(), .take(), .first(), .paginate(), .map(), .has()
-const activeMessages = await ctx
-  .table("messages", "userId", (q) => q.eq("userId", user._id))
-  .filter((q) => q.eq(q.field("status"), "active"))
-  .take(5);
-
-// OK for 1:1 and 1:many edges: Can use .filter() and .order()
-const activeOrders = await user
-  .edge("orders")
-  .filter((q) => q.eq(q.field("status"), "active"))
-  .order("desc")
-  .take(10);
-
-// Many:many edges
-// SLOW: .some() is O(n)
-const all = await user.edge("following");
-all.some((u) => u._id === targetId);
-// FAST: .has() is O(1)
-const isFollowing = await user.edge("following").has(targetUserId);
-
-// Write operations require re-fetch
-const resource = await comment.edge("resources").first();
-await ctx.table("resources").getX(resource._id).delete(); // Re-fetch to write
-
-// WRONG: asyncMap on Ents
-const users = await ctx.table("user").take(10);
-await asyncMap(users, async (u) => ({
-  ...u,
-  profile: await u.edge("profile"),
-}));
-// CORRECT: Built-in .map() for Ents
-const enriched = await ctx
-  .table("user")
-  .take(10)
-  .map(async (u) => ({
-    ...u.doc(),
-    profile: await u.edge("profile"),
-  }));
-// asyncMap only for plain arrays/streams
-```
-
-**Count operations:** Use aggregates, not `.length` - see [convex-aggregate.mdc](mdc:.claude/skills/convex-aggregate/convex-aggregate.mdc)
-**asyncMap:** Only needed for non-Ent arrays (plain arrays, stream results)
-
-### Many-to-Many Join Tables
-
-**Auto-generated join tables** (from `.edges()` definitions):
-
-- Created automatically, don't define them in schema
-- Have ID fields: `userId`, `characterId`, etc.
-- **NO edge support** - access IDs directly:
-  ```typescript
-  const star = await ctx.table("characterStars").get(starId);
-  // WRONG: await star.edge('character')
-  // RIGHT: await ctx.table('characters').get(star.characterId)
-  ```
-
-**Manual join tables** (in schema):
-
-**CRITICAL: Join tables are the ONLY place where you manually define ID fields!**
-
-Define manual join tables ONLY when you need:
-
-1. TypeScript types for the join table
-2. Aggregates on the join relationship
-
-```typescript
-// CORRECT: Auto-generated join table - manually define ID fields (no edges)
-characterStars: defineEnt({})
-  .field('userId', v.id('user'), { index: true })
-  .field('characterId', v.id('characters'), { index: true })
-  .index('userId_characterId', ['userId', 'characterId'])
-  .index('characterId_userId', ['characterId', 'userId']),
-
-// CORRECT: Entity with relationships and custom fields
-messageVotes: defineEnt({})
-  .field('isDownvoted', v.boolean())
-  .edge('user')     // Creates userId field and index
-  .edge('message')  // Creates messageId field and index
-  .index('userId_messageId', ['userId', 'messageId'])
-```
-
-**Regular Table Patterns:**
-
-```typescript
-// WRONG: Regular table manually defining ID fields
-messages: defineEnt({ text: v.string() }).field("userId", v.id("user"), {
-  index: true,
-}); // WRONG!
-
-// CORRECT: Regular table using edges
-messages: defineEnt({ text: v.string() }).edge("user"); // Creates userId field and index automatically
-
-// CORRECT: Table with optional relationship
-comments: defineEnt({ content: v.string() }).edge("user", {
-  field: "authorId",
-  optional: true,
-});
-```
-
-**Performance:** N+1 is fast (~1ms/doc) | Arrays max 10 items | Use indexes
-**Count Operations:** For counting documents, use [convex-aggregate.mdc](mdc:.claude/skills/convex-aggregate/convex-aggregate.mdc) instead of `.length` on collections
-
-## TypeScript Guidelines
-
-```typescript
-// Document IDs
-type UserId = Id<"user">; // Use Id<T> for document IDs
-
-// Infer complex types (NEVER manually type)
-const mainCharacter = await (async () => {
-  if (!condition) return null;
-  return { id: char._id, image: char.image ?? null }; // Auto-inferred
-})();
-
-// Record with IDs
-const idToUsername: Record<Id<"user">, string> = {};
-
-// Auth-aware context types (from convex/lib/crpc.ts)
-// AuthCtx - ctx.user and ctx.userId guaranteed
-// MaybeAuthCtx - ctx.user and ctx.userId may be null
-
-// ctx.user = SessionUser (see convex/shared/auth-shared.ts for full type)
-// Fields: _id, email, username, name, image, credits, monthlyCredits, isAdmin, plan
-// Session: session.token, session.expiresAt, session.activeOrganizationId
-// Better-auth: emailVerified, role, banned, banReason, banExpires
-// Ent methods: doc(), edge(), edgeX(), patch(), replace(), delete()
-// ctx.userId = Id<'user'>
-```
-
-**Rules:** No `any` | No manual complex types | Strict ID types
-
-## Full Text Search Guidelines
-
-**Edit:** `convex/functions/schema.ts` for search indexes
-
-### Define Search Indexes
-
-```typescript
-// convex/functions/schema.ts
-export default defineSchema({
-  messages: defineTable({
-    body: v.string(),
-    channel: v.string(),
-    userId: v.id("user"),
-  }).searchIndex("search_body", {
-    searchField: "body",
-    filterFields: ["channel", "userId"], // Fast equality filters
-  }),
-});
-```
-
-### Run Search Queries
-
-```typescript
-// Basic search with filters
-const messages = await ctx
-  .table("messages")
-  .search(
-    "search_body",
-    (q) =>
-      q
-        .search("body", "hello world") // Full-text search
-        .eq("channel", "#general") // Filter field
-        .eq("userId", userId) // Multiple filters
-  )
-  .take(10); // Always limit results
-
-// Search with post-filtering (less efficient)
-const recent = await ctx
-  .table("messages")
-  .search("search_body", (q) => q.search("body", "hello"))
-  .filter((q) => q.gt(q.field("_creationTime"), Date.now() - 3600000))
-  .take(10);
-```
-
-For advanced patterns, see [convex-search.mdc](mdc:.claude/skills/convex-search/convex-search.mdc).
-
-## Query Guidelines
-
-- **CRITICAL: NEVER fetch ALL documents when you only need a subset**:
-  - Use `.take(n)` to limit results: `ctx.table('table').take(100)` (default is 100 if not specified)
-  - Use `.first()` for single document: `ctx.table('table').first()`, `.firstX()` to throw if not found
-  - Use `.get()` for fetching by ID or unique field: `ctx.table('table').get(id)` or `ctx.table('table').get('email', email)`
-  - Use `.paginate()` for user-facing lists
-  - Only return all documents when you truly need ALL documents (rare, <1000 docs)
-  - **For counts:** Use [convex-aggregate.mdc](mdc:.claude/skills/convex-aggregate/convex-aggregate.mdc) instead of `(await ctx.table('table')).length`
-- **OPTIMIZATION:** Always use indexes first for filtering:
-  - **Use indexes:** Define an index in schema and use it in ctx.table with index filtering
-  - **Get by index:** Use `.get('indexName', value)` for unique lookups
-  - **Simple cases:** Use built-in `.filter()` for simple field comparisons after indexing
-  - **Complex + Paginated:** Use streams from `convex-helpers/server/stream` for consistent page sizes (streams require `ctx.db` in first param only)
-  - See [convex-streams.mdc](mdc:.claude/skills/convex-streams/convex-streams.mdc)
-- Ents queries support chaining: `ctx.table('name').filter().take()` or `ctx.table('name', 'index', filter).take()`
-- Use `.unique()` to get a single document from a query. This method will throw an error if there are multiple documents that match the query.
-- When using async iteration, use the `for await (const row of query)` syntax.
-- **System tables:** Access with `ctx.table.system('_storage')` or `ctx.table.system('_scheduled_functions')`
-- **Raw documents:** Use `.doc()` or `.docs()` to get plain documents without ent methods
-- **Security:** `ctx.table` requires specifying table upfront, preventing accidental cross-table access
-
-### Query Filtering Guidelines
-
-**CRITICAL: Use the Right Tool for Filtering**
-
-1. **For simple filters (paginated or not):** Use built-in `.filter()` - maintains full page sizes!
-2. **For complex filters WITHOUT pagination:** Use `filter` helper from `convex-helpers/server/filter`
-3. **For complex filters WITH pagination:** Use streams from `convex-helpers/server/stream`
-
-**IMPORTANT LIMITATION:** Streams do NOT support `withSearchIndex()`. You cannot combine streams with full-text search indexes. If you need complex filtering with search, you must choose between:
-
-- Using search with only the available filterFields
-- Using streams for complex filtering without search
-- Implementing separate search and filter flows
-  See [convex-search.mdc](mdc:.claude/skills/convex-search/convex-search.mdc) for detailed patterns.
-
-| Use Case                             | Tool                 | Why                            |
-| ------------------------------------ | -------------------- | ------------------------------ |
-| Simple field comparisons             | Built-in `.filter()` | Maintains full page sizes      |
-| Complex filters + `.take()/.first()` | `filter` helper      | Full TypeScript, no pagination |
-| Complex filters + `.paginate()`      | Streams + `asyncMap` | Consistent page sizes          |
-
-```typescript
-// Simple filtering (built-in)
-const activeUsers = await ctx
-  .table("user", "status", (q) => q.eq("status", "active"))
-  .filter((q) => q.gt(q.field("lastSeen"), Date.now() - 3600000))
-  .take(10);
-
-// Complex without pagination (filter helper)
-import { filter } from "convex-helpers/server/filter";
-const featuredPosts = await filter(
-  ctx.table("posts", "author", (q) => q.eq("author", authorId)),
-  (post) => post.tags.includes("featured") && post.views > 100
-).take(10);
-// Works with: .first(), .unique(), .take(), .collect()
-// DON'T use with: .paginate() (causes variable page sizes)
-
-// Complex with pagination (streams)
-import { asyncMap } from "convex-helpers";
-import { stream } from "convex-helpers/server/stream";
-import schema from "../functions/schema";
-
-export const searchCharacters = publicQuery
-  .input(
-    z.object({
-      category: z.string().optional(),
-      tags: z.array(z.string()).optional(),
-    })
-  )
-  .paginated({ limit: 20, item: CharacterSchema })
-  .query(async ({ ctx, input }) => {
-    const results = await stream(ctx.db, schema) // Stream requires ctx.db here ONLY
-      .query("characters")
-      .withIndex("private", (q) => q.eq("private", false))
-      .filterWith(async (char) => {
-        // Full TypeScript power: arrays, strings, async lookups
-        if (input.category && !char.categories?.includes(input.category)) {
-          return false;
-        }
-        if (input.tags && !input.tags.some((tag) => char.tags?.includes(tag))) {
-          return false;
-        }
-        // Inside stream operations, use ctx.table()!
-        const author = await ctx.table("user").get(char.userId);
-        return author && !author.isBanned;
-      })
-      .paginate({ cursor: input.cursor, numItems: input.limit });
-
-    // Streams need asyncMap for transformations
-    return {
-      ...results,
-      page: await asyncMap(results.page, async (char) => ({
-        ...char,
-        user: await ctx.table("user").get(char.userId),
-      })),
-    };
-  });
-```
-
-For more stream patterns, see [convex-streams.mdc](mdc:.claude/skills/convex-streams/convex-streams.mdc).
-
-## CRITICAL: Never Use ctx.db
-
-**FORBIDDEN:** `ctx.db` is banned in all Convex functions. Always use `ctx.table()` for database operations.
-
-**ONLY EXCEPTION:** Streams from `convex-helpers/server/stream` still require `ctx.db` in the first parameter only:
-
-```typescript
-// NEVER: ctx.db.query('user')
-// ALWAYS: ctx.table('user')
-
-// Exception: Stream initialization ONLY
-import { stream } from 'convex-helpers/server/stream';
-// Stream requires ctx.db in first parameter
-const myStream = stream(ctx.db, schema).query('posts');
-
-// BUT: Inside stream operations, you CAN and SHOULD use ctx.table()!
-.filterWith(async (post) => {
-  // Use ctx.table() inside stream operations
-  const author = await ctx.table('user').get(post.authorId);
-  return author && !author.isBanned;
-})
-```
-
-### Ordering
-
-- Default: ascending `_creationTime` order
-- `.order('asc')` or `.order('desc')` - change sort direction
-- `.order('desc', 'numLikes')` - order by index (more efficient than \_creationTime)
-- Queries using indexes avoid slow table scans
-
-## Mutation Guidelines
-
-### Mutation Checklist
-
-Before implementing any mutation, ensure:
-
-1. **Rate Limiting**: Add `.meta({ rateLimit })` (REQUIRED for user-facing mutations)
-   - **CRITICAL**: Also add the rate limit definition to `convex/lib/rate-limiter.ts`!
-2. **Validation**: Use Zod schemas with `.input()` and `.output()`
-3. **Error Handling**: Throw `CRPCError` with proper codes
-4. **Authorization**: Check user permissions if needed
-5. **Audit Trail**: Consider logging important actions
-
-```typescript
-// Complete mutation example
-export const updateCharacter = authMutation
-  .meta({ rateLimit: "character/update" }) // 1. Rate limiting (MUST exist in rateLimiter.ts!)
-  .input(updateCharacterSchema) // 2. Validation
-  .output(z.boolean())
-  .mutation(async ({ ctx, input }) => {
-    const character = await ctx.table("characters").get(input.id);
-
-    if (!character) {
-      throw new CRPCError({
-        // 3. Error handling
-        code: "NOT_FOUND",
-        message: "Character not found",
-      });
-    }
-
-    if (character.userId !== ctx.userId) {
-      // 4. Authorization
-      throw new CRPCError({
-        code: "FORBIDDEN",
-        message: "Not authorized",
-      });
-    }
-
-    await character.patch(input.updates);
-    return true;
-  });
-```
-
-### Mutation Operations
-
-| Operation             | Syntax                                                      |
-| --------------------- | ----------------------------------------------------------- |
-| `.insert(data)`       | `ctx.table('user').insert(data)`                            |
-| `.insertMany([...])`  | `ctx.table('user').insertMany([d1, d2])` (prefer over loop) |
-| `.patch({...})`       | `ctx.table('user').getX(id).patch({ name: 'New' })`         |
-| `.replace(data)`      | `ctx.table('user').getX(id).replace(data)`                  |
-| `.delete()`           | `ctx.table('user').getX(id).delete()`                       |
-| `.get()` vs `.getX()` | Returns null vs throws if not found                         |
-
-### Writing with Ents
-
-```typescript
-// Insert and get entity
-const task = await ctx.table("tasks").insert({ text: "Build feature" }).get();
-
-// Insert multiple entities
-const taskIds = await ctx
-  .table("tasks")
-  .insertMany([
-    { text: "Build feature" },
-    { text: "Write tests" },
-    { text: "Deploy to production" },
-  ]);
-
-// Insert with 1:1 or 1:many edges
-await ctx.table("messages").insert({
-  text: "Hello world",
-  userId, // Creates edge to user
-});
-
-// Insert with many:many edges
-await ctx.table("messages").insert({
-  text: "Tagged message",
-  tags: [tagId1, tagId2], // Creates edges to tags
-});
-
-// Update many:many edges
-await ctx
-  .table("messages")
-  .getX(messageId)
-  .patch({
-    tags: { add: [tagId3, tagId4], remove: [tagId1] }, // Add and remove in one operation
-  });
-
-// Replace all many:many edges
-await ctx
-  .table("messages")
-  .getX(messageId)
-  .replace({
-    text: "Updated text",
-    tags: [tagId2, tagId3], // Replaces ALL edges (use [] to remove all)
-  });
-
-// Replace with edge unchanged - omit edge field
-await ctx
-  .table("messages")
-  .getX(messageId)
-  .replace({ text: "Changed text" /* tags unchanged */ });
-
-// Update 1:1 or 1:many edge
-await ctx.table("messages").getX(messageId).patch({ userId: newUserId }); // Change parent (use undefined to remove if optional)
-
-// Writing edges during insert
-const userId = await ctx.table("user").insert({ name: "Alice" });
-const profileId = await ctx
-  .table("profiles")
-  .insert({ bio: "In Wonderland", userId }); // Creates 1:1 edge
-
-// Writing edges during update
-await ctx.table("profiles").getX(profileId).patch({ userId }); // Update edge
-
-// Edge mutations
-await ctx.table("user").getX(userId).edgeX("profile").patch({ bio: "New bio" });
-
-// LIMITATION: Can't chain edge() on loaded ent for mutations
-const user = await ctx.table("user").getX(userId);
-// await user.edgeX('profile').patch(...); // TypeScript error
-// WORKAROUND: Start from ctx.table
-await ctx.table("user").getX(user._id).edgeX("profile").patch({ bio: "New" });
-
-// Conditional updates with undefined
-const updateData: Record<string, any> = {};
-if (bio !== undefined) updateData.bio = bio;
-if (name !== undefined) updateData.name = name;
-if (Object.keys(updateData).length > 0) {
-  await ctx.table("user").getX(userId).patch(updateData);
-}
-```
-
-### Bulk Operations
-
-```typescript
-// BEST: Use insertMany for bulk inserts
-await ctx.table("items").insertMany(items); // Single operation
-
-// GOOD: Loop inserts are still efficient - Convex batches in single transaction
-for (const item of items) {
-  await ctx.table("items").insert(item);
-}
-
-// AVOID: Unnecessary Promise.all - adds complexity without benefit
-await Promise.all(items.map((item) => ctx.table("items").insert(item)));
-
-// Process large datasets in batches of 100-1000
-const batchSize = 500;
-for (let i = 0; i < items.length; i += batchSize) {
-  const batch = items.slice(i, i + batchSize);
-  await ctx.table("items").insertMany(batch);
-}
-```
-
-**Ents .map():** Works directly on queries | **asyncMap:** Only for non-Ent arrays
-
-## Action Guidelines
-
-- Always add `"use node";` to the top of files containing actions that use Node.js built-in modules.
-- Never use `ctx.table` or `ctx.db` inside of an action. Actions don't have access to the database.
-- Use `publicAction` or `authAction` for actions:
+### 1) Schema + Relations + Trigger
 
 ```ts
-"use node";
+// convex/functions/schema.ts
+import {
+  convexTable,
+  defineRelations,
+  defineSchema,
+  id,
+  integer,
+  index,
+  onChange,
+  text,
+  timestamp,
+} from "better-convex/orm";
+import { eq } from "better-convex/orm";
 
+export const project = convexTable(
+  "project",
+  {
+    name: text().notNull(),
+    ownerId: id("user").notNull(),
+    openTaskCount: integer().notNull().default(0),
+    createdAt: timestamp().notNull().defaultNow(),
+    updatedAt: timestamp()
+      .notNull()
+      .defaultNow()
+      .$onUpdateFn(() => new Date()),
+  },
+  (t) => [index("ownerId_createdAt").on(t.ownerId, t.createdAt)]
+);
+
+export const task = convexTable(
+  "task",
+  {
+    projectId: id("project").notNull(),
+    title: text().notNull(),
+    status: text().notNull().default("open"),
+    createdAt: timestamp().notNull().defaultNow(),
+    updatedAt: timestamp()
+      .notNull()
+      .defaultNow()
+      .$onUpdateFn(() => new Date()),
+  },
+  (t) => [
+    index("projectId_createdAt").on(t.projectId, t.createdAt),
+    index("projectId_status").on(t.projectId, t.status),
+    onChange(async (ctx, change) => {
+      const projectId = change.newDoc?.projectId ?? change.oldDoc?.projectId;
+      if (!projectId) return;
+      // Keep invariants bounded and idempotent.
+      const open = await ctx.orm.query.task.findMany({
+        where: { projectId, status: "open" },
+        limit: 500,
+        columns: { id: true },
+      });
+      await ctx.orm
+        .update(project)
+        .set({
+          updatedAt: new Date(),
+          openTaskCount: open.length,
+        })
+        .where(eq(project.id, projectId));
+    }),
+  ]
+);
+
+const tables = { project, task };
+export default defineSchema(tables, { strict: false });
+
+export const relations = defineRelations(tables, (r) => ({
+  project: {
+    tasks: r.many.task(),
+  },
+  task: {
+    project: r.one.project({ from: r.task.projectId, to: r.project.id }),
+  },
+}));
+```
+
+Schema rules that matter:
+
+1. Index fields that power filters/order/search.
+2. `many()` relation paths need child FK indexes.
+3. Trigger logic must be bounded and non-recursive.
+4. Use table defaults for consistent write behavior.
+
+### 2) Procedure Builders + Middleware
+
+```ts
+// convex/lib/crpc.ts (shape reference only)
+import { getHeaders } from "better-convex/auth";
+import { CRPCError, initCRPC } from "better-convex/server";
+import { getAuth } from "../functions/auth";
+import { withOrm } from "./orm";
+
+const c = initCRPC
+  .dataModel<DataModel>()
+  .context({
+    query: (ctx) => withOrm(ctx),
+    mutation: (ctx) => withOrm(ctx),
+  })
+  .meta<{ auth?: "optional" | "required"; role?: "admin"; rateLimit?: string }>()
+  .create();
+
+const authMiddleware = c.middleware(async ({ ctx, next }) => {
+  const auth = getAuth(ctx);
+  const session = await auth.api.getSession({ headers: await getHeaders(ctx) });
+  if (!session?.user) throw new CRPCError({ code: "UNAUTHORIZED" });
+  return next({ ctx: { ...ctx, user: session.user, userId: session.user.id } });
+});
+
+const optionalAuthMiddleware = c.middleware(async ({ ctx, next }) => {
+  const auth = getAuth(ctx);
+  const session = await auth.api.getSession({ headers: await getHeaders(ctx) });
+  if (!session?.user) return next({ ctx });
+  return next({ ctx: { ...ctx, user: session.user, userId: session.user.id } });
+});
+
+export const publicQuery = c.query.meta({ auth: "optional" });
+export const optionalAuthQuery = c.query.meta({ auth: "optional" }).use(optionalAuthMiddleware);
+export const authQuery = c.query.meta({ auth: "required" }).use(authMiddleware);
+export const publicMutation = c.mutation;
+export const authMutation = c.mutation.meta({ auth: "required" }).use(authMiddleware);
+export const privateAction = c.action.internal();
+```
+
+### 3) Query + Mutation Procedure Template
+
+```ts
+// convex/functions/project.ts
 import { z } from "zod";
-import { publicAction, authAction } from "../lib/crpc";
+import { and, eq } from "better-convex/orm";
+import { CRPCError } from "better-convex/server";
+import { authMutation, authQuery } from "../lib/crpc";
+import { project, task } from "./schema";
 
-// Public action
-export const exampleAction = publicAction
-  .input(z.object({ text: z.string() }))
+const ProjectDto = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.date(),
+});
+
+export const listProjects = authQuery
+  .input(z.object({ cursor: z.string().nullable().default(null), limit: z.number().min(1).max(50).default(20) }))
+  .output(
+    z.object({
+      page: z.array(ProjectDto),
+      continueCursor: z.string(),
+      isDone: z.boolean(),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    const result = await ctx.orm.query.project.findMany({
+      where: { ownerId: ctx.userId },
+      orderBy: { createdAt: "desc" },
+      cursor: input.cursor,
+      limit: input.limit,
+      columns: { id: true, name: true, createdAt: true },
+    });
+    return result;
+  });
+
+export const createProject = authMutation
+  .meta({ rateLimit: "project/create" })
+  .input(z.object({ name: z.string().min(1).max(120) }))
+  .output(z.object({ id: z.string() }))
+  .mutation(async ({ ctx, input }) => {
+    const [row] = await ctx.orm
+      .insert(project)
+      .values({ name: input.name, ownerId: ctx.userId })
+      .returning({ id: project.id });
+    return row;
+  });
+
+export const toggleTask = authMutation
+  .meta({ rateLimit: "task/toggle" })
+  .input(z.object({ projectId: z.string(), taskId: z.string(), done: z.boolean() }))
   .output(z.null())
-  .action(async ({ ctx, input }) => {
-    console.info("Processing:", input.text);
+  .mutation(async ({ ctx, input }) => {
+    const ownedProject = await ctx.orm.query.project.findFirst({
+      where: { id: input.projectId, ownerId: ctx.userId },
+      columns: { id: true },
+    });
+    if (!ownedProject) throw new CRPCError({ code: "NOT_FOUND", message: "Project not found" });
+
+    const current = await ctx.orm.query.task.findFirst({
+      where: and(eq(task.id, input.taskId), eq(task.projectId, ownedProject.id)),
+      columns: { id: true },
+    });
+    if (!current) throw new CRPCError({ code: "NOT_FOUND", message: "Task not found" });
+
+    await ctx.orm
+      .update(task)
+      .set({ status: input.done ? "done" : "open" })
+      .where(eq(task.id, current.id));
+
     return null;
   });
+```
 
-// Authenticated action
-export const processUserData = authAction
-  .input(z.object({ data: z.string() }))
-  .output(z.object({ result: z.string() }))
-  .action(async ({ ctx, input }) => {
-    // ctx.user and ctx.userId available
-    return { result: `Processed for ${ctx.user.name}` };
+Procedure rules that matter:
+
+1. Always use strict `input` and `output`.
+2. Use `.meta({ rateLimit: ... })` on user-facing writes.
+3. Throw `CRPCError` for expected runtime outcomes.
+4. Keep list queries bounded (`limit` and/or cursor).
+5. Root input must be `z.object(...)`.
+6. Use `.output(z.null())` (not `z.void()`) for no-value mutations.
+7. Stack `.input(...)` for reusable procedure composition when needed.
+8. Use `.paginated(...)` for infinite-query endpoints instead of hand-rolling pagination output.
+
+### 4) Query Modes (Use The Right One)
+
+Default: object `where`.
+
+```ts
+await ctx.orm.query.task.findMany({
+  where: { projectId: input.projectId, status: "open" },
+  orderBy: { createdAt: "desc" },
+  limit: 20,
+});
+```
+
+Callback `where` (Drizzle-style):
+
+```ts
+await ctx.orm.query.task.findMany({
+  where: (task, { and, eq }) => and(eq(task.projectId, input.projectId), eq(task.status, "open")),
+  limit: 20,
+});
+```
+
+Predicate `where` for complex JS requires explicit index path first:
+
+```ts
+await ctx.orm.query.task
+  .withIndex("projectId_createdAt", (q) => q.eq("projectId", input.projectId))
+  .findMany({
+    where: (_task, { predicate }) =>
+      predicate((row) => row.title.toLowerCase().includes(input.query.toLowerCase())),
+    cursor: input.cursor,
+    limit: input.limit,
+    maxScan: 500,
   });
 ```
 
-## Scheduling Guidelines
+Full-text search:
 
-For cron jobs and scheduling patterns, see [convex-scheduling.mdc](mdc:.claude/skills/convex-scheduling/convex-scheduling.mdc).
-
-## Examples
-
-For complete examples including chat applications and other patterns, see [convex-examples.mdc](mdc:.claude/skills/convex-examples/convex-examples.mdc).
-
-## Deletion Behaviors
-
-**Edit:** `convex/functions/schema.ts`
-
-Convex Ents automatically handles cascading deletes. **Hard deletion is now the default behavior** - when you delete an ent, related ents are automatically hard deleted based on edge relationships:
-
-```typescript
-defineEnt({
-  name: v.string(),
-})
-  .deletion('soft') // Soft delete with deletionTime field
-  .deletion('scheduled', { delayMs: 24 * 60 * 60 * 1000 }) // Delete after 24h
-  .edge('profile') // Profile is automatically deleted when user is deleted (default: hard)
-  .edge('profile', { deletion: 'hard' }) // Override deletion for 1:1 edges
-  .edge('files', { to: '_storage' }); // Files are automatically deleted (default: hard)
-
-// Soft delete operations
-await ctx.table('user').getX(userId).delete(); // Sets deletionTime
-await ctx.table('user').getX(userId).patch({ deletionTime: undefined }); // Undelete
-
-// Soft edge deletion for 1:1/1:many
-.edges('profiles', { ref: true, deletion: 'soft' }) // Cascade soft delete
-```
-
-For detailed cascading delete patterns, rules system, and soft/scheduled deletion, see [convex-ents.mdc](mdc:.claude/skills/convex-ents/convex-ents.mdc).
-
-## Triggers
-
-**Edit:** `convex/lib/triggers.ts`
-
-```typescript
-// Register triggers for aggregates and validation
-// Aggregate maintenance - ALWAYS use .trigger()
-triggers.register("characterWorks", aggregateCharacterWorks.trigger());
-
-// Data validation
-triggers.register("user", async (ctx, change) => {
-  if (change.newDoc && !change.newDoc.email.includes("@")) {
-    throw new Error("Invalid email");
-  }
+```ts
+await ctx.orm.query.task.findMany({
+  search: { index: "search_title", query: input.query, filters: { projectId: input.projectId } },
+  cursor: input.cursor,
+  limit: input.limit,
 });
 ```
 
-For complete documentation, see [convex-trigger.mdc](mdc:.claude/skills/convex-trigger/convex-trigger.mdc).
+Cursor boundary pinning + scan budget:
 
-## Convex Aggregate
-
-**Edit:** `convex/functions/aggregates.ts`
-
-**CRITICAL for Scale:** Use aggregates instead of `.collect().length` for counts. O(log n) vs O(n) performance.
-
-**CRITICAL: ALWAYS use triggers to keep aggregates in sync. NEVER update aggregates manually in mutations.**
-
-```typescript
-// INEFFICIENT: Fetches all documents just to count
-const count = (await ctx.table('scores')).length;
-
-// EFFICIENT: O(log n) count operation with triggers
-const leaderboard = new TableAggregate<...>(components.leaderboard, {
-  namespace: (doc) => doc.gameId,
-  sortKey: (doc) => doc.score,
-});
-
-// STEP 1: Register component in convex/functions/convex.config.ts
-// app.use(aggregate, { name: 'leaderboard' });
-
-// STEP 2: Set up automatic aggregate updates in triggers.ts
-triggers.register('scores', leaderboard.trigger());
-
-// STEP 3: In mutations - Just do normal operations, triggers handle aggregates!
-await ctx.table('scores').insert(data); // That's it! Aggregate updates automatically
-
-// STEP 4: Read O(log n) operations
-const count = await leaderboard.count(ctx, { namespace: gameId });
-const rank = await leaderboard.indexOf(ctx, score);
-
-// NEVER do manual updates
-await leaderboard.insert(ctx, doc); // WRONG!
-await leaderboard.delete(ctx, doc); // WRONG!
-```
-
-### Bounds Requirement for Null Keys
-
-**IMPORTANT**: When using `sortKey: () => null`, the aggregate requires `bounds` to be explicitly provided:
-
-```typescript
-// Aggregate with null key (no sorting)
-const countAggregate = new TableAggregate<{
-  Key: null;
-  DataModel: DataModel;
-  TableName: "items";
-}>(components.countAggregate, {
-  sortKey: () => null,
-});
-
-// WRONG: Missing bounds parameter
-const count = await countAggregate.count(ctx, {
-  namespace: itemId,
-});
-
-// CORRECT: Include empty bounds for unbounded counting
-const count = await countAggregate.count(ctx, {
-  namespace: itemId,
-  bounds: {} as any,
+```ts
+await ctx.orm.query.task.findMany({
+  where: { projectId: input.projectId },
+  orderBy: { createdAt: "desc" },
+  cursor: input.cursor,
+  endCursor: input.endCursor ?? undefined,
+  limit: input.limit,
+  maxScan: 500,
 });
 ```
 
-This is because aggregates with `null` keys don't have natural ordering, so bounds must be explicitly specified to indicate you want all items.
+Key-boundary paging (advanced):
 
-**IMPORTANT:** All aggregate components must be registered in `convex/functions/convex.config.ts` before they can be used.
-
-For more aggregate patterns, see [convex-aggregate.mdc](mdc:.claude/skills/convex-aggregate/convex-aggregate.mdc).
-
-## Performance
-
-### Platform Limits
-
-| Resource             | Limit  | Resource              | Limit               |
-| -------------------- | ------ | --------------------- | ------------------- |
-| Indexes/table        | 32     | Docs scanned/query    | 16,384              |
-| Search indexes/table | 4      | Docs written/mutation | 8,192               |
-| Array elements       | 8,192  | Document size         | 1 MiB               |
-| Field nesting        | 16     | JS execution          | 1 sec               |
-| Action timeout       | 10 min | Action memory         | 64 MB (512 MB Node) |
-
-**Implications:** Too many indexes → slow inserts (16 ≈ 17x cost) | Large arrays → use edges | Deep nesting → flatten
-
-### Query Caching
-
-Isolate frequently-updated fields into separate tables - Convex invalidates cache when ANY field changes:
-
-```typescript
-// ❌ BAD: lastSeen updates invalidate all user queries
-user: defineEnt({ name: v.string(), lastSeen: v.number() });
-
-// ✅ GOOD: Separate hot data
-user: defineEnt({ name: v.string() }).edge('heartbeat', { ref: true }),
-heartbeats: defineEnt({ lastSeen: v.number() }).edge('user'),
+```ts
+const page = await ctx.orm.query.task.findMany({
+  pageByKey: { index: "projectId_createdAt", order: "asc", targetMaxRows: 100 },
+});
 ```
 
-### Rules Performance
+### 5) Mutation Patterns (Most Used)
 
-Rules run on EVERY document fetched. Avoid N+1 queries in rules:
+Insert with returning:
 
-```typescript
-// ❌ SLOW: Fetches user for every post
-read: async (post) => {
-  const author = await ctx.table("user").get(post.authorId);
-  return author && !author.isBanned;
-},
-// ✅ FAST: Pre-compute field, check directly
-read: async (post) => !post.private || post.authorId === ctx.viewerId,
+```ts
+const [created] = await ctx.orm
+  .insert(task)
+  .values({ projectId: input.projectId, title: input.title, status: "open" })
+  .returning({ id: task.id });
 ```
 
-**Tips:** Pre-compute access fields | Use `ctx.skipRules` for internal ops | Index rule fields
+Update with explicit `where`:
 
-### Lazy Loading
-
-Split heavy fields into separate tables:
-
-```typescript
-// ❌ BAD: Always loads 100KB+ biography
-characters: defineEnt({ name: v.string(), biography: v.string() });
-
-// ✅ GOOD: Load details only when needed
-characters: defineEnt({ name: v.string() }).edge('details', { ref: true }),
-characterDetails: defineEnt({ biography: v.string() }).edge('character'),
+```ts
+await ctx.orm
+  .update(task)
+  .set({ title: input.title })
+  .where(eq(task.id, input.id));
 ```
 
-### Quick Audit
+Delete:
 
-```bash
-grep -r "\.filter(q =>" convex/          # Should use indexes
-grep -r "\.edge(" convex/ | grep -v ".take(" | grep -v ".paginate("  # Unbounded
-grep -r "\.length" convex/ | grep -v "string"  # Use aggregates
+```ts
+await ctx.orm.delete(task).where(eq(task.id, input.id));
 ```
 
-## Shared Code Organization
+Upsert:
 
-- **Shared helpers**: ALWAYS move shared code to `convex/shared/` instead of duplicating
-- **Model exception**: `[modelName]-shared.ts` can be in `convex/shared/` folder
-- **Import paths**:
-  - From Convex functions/lib: `import { helper } from '../shared/filename'`
-  - From Next.js: `import { helper } from '@convex/filename'`
+```ts
+await ctx.orm
+  .insert(project)
+  .values({ name: input.name, ownerId: ctx.userId })
+  .onConflictDoUpdate({ target: project.id, set: { name: input.name } });
+```
+
+Null-clearing update for optional fields:
+
+```ts
+import { unsetToken } from "better-convex/orm";
+
+await ctx.orm
+  .update(task)
+  .set({
+    dueDate: input.dueDate === null ? unsetToken : input.dueDate,
+  })
+  .where(eq(task.id, input.id));
+```
+
+Large update/delete workloads:
+
+```ts
+await ctx.orm
+  .delete(task)
+  .where(eq(task.status, "done"))
+  .execute({ mode: "async", batchSize: 200, delayMs: 0 });
+```
+
+Notes:
+1. Async mutation batching needs ORM scheduled batch wiring.
+2. Async `execute({ mode: "async" })` and builder `.paginate(...)` are separate strategies; do not combine in one call.
+
+### 6) Error Model
+
+Use this map consistently:
+
+| Code | Use |
+| --- | --- |
+| `BAD_REQUEST` | Invalid request shape/business precondition |
+| `UNAUTHORIZED` | No valid session |
+| `FORBIDDEN` | Session exists but lacks permissions |
+| `NOT_FOUND` | Resource absent or inaccessible |
+| `CONFLICT` | Unique/resource conflict |
+| `TOO_MANY_REQUESTS` | Rate-limited path |
+| `INTERNAL_SERVER_ERROR` | Unexpected failures only |
+
+### 7) React Query Integration
+
+`useCRPC()` pattern:
+
+```ts
+const crpc = useCRPC();
+
+const projects = useQuery(
+  crpc.project.listProjects.queryOptions({ cursor: null, limit: 20 })
+);
+
+const createProject = useMutation(
+  crpc.project.createProject.mutationOptions({
+    onSuccess: () => {
+      queryClient.invalidateQueries(crpc.project.listProjects.queryFilter({ cursor: null, limit: 20 }));
+    },
+  })
+);
+```
+
+Key client defaults/deltas:
+
+1. Queries are real-time by default (`subscribe: true`).
+2. Use `{ subscribe: false }` for one-time fetches.
+3. Use `skipUnauth: true` to avoid unauthorized fetch churn.
+4. For pagination, use `useInfiniteQuery` from `better-convex/react`.
+5. Prefer `queryKey(...)`/`queryFilter(...)` helpers for cache ops instead of manual keys.
+6. For auth flows, prefer `createAuthMutations(...)` wrappers (not raw auth client calls) to avoid logout race errors.
+
+Infinite query pattern:
+
+```ts
+import { useInfiniteQuery } from "better-convex/react";
+
+const feed = useInfiniteQuery(
+  crpc.task.list.infiniteQueryOptions({ projectId }, { skipUnauth: true })
+);
+```
+
+### 8) RSC Patterns (Next.js)
+
+Use exactly one of these per use case:
+
+1. `prefetch(...)` (preferred): non-blocking, hydrated, client owns data.
+2. `caller.*`: blocking server-only logic (redirects/auth checks), not hydrated.
+3. `preloadQuery(...)`: blocking + hydrated when server needs data immediately.
+
+Do not render `preloadQuery` result on server and again on client for the same data path.
+
+Hydration rule:
+1. `HydrateClient` must wrap all client components that consume prefetched queries.
+
+### 9) HTTP Route Pattern (When Feature Needs REST/Webhooks)
+
+```ts
+// router endpoint example
+export const createTaskRoute = authRoute
+  .post("/api/projects/:projectId/tasks")
+  .params(z.object({ projectId: z.string() }))
+  .input(z.object({ title: z.string().min(1) }))
+  .output(z.object({ id: z.string() }))
+  .mutation(async ({ ctx, params, input }) => {
+    const id = await ctx.runMutation(internal.task.createFromHttp, {
+      projectId: params.projectId,
+      title: input.title,
+      userId: ctx.userId,
+    });
+    return { id };
+  });
+```
+
+HTTP-specific rules:
+
+1. Use `z.coerce.*` for search params.
+2. Keep auth and permission checks in middleware/procedure.
+3. Apply rate limits to public/heavy endpoints.
+4. Validate webhook signatures before any side effects.
+5. Use `publicRoute` / `authRoute` / `optionalAuthRoute` builders from `convex/lib/crpc.ts`.
+6. Compose endpoints with `router(...)` for feature-level HTTP grouping.
+
+### 10) Scheduling Pattern (If Needed)
+
+Immediate side effect after commit:
+
+```ts
+await ctx.scheduler.runAfter(0, internal.notifications.sendTaskCreated, { taskId: created.id, userId: ctx.userId });
+```
+
+Future execution:
+
+```ts
+await ctx.scheduler.runAt(input.sendAt, internal.reminders.send, { taskId: input.taskId, userId: ctx.userId });
+```
+
+Scheduling rules:
+
+1. Auth context is not propagated; pass user/org IDs explicitly.
+2. Mutation scheduling is atomic with the mutation transaction.
+3. Store returned job IDs when cancellation is required.
+4. Scheduling inside actions is not atomic with action failure.
+5. Cron schedules run in UTC.
+
+### 11) Testing Baseline (High Signal)
+
+Minimum feature test set:
+
+1. happy path query/mutation
+2. unauthenticated rejection (`UNAUTHORIZED`)
+3. permission/ownership rejection (`FORBIDDEN` where relevant)
+4. missing resource (`NOT_FOUND`)
+5. trigger side effect assertion
+6. scheduler assertion if feature schedules work
+
+Minimal harness shape:
+
+```ts
+test("feature scenario", async () => {
+  const t = convexTest(schema);
+  await t.run(async (baseCtx) => {
+    const ctx = await runCtx(baseCtx);
+    // arrange / act / assert
+  });
+});
+```
+
+---
+
+## Performance + Safety Checklist
+
+Before calling a feature done:
+
+1. Every list query is bounded (`limit`/cursor).
+2. Filters/order align with indexes.
+3. Expensive post-fetch logic uses pre-narrowed index path.
+4. Mutations use targeted `where` and avoid accidental full scans.
+5. Trigger logic is bounded, idempotent, and avoids ping-pong loops.
+6. Error codes are explicit and intentional.
+7. User-facing writes have rate-limit metadata.
+8. Tests cover auth + not-found + side effects.
+9. `ctx.db` is not used on paths that rely on ORM constraints/RLS.
+10. Paginated endpoints use `.paginated(...)` + ORM cursor flow (not ad-hoc wrappers).
+11. For any predicate/full-scan-like path, `.withIndex(...)` + bound (`limit`/`maxScan`) is explicit.
+
+## Common Mistakes (And Fixes)
+
+| Mistake | Correct pattern |
+| --- | --- |
+| Raw Convex handler for new feature procedures | cRPC builders (`publicQuery`, `authMutation`, etc.) |
+| Write-time side effects duplicated across mutations | Schema trigger (`onChange`/`onInsert`/`onDelete`) |
+| Missing bounds on list/search | Add `limit` + cursor/pagination |
+| Using `ctx.db` for policy-sensitive reads | Use `ctx.orm` (RLS/constraints path) |
+| Throwing generic `Error` for expected outcomes | Throw `CRPCError` with explicit code |
+| Infinite list with TanStack native hook directly | Use `useInfiniteQuery` from `better-convex/react` |
+| Primitive root input (`z.string()`) | Use root `z.object(...)` input schema |
+| Returning nothing with `z.void()` | Use `.output(z.null())` or omit explicit output |
+| Manual pagination wrappers for infinite endpoints | Use `.paginated({ limit, item })` |
+| Putting secrets in `.meta(...)` | Keep metadata non-sensitive (client-visible) |
+
+## Reference Escalation Map (Load Only If Needed)
+
+- `references/setup.md`: setup/bootstrap/env/framework wiring
+- `references/orm.md`: full ORM API, constraints, RLS, advanced mutations
+- `references/filters.md`: advanced filtering/search/composition/pagination modes
+- `references/react.md`: full client, RSC, hydration, error handling matrix
+- `references/http.md`: typed REST routes, webhooks, streaming
+- `references/scheduling.md`: cron + delayed job patterns
+- `references/testing.md`: deeper testing scenarios
+- `references/aggregates.md`: aggregate component patterns
+- `references/auth.md`: full Better Auth core flow
+- `references/auth-admin.md`: admin plugin details
+- `references/auth-organizations.md`: org/multi-tenant plugin details
+- `references/auth-polar.md`: Polar billing plugin details
+- `references/doc-guidelines.md`: skill/docs sync contract

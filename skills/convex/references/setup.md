@@ -21,22 +21,58 @@ If migration is needed, stop and use migration docs separately. Do not mix migra
 
 ## 2. Agent Decision Intake
 
-Pick these decisions first and lock them before editing files.
+This is the **mandatory first prompt** for agents helping users set up better-convex.
+Ask these questions before editing files.
 
-| Decision           | Options                                                           | Default                            |
-| ------------------ | ----------------------------------------------------------------- | ---------------------------------- |
-| Framework          | Next.js App Router, TanStack Start                                | Next.js App Router                 |
-| Auth               | Better Auth, Custom auth, None                                    | Better Auth                        |
-| Runtime data layer | ORM (`ctx.orm`)                                                   | ORM                                |
-| Optional modules   | RLS, triggers, aggregates, rate limiting, scheduling, HTTP router | Enable only what feature set needs |
-| Auth plugins       | admin, organizations                                              | None unless product requires       |
+### 2.1 Ask These First (match `/www/content/docs/index.mdx`)
 
-Execution policy:
+#### Required choices
+
+| Feature | Options | Default |
+| --- | --- | --- |
+| Approach | Top-down (copy from Templates), Bottom-up (follow docs step-by-step) | Top-down |
+| React Framework | Next.js App Router, TanStack Start, Other | Next.js App Router |
+| Database | ORM (`ctx.orm`) | ORM |
+
+#### Optional features
+
+| Feature | Options | When to include |
+| --- | --- | --- |
+| Auth | Better Auth, Custom, None | Most apps need auth |
+| SSR/RSC | Yes, No | Next.js App Router apps |
+| Triggers | Yes, No | Auto side effects on data changes |
+| Aggregates | Yes, No | Counts, sums, leaderboards |
+| Rate Limiting | Yes, No | API protection |
+| Scheduling | Yes, No | Background jobs, delayed tasks |
+| HTTP router | Yes, No | REST/webhook style endpoints |
+| RLS | Yes, No | Runtime row-level access control |
+| Auth plugins | admin, organizations, polar, none | Only when product requires them |
+
+### 2.2 First Prompt Template
+
+Use this exact structure:
+
+1. Approach: Top-down templates or bottom-up docs?
+2. Framework: Next.js App Router, TanStack Start, or other?
+3. Auth: Better Auth, custom auth, or no auth?
+4. Need SSR/RSC?
+5. Enable triggers?
+6. Enable aggregates?
+7. Enable rate limiting?
+8. Enable scheduling?
+9. Need HTTP router endpoints?
+10. Enable RLS?
+11. Any auth plugins (admin/organizations/polar)?
+
+### 2.3 Decision Mapping
+
+Map answers to setup execution in this order:
 
 1. Build base setup first.
-2. Add auth core if auth is enabled.
-3. Add framework branch.
+2. Add auth core only if auth is enabled.
+3. Add framework branch (Next.js or TanStack Start).
 4. Add optional modules/plugins only when selected.
+5. If framework is `Other`, stop this runbook and route to non-setup docs (`react`, `server/*`) instead of guessing.
 
 ## 3. Base Bootstrap
 
@@ -52,6 +88,12 @@ bun add convex better-convex zod @tanstack/react-query
 
 ```bash
 mkdir -p convex/functions convex/lib convex/shared src/lib/convex
+```
+
+If the goal is to recreate the full `example/convex` backend shape, also scaffold:
+
+```bash
+mkdir -p convex/functions/items convex/lib/auth convex/lib/emails convex/routers
 ```
 
 Recommended monolithic structure:
@@ -132,6 +174,38 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
 Rule: real-time URL uses `.cloud`; HTTP/router/caller URL uses `.site`.
+
+### 4.3 Typed env helper (recommended for full backend parity)
+
+When multiple Convex functions and libs share env values (auth, billing, dev guards), create one typed helper:
+
+**Create:** `convex/lib/get-env.ts`
+
+```ts
+import { createEnv } from "better-convex/server";
+import { z } from "zod";
+
+export const getEnv = createEnv({
+  schema: z.object({
+    DEPLOY_ENV: z.string().default("production"),
+    SITE_URL: z.string().default("http://localhost:3000"),
+    BETTER_AUTH_SECRET: z.string(),
+    JWKS: z.string().optional(),
+    ADMIN: z
+      .string()
+      .default("")
+      .transform((s) => (s ? s.split(",") : []))
+      .pipe(z.array(z.string())),
+    RESEND_API_KEY: z.string().optional(),
+    POLAR_ACCESS_TOKEN: z.string().optional(),
+    POLAR_SERVER: z.enum(["production", "sandbox"]).default("sandbox"),
+    POLAR_PRODUCT_PREMIUM: z.string().optional(),
+    POLAR_WEBHOOK_SECRET: z.string().optional(),
+  }),
+});
+```
+
+Then prefer `getEnv()` in Convex code instead of scattered `process.env`.
 
 ## 5. Core Backend
 
@@ -898,6 +972,27 @@ Use docs pattern from `tanstack-start.mdx` for:
 
 Enable only selected modules.
 
+### 9.0 Component composition rule (`convex/functions/convex.config.ts`)
+
+When multiple components are enabled, register all in one `defineApp()` file:
+
+```ts
+import aggregate from "@convex-dev/aggregate/convex.config";
+import rateLimiter from "@convex-dev/rate-limiter/convex.config";
+import resend from "@convex-dev/resend/convex.config";
+import { defineApp } from "convex/server";
+
+const app = defineApp();
+
+// Enable only selected components:
+app.use(rateLimiter);
+app.use(resend);
+app.use(aggregate, { name: "aggregateUsers" });
+app.use(aggregate, { name: "aggregateTodosByUser" });
+
+export default app;
+```
+
 ### 9.1 RLS gate
 
 Use `rlsPolicy` on ORM tables, evaluate through ORM context:
@@ -981,6 +1076,38 @@ Create `convex/functions/crons.ts` with `cronJobs()` and use `ctx.scheduler.runA
 
 If REST endpoints are needed, add cRPC route builders and register routers in `convex/functions/http.ts`; consume via `crpc.http.*` client proxies.
 
+### 9.7 Email + Resend gate
+
+Install packages:
+
+```bash
+bun add @convex-dev/resend @react-email/components @react-email/render
+```
+
+Register component in `convex/functions/convex.config.ts`:
+
+```ts
+import resend from "@convex-dev/resend/convex.config";
+
+app.use(resend);
+```
+
+Create action for organization invites or transactional mail:
+
+```ts
+"use node";
+
+import { Resend } from "@convex-dev/resend";
+import { privateAction } from "../lib/crpc";
+import { components } from "./_generated/api";
+
+const resendClient = new Resend(components.resend, { testMode: true });
+```
+
+Recommended files for this gate:
+- `convex/functions/email.tsx`
+- `convex/lib/emails/organization-invite.tsx`
+
 ## 10. Plugin Setup Modules
 
 Feature gate each plugin independently after auth core.
@@ -1017,7 +1144,44 @@ Client: add `organizationClient({...})` plugin config.
 
 Schema: add `organization`, `member`, `invitation` (+ optional `team`, `teamMember`), and session fields `activeOrganizationId`/`activeTeamId`.
 
+### 10.3 Polar plugin (billing)
+
+For full billing parity, load and apply `references/auth-polar.md`.
+
+Required file set for this plugin path:
+- `convex/lib/polar-polyfills.ts`
+- `convex/lib/polar-client.ts`
+- `convex/lib/polar-helpers.ts`
+- `convex/functions/polarCustomer.ts`
+- `convex/functions/polarSubscription.ts`
+- `convex/shared/polar-shared.ts`
+
+Also include Polar env keys in your typed env helper and/or Convex env:
+- `POLAR_ACCESS_TOKEN`
+- `POLAR_SERVER`
+- `POLAR_PRODUCT_PREMIUM`
+- `POLAR_WEBHOOK_SECRET`
+
 ## 11. Dev Scripts and CLI Workflow
+
+### 11.1 Dev bootstrap functions (example parity mode)
+
+If you want the same operational model as `example/convex`, create:
+
+- `convex/functions/init.ts`:
+  - `privateMutation`
+  - `meta({ dev: true })`
+  - bootstraps admin users from env
+  - optionally schedules/executes seed on first init
+- `convex/functions/seed.ts`:
+  - `privateMutation` orchestration for sample data creation
+- `convex/functions/reset.ts`:
+  - `privateAction` reset entrypoint
+  - paged deletion via scheduled internal mutation(s)
+  - hard dev-only guard
+
+If using this mode, also enforce a central dev guard in cRPC middleware:
+- reject `meta.dev` procedures in production.
 
 Recommended scripts:
 
@@ -1054,23 +1218,29 @@ bunx better-convex env sync --auth --prod
 7. If auth enabled: `auth.config.ts`, `auth.ts`, `http-polyfills.ts`, `http.ts`, env sync complete.
 8. Client `CRPCProvider` + QueryClient + Convex provider are mounted.
 9. Framework branch is complete (Next.js or TanStack Start).
-10. Optional modules/plugins added only if selected.
-11. No legacy Ents patterns in setup code.
+10. If using typed envs: `convex/lib/get-env.ts` exists and Convex code reads through `getEnv()`.
+11. Optional modules/plugins added only if selected.
+12. If multiple components enabled: `convex/functions/convex.config.ts` composes all `app.use(...)` calls in one file.
+13. If organizations + invite mail enabled: `email.tsx` + invite template + resend component are wired.
+14. If dev bootstrap mode enabled: `init.ts`, `seed.ts`, `reset.ts` exist and scripts call them.
+15. No legacy Ents patterns in setup code.
 
 ## 13. Troubleshooting Matrix
 
-| Symptom                                  | Likely Cause                                   | Fix                                                                       |
-| ---------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------- | --------------------------- |
-| `@convex/meta` not found                 | `better-convex dev` not run                    | Run `bunx better-convex dev` and regenerate metadata                      |
-| HTTP calls fail but queries work         | `.site` URL missing or wrong                   | Set `NEXT_PUBLIC_CONVEX_SITE_URL` correctly                               |
-| Auth works locally but fails in prod     | JWKS not synced                                | Run `convex run auth:getLatestJwks --prod                                 | convex env set JWKS --prod` |
-| `UNAUTHORIZED` on protected procedures   | auth middleware not attaching `userId`         | Ensure `getAuth(ctx)` + `getHeaders(ctx)` session lookup is in middleware |
-| `ctx.orm` missing in handlers            | ORM context not wired in cRPC `.context()`     | Ensure `query` + `mutation` both use `withOrm(ctx)`                       |
-| Route auth cookies not set               | Missing CORS auth headers                      | Add `Better-Auth-Cookie` allow/expose headers + credentials               |
-| TanStack Start auth helper import errors | Using `better-convex/auth-nextjs` in Start app | Use TanStack Start exception with `@convex-dev/better-auth/*` helpers     |
-| Trigger side effects too slow            | Heavy sync work inside trigger                 | Move heavy work to scheduled actions via `ctx.scheduler`                  |
-| Rate limiter no-op                       | component not registered in `convex.config.ts` | Add `@convex-dev/rate-limiter` app component                              |
-| Aggregate counts drift                   | trigger not attached in schema                 | Attach `aggregate.trigger()` in table extra config                        |
+| Symptom | Likely Cause | Fix |
+| --- | --- | --- |
+| `@convex/meta` not found | `better-convex dev` not run | Run `bunx better-convex dev` and regenerate metadata |
+| HTTP calls fail but queries work | `.site` URL missing or wrong | Set `NEXT_PUBLIC_CONVEX_SITE_URL` correctly |
+| Auth works locally but fails in prod | JWKS not synced | Run `convex run auth:getLatestJwks --prod` then `convex env set JWKS --prod` |
+| `UNAUTHORIZED` on protected procedures | auth middleware not attaching `userId` | Ensure `getAuth(ctx)` + `getHeaders(ctx)` session lookup is in middleware |
+| `ctx.orm` missing in handlers | ORM context not wired in cRPC `.context()` | Ensure `query` + `mutation` both use `withOrm(ctx)` |
+| Route auth cookies not set | Missing CORS auth headers | Add `Better-Auth-Cookie` allow/expose headers + credentials |
+| TanStack Start auth helper import errors | Using `better-convex/auth-nextjs` in Start app | Use TanStack Start exception with `@convex-dev/better-auth/*` helpers |
+| Trigger side effects too slow | Heavy sync work inside trigger | Move heavy work to scheduled actions via `ctx.scheduler` |
+| Rate limiter no-op | component not registered in `convex.config.ts` | Add `@convex-dev/rate-limiter` app component |
+| Aggregate counts drift | trigger not attached in schema | Attach `aggregate.trigger()` in table extra config |
+| Invite emails never send | `@convex-dev/resend` component not registered | Add `app.use(resend)` and wire `functions/email.tsx` |
+| Dev reset/seed commands do nothing | `init.ts`/`seed.ts`/`reset.ts` missing or not wired | Add dev bootstrap functions and scripts from Section 11.1 |
 
 ## Coverage Matrix
 
@@ -1098,4 +1268,23 @@ Source coverage mapping used to build this runbook:
 | `www/content/docs/orm/rls.mdx`                       | Section 9.1                      |
 | `www/content/docs/auth/plugins/admin.mdx`            | Section 10.1                     |
 | `www/content/docs/auth/plugins/organizations.mdx`    | Section 10.2                     |
+| `www/content/docs/auth/plugins/polar.mdx`            | Section 10.3                     |
 | `www/content/docs/cli.mdx`                           | Section 11                       |
+
+### Example Convex Coverage (Recreation Target)
+
+This runbook + references map to `example/convex` as follows:
+
+| Example Group | Primary Setup Section | Additional Reference |
+| --- | --- | --- |
+| Core infra (`schema.ts`, `orm.ts`, `crpc.ts`, `http.ts`) | Sections 5, 6.6, 9.6 | `orm.md`, `http.md` |
+| Shared contracts (`shared/types.ts`, `shared/auth-shared.ts`, `shared/polar-shared.ts`) | Sections 5.4, 10.2, 10.3 | `auth-organizations.md`, `auth-polar.md` |
+| Auth core (`auth.config.ts`, `auth.ts`) | Section 6 | `auth.md` |
+| Auth plugins (`admin.ts`, `organization.ts`, `polar*`) | Section 10 | `auth-admin.md`, `auth-organizations.md`, `auth-polar.md` |
+| Feature modules (`user.ts`, `projects.ts`, `tags.ts`, `todoComments.ts`, `public.ts`, `items/queries.ts`) | Sections 5, 6, 9 | core `SKILL.md`, `orm.md`, `filters.md` |
+| HTTP routers (`routers/health.ts`, `routers/todos.ts`, `routers/examples.ts`) | Section 9.6 | `http.md` |
+| Aggregates + rate limits (`aggregates.ts`, `lib/rate-limiter.ts`) | Sections 9.3, 9.4 | `aggregates.md`, `orm.md` |
+| Scheduling + internals (`todoInternal.ts`, delayed jobs) | Sections 9.5, 11.1 | `scheduling.md` |
+| Email + Resend (`functions/email.tsx`, `lib/emails/*`) | Section 9.7 | `auth-organizations.md` |
+| Dev bootstrap (`init.ts`, `seed.ts`, `reset.ts`) | Section 11.1 | `testing.md` (for verification) |
+| Generated outputs (`functions/_generated/*`, `shared/meta.ts`) | Section 5.5 | n/a (generated by CLI) |

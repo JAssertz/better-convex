@@ -233,6 +233,33 @@ export const convertToDatabaseSubscription = (
 };
 ```
 
+## Shared Product Catalog (Example-Parity Optional)
+
+If UI and backend both need plan metadata, keep a shared module:
+
+```ts
+// convex/shared/polar-shared.ts
+export const SubscriptionPlan = {
+  Free: 'free',
+  Premium: 'premium',
+} as const;
+
+export type SubscriptionPlan =
+  (typeof SubscriptionPlan)[keyof typeof SubscriptionPlan];
+
+export const PLANS = {
+  [SubscriptionPlan.Free]: { key: SubscriptionPlan.Free, price: 0, credits: 0 },
+  [SubscriptionPlan.Premium]: {
+    key: SubscriptionPlan.Premium,
+    price: 20,
+    credits: 2000,
+    productId: process.env.POLAR_PRODUCT_PREMIUM ?? 'premium',
+  },
+} as const;
+```
+
+Use this for UI pricing cards and server-side entitlement mapping.
+
 ## Checkout Plugin
 
 ```ts
@@ -522,6 +549,9 @@ const subscription = await ctx.orm.query.subscriptions.findFirst({
 });
 const isPremium = !!subscription;
 ```
+
+Example-parity helper module:
+- `convex/lib/auth/premium-guard.ts` for a reusable `PAYMENT_REQUIRED` guard on premium-only procedures.
 
 ## API Reference
 
