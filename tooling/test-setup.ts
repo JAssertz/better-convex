@@ -21,7 +21,7 @@ expect.extend(matchers);
 // Import after DOM globals are registered so Testing Library binds `screen` correctly.
 // Load at setup-time, not inside a running test hook, to avoid Bun 1.3+ hook-context errors.
 const cleanupPromise = import('@testing-library/react').then(
-  ({ cleanup }) => cleanup,
+  ({ cleanup }) => cleanup
 );
 
 // Cleanup DOM between tests to avoid cross-test contamination.
