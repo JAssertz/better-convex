@@ -261,35 +261,35 @@ For filter operators, search, select composition, pagination: see `./filters.md`
 import { user } from "./schema";
 
 // Basic
-await ctx.orm.insert(user).values({ name: "Ada", email: "ada@example.com" });
+await ctx.orm.insert(user).values({ name: "Ada", email: "ada@domain.test" });
 
 // Multi-row
 await ctx.orm.insert(user).values([
-  { name: "A", email: "a@example.com" },
-  { name: "B", email: "b@example.com" },
+  { name: "A", email: "a@domain.test" },
+  { name: "B", email: "b@domain.test" },
 ]);
 
 // Returning
 const [row] = await ctx.orm
   .insert(user)
-  .values({ name: "Ada", email: "ada@example.com" })
+  .values({ name: "Ada", email: "ada@domain.test" })
   .returning(); // all fields
 
 const [partial] = await ctx.orm
   .insert(user)
-  .values({ name: "Ada", email: "ada@example.com" })
+  .values({ name: "Ada", email: "ada@domain.test" })
   .returning({ id: user.id, email: user.email });
 
 // Upsert: onConflictDoUpdate
 await ctx.orm
   .insert(user)
-  .values({ email: "ada@example.com", name: "Ada" })
+  .values({ email: "ada@domain.test", name: "Ada" })
   .onConflictDoUpdate({ target: user.email, set: { name: "Ada Lovelace" } });
 
 // Skip on conflict
 await ctx.orm
   .insert(user)
-  .values({ email: "ada@example.com", name: "Ada" })
+  .values({ email: "ada@domain.test", name: "Ada" })
   .onConflictDoNothing({ target: user.email });
 ```
 
@@ -533,7 +533,7 @@ import { aggregatePostLikes } from "./aggregates";
 
 Auth triggers (`triggers: { user, session }` in `createClient`) are separate from DB triggers. For DB-level side effects, use schema triggers with `withOrm` in auth setup.
 
-## Complete Schema Example
+## Complete Schema Template
 
 ```ts
 import {

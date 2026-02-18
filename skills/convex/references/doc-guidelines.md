@@ -35,7 +35,7 @@ Keep (must keep):
 1. better-convex-specific runtime behavior.
 2. Convex constraints, limits, and operational caveats.
 3. Integration gotchas and edge cases.
-4. Non-obvious examples that encode real behavioral differences.
+4. Non-obvious snippets that encode real behavioral differences.
 5. Any behavior that differs from parity baseline; label as `Delta from parity`.
 
 Drop or condense (must condense):
@@ -43,7 +43,7 @@ Drop or condense (must condense):
 1. Pure parity explanations identical to vanilla tRPC/Drizzle/Better Auth.
 2. Repeated introductory theory when no better-convex delta exists.
 
-Example policy:
+Snippet policy:
 
 1. If snippet demonstrates a delta, keep full snippet.
 2. If snippet is parity-only, keep minimal snippet plus pointer.
@@ -56,7 +56,7 @@ Use non-overlapping placement.
 | --- | --- | --- | --- |
 | `references/setup.md` | One-time bootstrap | install/bootstrap/env/config/initial wiring/framework setup | daily feature patterns and long advanced deep-dives |
 | `SKILL.md` | Always-loaded core | generic everyday E2E feature implementation path; usable alone for standard feature delivery | setup/install workflows and advanced niche overload |
-| `references/*.md` | Resources (on-demand) | advanced/special cases, plugin depth, long examples, niche troubleshooting, long-form API detail | setup bootstrap and generic core flow duplication |
+| `references/*.md` | Resources (on-demand) | advanced/special cases, plugin depth, long snippets, niche troubleshooting, long-form API detail | setup bootstrap and generic core flow duplication |
 
 Definition:
 
@@ -107,7 +107,7 @@ Run these checks before accepting a sync.
 rg -n "convex-setup\\.md|commands/convex-setup|\\bconvex-setup\\b" .claude -g '*.md' -g '*.mdc'
 ```
 
-2. No legacy Ents/`ctx.table` examples in active Convex skill docs:
+2. No legacy Ents/`ctx.table` snippets in active Convex skill docs:
 ```bash
 rg -n "ctx\\.table\\(|ctx\\.table\\b|convex-ents|defineEnt\\(" skills/convex/SKILL.md skills/convex/references -g '*.md'
 ```

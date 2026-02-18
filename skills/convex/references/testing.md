@@ -18,7 +18,7 @@ import { test, expect } from "vitest";
 import schema from "../schema";
 import { convexTest, runCtx } from "../setup.testing";
 
-test("example", async () => {
+test("feature", async () => {
   const t = convexTest(schema);
   await t.run(async (baseCtx) => {
     const ctx = await runCtx(baseCtx);
@@ -209,7 +209,7 @@ Drop:
 - internal ORM parity progress tracking
 - assertion counting workflows
 - package-internal generic/type torture suites
-- duplicate runtime examples with same intent
+- duplicate runtime snippets with same intent
 
 ## Practical Test Checklist
 

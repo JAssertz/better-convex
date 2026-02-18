@@ -30,7 +30,7 @@ const getAuthOptions = (ctx: GenericCtx) =>
 
 ```bash
 # convex/.env
-ADMIN=admin@example.com,other@example.com
+ADMIN=admin@domain.test,ops@domain.test
 ```
 
 ```ts
@@ -385,7 +385,7 @@ await authClient.admin.stopImpersonating();
 ```ts
 // Create user
 await authClient.admin.createUser({
-  email: 'user@example.com', password: 'password', name: 'John Doe', role: 'user',
+  email: 'user@domain.test', password: 'password', name: 'John Doe', role: 'user',
 });
 
 // List users (with filtering/sorting/pagination)

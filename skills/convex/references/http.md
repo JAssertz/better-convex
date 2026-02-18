@@ -420,7 +420,7 @@ export const discordWebhook = publicRoute
 | `headers` | `Record<string, string> \| (() => ...)` | Headers (incl. cookies) |
 | `[key]` | `unknown` | JSON body fields at root |
 
-### Query Examples
+### Query Patterns
 
 ```ts
 // GET with searchParams
@@ -466,7 +466,7 @@ const handleMouseEnter = () => {
 
 `staticQueryOptions` doesn't include reactive auth state. Auth handled at execution time.
 
-### Mutation Examples
+### Mutation Patterns
 
 ```ts
 const createTodo = useMutation(

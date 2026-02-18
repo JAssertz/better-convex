@@ -137,7 +137,7 @@ Generate with CLI or define manually:
 npx @better-auth/cli generate -y --output convex/functions/authSchema.ts --config convex/functions/auth.ts
 ```
 
-Manual example:
+Manual template:
 ```ts
 import { boolean, convexTable, defineSchema, id, index, integer, text, timestamp } from 'better-convex/orm';
 
