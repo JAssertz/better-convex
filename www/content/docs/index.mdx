@@ -88,7 +88,7 @@ If you're an AI agent integrating better-convex, **ask the user to select their 
 | Feature | Options | Default |
 |---------|---------|---------|
 | **Approach** | Top-down (copy from Templates), Bottom-up (follow docs step-by-step) | Top-down |
-| **React Framework** | Next.js App Router, Vite, Remix, Other | Next.js |
+| **React Framework** | Next.js App Router, TanStack Start, Other | Next.js App Router |
 | **Database** | ORM (`ctx.orm`) | ORM |
 
 ### Optional Features
@@ -100,17 +100,28 @@ If you're an AI agent integrating better-convex, **ask the user to select their 
 | **Triggers** | Yes, No | Auto side effects on data changes |
 | **Aggregates** | Yes, No | Counts, sums, leaderboards |
 | **Rate Limiting** | Yes, No | API protection |
+| **Scheduling** | Yes, No | Delayed/background work |
+| **HTTP router** | Yes, No | REST/webhook endpoints |
+| **RLS** | Yes, No | Runtime row-level access control |
+| **Auth plugins** | admin, organizations, polar, none | Only when required by product |
 
 ### After Selection
 
 **Top-down approach:**
 1. Copy relevant sections from [Templates](/docs/templates) based on choices
 2. Skip sections for features not selected
+3. Run bootstrap/codegen (`better-convex dev`) so generated API/meta exist before coding
+4. In non-interactive terminals, bootstrap explicitly with:
+   `bunx convex dev --once --configure new --team <team_slug> --project <project_slug> --dev-deployment local`
+5. If bootstrap fails with `Cannot prompt for input in non-interactive terminals`, re-run with explicit `--team` and `--project` values.
+6. If `better-convex codegen` fails with `Local backend isn't running`, start `bunx better-convex dev` in another terminal and retry.
+7. If browser smoke says use `http://localhost:3000` but port 3000 is occupied, run smoke on the actual dev server port instead and note it in the report.
 
 **Bottom-up approach:**
 1. Follow [Quickstart](/docs/quickstart) for initial setup
 2. Read individual docs for each feature needed
 3. Reference [Templates](/docs/templates) for production patterns
+4. Confirm deployment/bootstrap is configured before relying on generated imports
 
 ### Quick Reference by Stack
 

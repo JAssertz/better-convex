@@ -47,6 +47,12 @@
       {
         "sourceType": "claude",
         "sourceKind": "command",
+        "sourceRelPath": ".claude/commands/simulate.md",
+        "destRelPath": "simulate"
+      },
+      {
+        "sourceType": "claude",
+        "sourceKind": "command",
         "sourceRelPath": ".claude/commands/w.md",
         "destRelPath": "w"
       },

@@ -115,21 +115,21 @@ For Date-shaped `createdAt`, add `createdAt: timestamp().notNull().defaultNow()`
 
 | Ents | ORM |
 |---|---|
-| `ctx.orm('users').get(id)` | `ctx.orm.query.users.findFirst({ where: { id: id } })` |
-| `ctx.orm('users').getX(id)` | `ctx.orm.query.users.findFirstOrThrow({ where: { id: id } })` |
-| `ctx.orm('users').get('email', v)` | `ctx.orm.query.users.findFirst({ where: { email: v } })` |
-| `ctx.orm('users').getMany(ids)` | `ctx.orm.query.users.findMany({ where: { id: { in: ids } }, limit: ids.length })` |
-| `ctx.orm('users').order('desc').take(5)` | `ctx.orm.query.users.findMany({ orderBy: { createdAt: 'desc' }, limit: 5 })` |
-| `ctx.orm('users').paginate(opts)` | `ctx.orm.query.users.findMany({ cursor: opts.cursor, limit: opts.numItems })` |
-| `ctx.orm('users').map(...)` | Prefer `columns` / `extras` (example below). Fall back to `rows.map(...)` when you need custom reshaping. |
-| `ctx.orm('users').search(...)` | `ctx.orm.query.users.findMany({ search: { index, query, filters? } })` |
+| `ctx.table('users').get(id)` | `ctx.orm.query.users.findFirst({ where: { id: id } })` |
+| `ctx.table('users').getX(id)` | `ctx.orm.query.users.findFirstOrThrow({ where: { id: id } })` |
+| `ctx.table('users').get('email', v)` | `ctx.orm.query.users.findFirst({ where: { email: v } })` |
+| `ctx.table('users').getMany(ids)` | `ctx.orm.query.users.findMany({ where: { id: { in: ids } }, limit: ids.length })` |
+| `ctx.table('users').order('desc').take(5)` | `ctx.orm.query.users.findMany({ orderBy: { createdAt: 'desc' }, limit: 5 })` |
+| `ctx.table('users').paginate(opts)` | `ctx.orm.query.users.findMany({ cursor: opts.cursor, limit: opts.numItems })` |
+| `ctx.table('users').map(...)` | Prefer `columns` / `extras` (example below). Fall back to `rows.map(...)` when you need custom reshaping. |
+| `ctx.table('users').search(...)` | `ctx.orm.query.users.findMany({ search: { index, query, filters? } })` |
 
 ## Relations & Edge Traversal
 
 <Compare>
   <CompareItem title="Before (Ents edge traversal)">
     ```ts showLineNumbers
-    const user = await ctx.orm('users').getX(userId);
+    const user = await ctx.table('users').getX(userId);
     const posts = await user.edge('posts').take(5);
     ```
   </CompareItem>
@@ -150,7 +150,7 @@ For Date-shaped `createdAt`, add `createdAt: timestamp().notNull().defaultNow()`
   <CompareItem title="Before (Ents `map`)">
     ```ts showLineNumbers
     const recent = await ctx
-      .orm('users')
+      .table('users')
       .order('desc')
       .take(5)
       .map((u) => ({ id: u.id, name: u.name }));
@@ -196,11 +196,11 @@ One‑way relations are allowed. Define only the sides you plan to query or load
 
 | Ents | ORM |
 |---|---|
-| `ctx.orm('users').insert(data)` | `ctx.orm.insert(users).values(data)` |
-| `ctx.orm('users').insertMany([...])` | `ctx.orm.insert(users).values([...])` |
-| `ctx.orm('users').getX(id).patch(p)` | `ctx.orm.update(users).set(p).where(eq(users.id, id))` |
-| `ctx.orm('users').getX(id).replace(r)` | `ctx.orm.update(users).set(r).where(eq(users.id, id))` |
-| `ctx.orm('users').getX(id).delete()` | `ctx.orm.delete(users).where(eq(users.id, id))` |
+| `ctx.table('users').insert(data)` | `ctx.orm.insert(users).values(data)` |
+| `ctx.table('users').insertMany([...])` | `ctx.orm.insert(users).values([...])` |
+| `ctx.table('users').getX(id).patch(p)` | `ctx.orm.update(users).set(p).where(eq(users.id, id))` |
+| `ctx.table('users').getX(id).replace(r)` | `ctx.orm.update(users).set(r).where(eq(users.id, id))` |
+| `ctx.table('users').getX(id).delete()` | `ctx.orm.delete(users).where(eq(users.id, id))` |
 
 <Callout icon={<InfoIcon />}>
 `update().set(...)` is patch‑style. To mimic Ents `replace`, set all fields explicitly (including `null` for nullable columns).

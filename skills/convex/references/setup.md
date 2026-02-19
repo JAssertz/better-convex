@@ -28,25 +28,25 @@ Ask these questions before editing files.
 
 #### Required choices
 
-| Feature | Options | Default |
-| --- | --- | --- |
-| Approach | Top-down (copy from Templates), Bottom-up (follow docs step-by-step) | Top-down |
-| React Framework | Next.js App Router, TanStack Start, Other | Next.js App Router |
-| Database | ORM (`ctx.orm`) | ORM |
+| Feature         | Options                                                              | Default            |
+| --------------- | -------------------------------------------------------------------- | ------------------ |
+| Approach        | Top-down (copy from Templates), Bottom-up (follow docs step-by-step) | Top-down           |
+| React Framework | Next.js App Router, TanStack Start, Other                            | Next.js App Router |
+| Database        | ORM (`ctx.orm`)                                                      | ORM                |
 
 #### Optional features
 
-| Feature | Options | When to include |
-| --- | --- | --- |
-| Auth | Better Auth, Custom, None | Most apps need auth |
-| SSR/RSC | Yes, No | Next.js App Router apps |
-| Triggers | Yes, No | Auto side effects on data changes |
-| Aggregates | Yes, No | Counts, sums, leaderboards |
-| Rate Limiting | Yes, No | API protection |
-| Scheduling | Yes, No | Background jobs, delayed tasks |
-| HTTP router | Yes, No | REST/webhook style endpoints |
-| RLS | Yes, No | Runtime row-level access control |
-| Auth plugins | admin, organizations, polar, none | Only when product requires them |
+| Feature       | Options                           | When to include                   |
+| ------------- | --------------------------------- | --------------------------------- |
+| Auth          | Better Auth, Custom, None         | Most apps need auth               |
+| SSR/RSC       | Yes, No                           | Next.js App Router apps           |
+| Triggers      | Yes, No                           | Auto side effects on data changes |
+| Aggregates    | Yes, No                           | Counts, sums, leaderboards        |
+| Rate Limiting | Yes, No                           | API protection                    |
+| Scheduling    | Yes, No                           | Background jobs, delayed tasks    |
+| HTTP router   | Yes, No                           | REST/webhook style endpoints      |
+| RLS           | Yes, No                           | Runtime row-level access control  |
+| Auth plugins  | admin, organizations, polar, none | Only when product requires them   |
 
 ### 2.2 First Prompt Template
 
@@ -54,15 +54,16 @@ Use this exact structure:
 
 1. Approach: Top-down templates or bottom-up docs?
 2. Framework: Next.js App Router, TanStack Start, or other?
-3. Auth: Better Auth, custom auth, or no auth?
-4. Need SSR/RSC?
-5. Enable triggers?
-6. Enable aggregates?
-7. Enable rate limiting?
-8. Enable scheduling?
-9. Need HTTP router endpoints?
-10. Enable RLS?
-11. Any auth plugins (admin/organizations/polar)?
+3. Database: ORM (`ctx.orm`) or other?
+4. Auth: Better Auth, custom auth, or no auth?
+5. Need SSR/RSC?
+6. Enable triggers?
+7. Enable aggregates?
+8. Enable rate limiting?
+9. Enable scheduling?
+10. Need HTTP router endpoints?
+11. Enable RLS?
+12. Any auth plugins (admin/organizations/polar)?
 
 ### 2.3 Decision Mapping
 
@@ -90,7 +91,7 @@ bun add convex better-convex zod @tanstack/react-query
 mkdir -p convex/functions convex/lib convex/shared src/lib/convex
 ```
 
-If the goal is to recreate the full `example/convex` backend shape, also scaffold:
+If the goal is full template-level backend parity, also scaffold:
 
 ```bash
 mkdir -p convex/functions/items convex/lib/auth convex/lib/emails convex/routers
@@ -128,6 +129,7 @@ convex/shared/          # shared types/meta imported by client
   "compilerOptions": {
     "strict": true,
     "strictFunctionTypes": false,
+    "types": ["node"],
     "paths": {
       "@/*": ["./src/*"],
       "@convex/*": ["./convex/functions/_generated/*", "./convex/shared/*"]
@@ -136,13 +138,91 @@ convex/shared/          # shared types/meta imported by client
 }
 ```
 
+Type-clean baseline notes:
+
+1. Keep app/runtime node globals available (`types: ["node"]`) so `process.env` and server modules typecheck.
+2. Add test-only globals (for example `vitest/globals`) in a test-specific tsconfig instead of the main app tsconfig.
+3. If third-party declaration noise blocks setup, temporarily set `"skipLibCheck": true` and remove it once dependency versions are stabilized.
+
 ### 3.5 Enforce import boundaries (recommended)
 
-Use Biome/Ultracite rules so:
+**Edit:** `biome.jsonc`
 
-- `src/` can import from `@convex/*` only
-- `src/` cannot import `convex/functions` or `convex/lib` directly
-- `convex/` cannot import from `src/`
+```jsonc
+{
+  "extends": ["ultracite/core", "ultracite/react", "ultracite/next"],
+  "overrides": [
+    {
+      "includes": ["src/**/*.ts*"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "convex/values": {
+                    "importNames": ["ConvexError"],
+                    "message": "Use CRPCError from 'better-convex/crpc' instead.",
+                  },
+                  "convex/react": "Use useCRPC from '@/lib/convex/crpc' instead.",
+                  "convex/nextjs": "Use caller from '@/lib/convex/rsc' instead.",
+                },
+                "patterns": [
+                  {
+                    "group": ["**/../convex/**"],
+                    "message": "Use @convex/* alias instead of relative convex imports.",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      "includes": ["convex/**/*.ts*"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@/*", "**/src/**"],
+                    "message": "Convex files cannot import from src/.",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      "includes": ["convex/shared/**/*.ts*"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**/convex/lib/**"],
+                    "message": "convex/shared cannot import from convex/lib.",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    },
+  ],
+}
+```
 
 ## 4. Environment Variables
 
@@ -219,7 +299,6 @@ import {
   convexTable,
   defineRelations,
   defineSchema,
-  id,
   index,
   text,
   timestamp,
@@ -230,38 +309,114 @@ export const user = convexTable(
   {
     name: text().notNull(),
     email: text().notNull(),
-    emailVerified: boolean().notNull().default(false),
+    emailVerified: boolean().notNull(),
     image: text(),
     createdAt: timestamp().notNull().defaultNow(),
     updatedAt: timestamp().notNull(),
+    role: text(),
+    banned: boolean(),
+    banReason: text(),
+    banExpires: timestamp(),
   },
   (t) => [index("email").on(t.email)]
 );
+
+export const session = convexTable(
+  "session",
+  {
+    token: text().notNull(),
+    userId: text()
+      .references(() => user.id, { onDelete: "cascade" })
+      .notNull(),
+    expiresAt: timestamp().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
+    updatedAt: timestamp().notNull(),
+    ipAddress: text(),
+    userAgent: text(),
+    impersonatedBy: text(),
+  },
+  (t) => [index("token").on(t.token), index("userId").on(t.userId)]
+);
+
+export const account = convexTable(
+  "account",
+  {
+    accountId: text().notNull(),
+    providerId: text().notNull(),
+    userId: text()
+      .references(() => user.id, { onDelete: "cascade" })
+      .notNull(),
+    accessToken: text(),
+    refreshToken: text(),
+    idToken: text(),
+    accessTokenExpiresAt: timestamp(),
+    refreshTokenExpiresAt: timestamp(),
+    scope: text(),
+    password: text(),
+    createdAt: timestamp().notNull().defaultNow(),
+    updatedAt: timestamp().notNull(),
+  },
+  (t) => [index("accountId").on(t.accountId), index("userId").on(t.userId)]
+);
+
+export const verification = convexTable(
+  "verification",
+  {
+    identifier: text().notNull(),
+    value: text().notNull(),
+    expiresAt: timestamp().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
+    updatedAt: timestamp().notNull(),
+  },
+  (t) => [index("identifier").on(t.identifier)]
+);
+
+export const jwks = convexTable("jwks", {
+  publicKey: text().notNull(),
+  privateKey: text().notNull(),
+  createdAt: timestamp().notNull().defaultNow(),
+});
 
 export const project = convexTable(
   "project",
   {
     name: text().notNull(),
-    ownerId: id("user").notNull(),
+    ownerId: text()
+      .references(() => user.id, { onDelete: "cascade" })
+      .notNull(),
     createdAt: timestamp().notNull().defaultNow(),
     updatedAt: timestamp().notNull(),
   },
-  (t) => [index("ownerId_createdAt").on(t.ownerId, t.createdAt)]
+  (t) => [index("ownerId_updatedAt").on(t.ownerId, t.updatedAt)]
 );
 
-export const tables = { user, project };
+export const tables = { user, session, account, verification, jwks, project };
 
 export default defineSchema(tables, { strict: false });
 
 export const relations = defineRelations(tables, (r) => ({
   user: {
     projects: r.many.project(),
+    sessions: r.many.session(),
+    accounts: r.many.account(),
   },
   project: {
     owner: r.one.user({ from: r.project.ownerId, to: r.user.id }),
   },
+  session: {
+    user: r.one.user({ from: r.session.userId, to: r.user.id }),
+  },
+  account: {
+    user: r.one.user({ from: r.account.userId, to: r.user.id }),
+  },
 }));
 ```
+
+### 5.1.1 Reserved index fields (important)
+
+Do not index `createdAt` directly in Better Convex ORM examples.
+`createdAt` maps to Convex internal `_creationTime`, and explicit indexes on it can fail.
+Prefer `updatedAt` (or a dedicated sortable field) for custom index definitions.
 
 ### 5.2 Attach ORM once (`ctx.orm`)
 
@@ -279,9 +434,14 @@ export type OrmCtx<Ctx extends QueryCtx | MutationCtx = QueryCtx> =
   GenericOrmCtx<Ctx, typeof relations>;
 
 export function withOrm<Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) {
-  return { ...ctx, orm: orm.db(ctx) } as OrmCtx<Ctx>;
+  return orm.with(ctx) as OrmCtx<Ctx>;
 }
 ```
+
+Why this shape:
+
+1. `orm.with(ctx)` preserves query vs mutation capabilities in type space.
+2. It avoids common setup-time type failures like missing `insert`/`update` on `ctx.orm` in mutation handlers.
 
 ### 5.3 Initialize cRPC and procedure builders
 
@@ -310,28 +470,11 @@ const c = initCRPC
   .meta<Meta>()
   .create();
 
-const authMiddleware = c.middleware(async ({ ctx, next }) => {
-  const auth = getAuth(ctx);
-  const session = await auth.api.getSession({ headers: await getHeaders(ctx) });
-
-  if (!session?.user) {
-    throw new CRPCError({ code: "UNAUTHORIZED" });
-  }
-
-  return next({
-    ctx: {
-      ...ctx,
-      user: session.user,
-      userId: session.user.id,
-    },
-  });
-});
-
 const roleMiddleware = c.middleware(({ meta, ctx, next }) => {
   if (meta.role !== "admin") return next({ ctx });
 
-  const user = (ctx as { user?: { role?: string | null } }).user;
-  if (user?.role !== "admin") {
+  const user = (ctx as { user?: { isAdmin?: boolean } }).user;
+  if (!user?.isAdmin) {
     throw new CRPCError({
       code: "FORBIDDEN",
       message: "Admin access required",
@@ -341,19 +484,124 @@ const roleMiddleware = c.middleware(({ meta, ctx, next }) => {
   return next({ ctx });
 });
 
-export const publicQuery = c.query;
-export const publicMutation = c.mutation;
+function requireAuth<T>(user: T | null): T {
+  if (!user) {
+    throw new CRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+  }
+  return user;
+}
+
+export const publicQuery = c.query.meta({ auth: "optional" });
 export const publicAction = c.action;
+export const publicMutation = c.mutation;
 
 export const privateQuery = c.query.internal();
 export const privateMutation = c.mutation.internal();
 export const privateAction = c.action.internal();
 
-export const authQuery = c.query.use(authMiddleware).use(roleMiddleware);
-export const authMutation = c.mutation.use(authMiddleware).use(roleMiddleware);
-export const authAction = c.action.use(authMiddleware);
+export const optionalAuthQuery = c.query
+  .meta({ auth: "optional" })
+  .use(async ({ ctx, next }) => {
+    const auth = getAuth(ctx);
+    const session = await auth.api.getSession({
+      headers: await getHeaders(ctx),
+    });
+
+    return next({
+      ctx: {
+        ...ctx,
+        user: session?.user ?? null,
+        userId: session?.user?.id ?? null,
+      },
+    });
+  });
+
+export const authQuery = c.query
+  .meta({ auth: "required" })
+  .use(async ({ ctx, next }) => {
+    const auth = getAuth(ctx);
+    const session = await auth.api.getSession({
+      headers: await getHeaders(ctx),
+    });
+    const user = requireAuth(session?.user ?? null);
+    return next({ ctx: { ...ctx, user, userId: user.id } });
+  })
+  .use(roleMiddleware);
+
+export const optionalAuthMutation = c.mutation
+  .meta({ auth: "optional" })
+  .use(async ({ ctx, next }) => {
+    const auth = getAuth(ctx);
+    const session = await auth.api.getSession({
+      headers: await getHeaders(ctx),
+    });
+
+    return next({
+      ctx: {
+        ...ctx,
+        user: session?.user ?? null,
+        userId: session?.user?.id ?? null,
+      },
+    });
+  });
+
+export const authMutation = c.mutation
+  .meta({ auth: "required" })
+  .use(async ({ ctx, next }) => {
+    const auth = getAuth(ctx);
+    const session = await auth.api.getSession({
+      headers: await getHeaders(ctx),
+    });
+    const user = requireAuth(session?.user ?? null);
+    return next({ ctx: { ...ctx, user, userId: user.id } });
+  })
+  .use(roleMiddleware);
+
+export const authAction = c.action
+  .meta({ auth: "required" })
+  .use(async ({ ctx, next }) => {
+    const auth = getAuth(ctx);
+    const session = await auth.api.getSession({
+      headers: await getHeaders(ctx),
+    });
+    const user = requireAuth(session?.user ?? null);
+    return next({ ctx: { ...ctx, user, userId: user.id } });
+  });
 
 export const publicRoute = c.httpAction;
+export const authRoute = c.httpAction.use(async ({ ctx, next }) => {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new CRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+  }
+  return next({
+    ctx: {
+      ...ctx,
+      userId: identity.subject,
+      user: {
+        id: identity.subject,
+        email: identity.email,
+        name: identity.name,
+      },
+    },
+  });
+});
+export const optionalAuthRoute = c.httpAction.use(async ({ ctx, next }) => {
+  const identity = await ctx.auth.getUserIdentity();
+  return next({
+    ctx: {
+      ...ctx,
+      userId: identity ? identity.subject : null,
+      user: identity
+        ? {
+            id: identity.subject,
+            email: identity.email,
+            name: identity.name,
+          }
+        : null,
+    },
+  });
+});
 export const router = c.router;
 ```
 
@@ -384,20 +632,51 @@ export type ApiOutputs = inferApiOutputs<Api>;
 
 ### 5.5 Start dev/codegen
 
+Run:
+
 ```bash
 bunx better-convex dev
 ```
+
+If this requires interactive Convex setup, pause and complete bootstrap before continuing.
+Do not fake generated files.
+
+Automation/non-interactive fallback (current CLI behavior):
+
+1. `better-convex dev` delegates to `convex dev` and may prompt for interactive setup when bootstrap is missing.
+2. For non-interactive agent terminals, bootstrap explicitly with:
+   `bunx convex dev --once --configure new --team <team_slug> --project <project_slug> --dev-deployment local`
+3. Confirm `CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL`, and `NEXT_PUBLIC_CONVEX_SITE_URL` were written.
+4. Then run `bunx better-convex dev` (this already runs codegen/metadata generation).
+5. If team/project values are unavailable, ask the user once and continue.
+6. If bootstrap is still blocked, use low-friction fallback tests from `references/testing.md` (extract helper logic + unit tests) until deployment setup is complete.
 
 This generates:
 
 - `convex/functions/_generated/*`
 - `convex/shared/meta.ts`
 
-One-time codegen:
+One-time codegen (optional; use only when `better-convex dev` is not running):
 
 ```bash
 bunx better-convex codegen
 ```
+
+Codegen runtime rule:
+
+1. `better-convex codegen` still requires an active Convex backend connection.
+2. If you see `Local backend isn't running`, start `bunx better-convex dev` in another terminal and retry.
+3. If this remains blocked in agent mode, pause and ask the user to run `bunx better-convex dev`, then continue after it is live.
+
+### 5.6 Import rules (hard requirement)
+
+Never use lazy imports (`await import(...)`) in Convex code.
+
+Rules:
+
+1. Convex files (`convex/functions/**`, `convex/lib/**`, `convex/routers/**`) must use static imports only.
+2. If generated modules are missing (`_generated/*`, `@convex/api`, `@convex/meta`), stop and run `bunx better-convex dev` (or `bunx better-convex codegen`) first.
+3. Do not work around missing generated files with dynamic imports.
 
 ## 6. Auth Core (Better Auth)
 
@@ -418,29 +697,48 @@ import { getAuthConfigProvider } from "better-convex/auth-config";
 import type { AuthConfig } from "convex/server";
 
 export default {
-  providers: [getAuthConfigProvider({ jwks: process.env.JWKS })],
+  providers: [
+    process.env.JWKS
+      ? getAuthConfigProvider({ jwks: process.env.JWKS })
+      : getAuthConfigProvider(),
+  ],
 } satisfies AuthConfig;
 ```
 
-### 6.3 Define auth tables in schema
+Use static `JWKS` via Better Convex env sync:
 
-Add these tables if not already present:
+```bash
+bunx better-convex env sync --auth
+```
 
-- `user`
-- `session`
-- `account`
-- `verification`
-- `jwks`
+What this does:
 
-Keep all auth reads/writes on ORM table definitions in `convex/functions/schema.ts`.
+1. Syncs keys from `convex/.env` into the active Convex deployment.
+2. With `--auth`, auto-generates and sets `BETTER_AUTH_SECRET` and `JWKS` if missing.
+3. Treat generated auth secrets as owned by this flow; do not manually set `BETTER_AUTH_SECRET` in setup/simulation unless explicitly requested by the user.
 
-### 6.4 Create auth client and options
+Hard prerequisite:
+
+1. `bunx better-convex dev` (or `bunx convex dev`) must be running first.
+2. If no active deployment is reachable, env sync can fall back to anonymous mode and fail to set auth vars.
+
+Quick check:
+
+```bash
+bunx convex env list
+```
+
+If the command reports local backend is not running, start `bunx better-convex dev` and retry.
+
+This initializes `JWKS` (and `BETTER_AUTH_SECRET`) if missing when deployment access is healthy.
+Malformed `JWKS` values can fail Convex module analysis during push/codegen.
+
+### 6.3 Create auth client and options
 
 **Create:** `convex/functions/auth.ts`
 
 ```ts
 import { type BetterAuthOptions, betterAuth } from "better-auth";
-import { admin } from "better-auth/plugins";
 import {
   type AuthFunctions,
   convex,
@@ -473,10 +771,12 @@ export const authClient = createClient<
 
 export const getAuthOptions = (ctx: GenericCtx) =>
   ({
-    baseURL: process.env.SITE_URL!,
+    baseURL:
+      process.env.SITE_URL ??
+      process.env.NEXT_PUBLIC_SITE_URL ??
+      "http://localhost:3000",
     database: authClient.adapter(ctx, getAuthOptions),
     plugins: [
-      admin(),
       convex({
         authConfig,
         jwks: process.env.JWKS,
@@ -486,7 +786,11 @@ export const getAuthOptions = (ctx: GenericCtx) =>
       expiresIn: 60 * 60 * 24 * 30,
       updateAge: 60 * 60 * 24 * 15,
     },
-    trustedOrigins: [process.env.SITE_URL ?? "http://localhost:3000"],
+    trustedOrigins: [
+      process.env.SITE_URL ??
+        process.env.NEXT_PUBLIC_SITE_URL ??
+        "http://localhost:3000",
+    ],
   }) satisfies BetterAuthOptions;
 
 export const getAuth = (ctx: GenericCtx) => betterAuth(getAuthOptions(ctx));
@@ -520,6 +824,85 @@ export const auth = betterAuth(getAuthOptions({} as any));
 ```
 
 Canonical rule: always use `getAuth(ctx)` + `authClient.adapter(ctx, getAuthOptions)`.
+
+Typing note:
+
+1. Define `GenericCtx` locally from generated Convex context types (`QueryCtx | MutationCtx | ActionCtx`).
+2. Do not import a `GenericCtx` type from `better-convex/auth` for this file.
+
+### 6.3.1 User session query module
+
+**Create:** `convex/functions/user.ts`
+
+```ts
+import { z } from "zod";
+
+import { optionalAuthQuery, publicQuery } from "../lib/crpc";
+
+export const getSessionUser = optionalAuthQuery
+  .output(
+    z.union([
+      z.object({
+        id: z.string(),
+        image: z.string().nullish(),
+        isAdmin: z.boolean(),
+        name: z.string().optional(),
+        plan: z.string().optional(),
+      }),
+      z.null(),
+    ])
+  )
+  .query(async ({ ctx }) => {
+    const { user } = ctx;
+    if (!user) {
+      return null;
+    }
+
+    return {
+      id: user.id,
+      image: user.image,
+      isAdmin: user.isAdmin ?? false,
+      name: user.name,
+      plan: user.plan,
+    };
+  });
+
+export const getIsAuthenticated = publicQuery
+  .output(z.boolean())
+  .query(async ({ ctx }) => !!(await ctx.auth.getUserIdentity()));
+```
+
+### 6.3.2 Shared auth type contract
+
+**Create:** `convex/shared/auth-shared.ts`
+
+```ts
+import type { Doc } from "../functions/_generated/dataModel";
+import type { getAuth } from "../functions/auth";
+import type { Select } from "./types";
+
+export type Auth = ReturnType<typeof getAuth>;
+
+export type SessionUser = Select<"user"> & {
+  isAdmin: boolean;
+  session: Doc<"session">;
+  impersonatedBy?: string | null;
+  plan?: "premium" | "team";
+};
+```
+
+### 6.4 Define auth tables in schema
+
+If you used section 5.1's schema template, these already exist.
+Otherwise add these tables:
+
+- `user`
+- `session`
+- `account`
+- `verification`
+- `jwks`
+
+Keep all auth reads/writes on ORM table definitions in `convex/functions/schema.ts`.
 
 ### 6.5 Required polyfill for auth HTTP runtime
 
@@ -559,6 +942,12 @@ if (typeof MessageChannel === "undefined") {
 ### 6.6 Register auth HTTP routes
 
 **Create:** `convex/functions/http.ts`
+
+Bootstrap note:
+
+1. `http.ts` is parsed during startup/codegen.
+2. Keep imports static (no lazy imports in Convex code).
+3. If `_generated/*` modules are missing, run `bunx better-convex dev` first, then continue.
 
 cRPC + Hono route shape:
 
@@ -610,6 +999,8 @@ Sync:
 bunx better-convex env sync --auth
 ```
 
+Requires active deployment connectivity from `bunx better-convex dev` (or `bunx convex dev`) before running.
+
 Rotate later:
 
 ```bash
@@ -641,10 +1032,13 @@ import { createAuthMutations } from "better-convex/react";
 export const authClient = createAuthClient({
   baseURL: process.env.NEXT_PUBLIC_SITE_URL!,
   sessionOptions: {
+    // Disable session polling on tab focus (saves ~500ms HTTP call per focus)
     refetchOnWindowFocus: false,
   },
   plugins: [inferAdditionalFields<Auth>(), adminClient(), convexClient()],
 });
+
+export const { useActiveOrganization, useListOrganizations } = authClient;
 
 export const {
   useSignOutMutationOptions,
@@ -706,6 +1100,11 @@ export function createQueryClient() {
 
 **Create:** `src/lib/convex/crpc.tsx`
 
+Preconditions:
+
+1. Complete Section 5.5 first so `@convex/api` and `@convex/meta` exist.
+2. Complete Section 7.4 so `CRPCProvider` is mounted before any `useCRPC()` call.
+
 ```tsx
 import { api } from "@convex/api";
 import { meta } from "@convex/meta";
@@ -722,6 +1121,11 @@ export const { CRPCProvider, useCRPC, useCRPCClient } = createCRPCContext<Api>({
 ### 7.4 Provider composition
 
 **Create:** `src/lib/convex/convex-provider.tsx`
+
+Hard rule:
+
+1. Any component using `useCRPC`, `useCRPCClient`, or cRPC hooks must render under `CRPCProvider`.
+2. If not, runtime will crash with `useCRPC must be used within CRPCProvider`.
 
 ```tsx
 "use client";
@@ -779,6 +1183,12 @@ function QueryProvider({ children }: { children: ReactNode }) {
   );
 }
 ```
+
+Provider mount checklist:
+
+1. `BetterConvexProvider` wraps app routes before client feature components render.
+2. `CRPCProvider` is nested inside TanStack Query provider (`QueryClientProvider`).
+3. Next.js apps pass token where required (Section 8.A.4) or intentionally run without token for public-only paths.
 
 ## 8. Framework-Specific Setup
 
@@ -1028,6 +1438,12 @@ export const post = convexTable("post", { title: text().notNull() }, () => [
 ]);
 ```
 
+Trigger guardrails:
+
+1. Keep trigger work bounded and idempotent.
+2. Avoid trigger chains that re-query/rewrite the same hot table rows during seed/init flows.
+3. If `internal.seed.seed` or `internal.init.default` hangs, move counter/invariant sync into explicit mutation helpers and seed reconciliation.
+
 ### 9.3 Aggregates gate
 
 Install and register component:
@@ -1048,6 +1464,13 @@ export default app;
 
 Attach `TableAggregate.trigger()` in schema trigger list.
 
+If Aggregates are **disabled** (`Aggregates: No`), remove all aggregate wiring in one pass:
+
+1. Remove `app.use(aggregate, ...)` calls from `convex/functions/convex.config.ts`.
+2. Remove aggregate helper modules (for example `convex/functions/aggregates.ts`).
+3. Remove schema `aggregate*.trigger()` imports/hooks.
+4. Re-run `bunx better-convex codegen` immediately to catch stale references.
+
 ### 9.4 Rate limiting gate
 
 Install and register component:
@@ -1067,6 +1490,69 @@ export default app;
 ```
 
 Create `convex/lib/rate-limiter.ts` and call guard from mutation middleware using `.meta({ rateLimit: 'scope/action' })`.
+
+Use static `_generated/api` imports in Convex rate-limiter code:
+
+```ts
+import { MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
+import { CRPCError } from "better-convex/server";
+import { components } from "../functions/_generated/api";
+
+import type { ActionCtx, MutationCtx } from "../functions/_generated/server";
+import type { SessionUser } from "../shared/auth-shared";
+
+const rateLimitConfig = {
+  "default:free": { kind: "fixed window", period: MINUTE, rate: 60 },
+  "default:premium": { kind: "fixed window", period: MINUTE, rate: 200 },
+  "default:public": { kind: "fixed window", period: MINUTE, rate: 30 },
+  "todo/create:free": { kind: "fixed window", period: MINUTE, rate: 20 },
+  "todo/create:premium": { kind: "fixed window", period: MINUTE, rate: 60 },
+} as const;
+
+const rateLimiter = new RateLimiter(components.rateLimiter, rateLimitConfig);
+
+export function getRateLimitKey(
+  baseKey: string,
+  tier: "free" | "premium" | "public"
+): string {
+  const specificKey = `${baseKey}:${tier}`;
+
+  if (specificKey in rateLimitConfig) {
+    return specificKey;
+  }
+
+  return `default:${tier}`;
+}
+
+export function getUserTier(
+  user: { isAdmin?: boolean; plan?: SessionUser["plan"] } | null
+): "free" | "premium" | "public" {
+  if (!user) return "public";
+  if (user.isAdmin) return "premium";
+  if (user.plan) return "premium";
+  return "free";
+}
+
+export async function rateLimitGuard(
+  ctx: (ActionCtx | MutationCtx) & {
+    rateLimitKey: string;
+    user: Pick<SessionUser, "id" | "plan"> | null;
+  }
+) {
+  const tier = getUserTier(ctx.user);
+  const limitKey = getRateLimitKey(ctx.rateLimitKey, tier);
+  const identifier = ctx.user?.id ?? "anonymous";
+
+  const status = await rateLimiter.limit(ctx, limitKey, { key: identifier });
+
+  if (!status.ok) {
+    throw new CRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: "Rate limit exceeded. Please try again later.",
+    });
+  }
+}
+```
 
 ### 9.5 Scheduling gate
 
@@ -1105,6 +1591,7 @@ const resendClient = new Resend(components.resend, { testMode: true });
 ```
 
 Recommended files for this gate:
+
 - `convex/functions/email.tsx`
 - `convex/lib/emails/organization-invite.tsx`
 
@@ -1144,44 +1631,155 @@ Client: add `organizationClient({...})` plugin config.
 
 Schema: add `organization`, `member`, `invitation` (+ optional `team`, `teamMember`), and session fields `activeOrganizationId`/`activeTeamId`.
 
-### 10.3 Polar plugin (billing)
-
-For full billing parity, load and apply `references/auth-polar.md`.
-
-Required file set for this plugin path:
-- `convex/lib/polar-polyfills.ts`
-- `convex/lib/polar-client.ts`
-- `convex/lib/polar-helpers.ts`
-- `convex/functions/polarCustomer.ts`
-- `convex/functions/polarSubscription.ts`
-- `convex/shared/polar-shared.ts`
-
-Also include Polar env keys in your typed env helper and/or Convex env:
-- `POLAR_ACCESS_TOKEN`
-- `POLAR_SERVER`
-- `POLAR_PRODUCT_PREMIUM`
-- `POLAR_WEBHOOK_SECRET`
-
 ## 11. Dev Scripts and CLI Workflow
 
 ### 11.1 Dev bootstrap functions (example parity mode)
 
-If you want the same operational model as `example/convex`, create:
+If you want the same operational model as the canonical template shape, use these canonical templates.
 
-- `convex/functions/init.ts`:
-  - `privateMutation`
-  - `meta({ dev: true })`
-  - bootstraps admin users from env
-  - optionally schedules/executes seed on first init
-- `convex/functions/seed.ts`:
-  - `privateMutation` orchestration for sample data creation
-- `convex/functions/reset.ts`:
-  - `privateAction` reset entrypoint
-  - paged deletion via scheduled internal mutation(s)
-  - hard dev-only guard
+**Create:** `convex/functions/init.ts`
 
-If using this mode, also enforce a central dev guard in cRPC middleware:
-- reject `meta.dev` procedures in production.
+```ts
+import { z } from "zod";
+
+import { createUser } from "../lib/auth/auth-helpers";
+import { privateMutation } from "../lib/crpc";
+import { getEnv } from "../lib/get-env";
+import { internal } from "./_generated/api";
+
+export default privateMutation
+  .meta({ dev: true })
+  .output(z.null())
+  .mutation(async ({ ctx }) => {
+    const env = getEnv();
+    const adminEmails = env.ADMIN;
+
+    if (!adminEmails || adminEmails.length === 0) {
+      return null;
+    }
+
+    let isFirstInit = true;
+
+    for (const adminEmail of adminEmails) {
+      const existingUser = await ctx.orm.query.user.findFirst({
+        where: { email: adminEmail },
+      });
+
+      if (existingUser) {
+        isFirstInit = false;
+        continue;
+      }
+
+      await createUser(ctx, {
+        email: adminEmail,
+        name: "Admin",
+        role: "admin",
+      });
+    }
+
+    if (isFirstInit && getEnv().DEPLOY_ENV === "development") {
+      await ctx.runMutation(internal.seed.seed, {});
+    }
+
+    return null;
+  });
+```
+
+**Create:** `convex/functions/reset.ts`
+
+```ts
+/** biome-ignore-all lint/suspicious/noExplicitAny: dev */
+import { eq } from "better-convex/orm";
+import { CRPCError } from "better-convex/server";
+import { z } from "zod";
+
+import { privateAction, privateMutation } from "../lib/crpc";
+import { getEnv } from "../lib/get-env";
+import { internal } from "./_generated/api";
+import type { TableNames } from "./_generated/dataModel";
+import schema, { tables } from "./schema";
+
+const DELETE_BATCH_SIZE = 64;
+const excludedTables = new Set<TableNames>();
+
+const assertDevOnly = () => {
+  if (getEnv().DEPLOY_ENV === "production") {
+    throw new CRPCError({
+      code: "FORBIDDEN",
+      message: "This function is only available in development",
+    });
+  }
+};
+
+export const reset = privateAction.output(z.null()).action(async ({ ctx }) => {
+  assertDevOnly();
+
+  for (const tableName of Object.keys(schema.tables)) {
+    if (excludedTables.has(tableName as TableNames)) {
+      continue;
+    }
+
+    await ctx.scheduler.runAfter(0, internal.reset.deletePage, {
+      cursor: null,
+      tableName,
+    });
+  }
+
+  return null;
+});
+
+export const deletePage = privateMutation
+  .input(
+    z.object({
+      cursor: z.union([z.string(), z.null()]),
+      tableName: z.string(),
+    })
+  )
+  .output(z.null())
+  .mutation(async ({ ctx, input }) => {
+    assertDevOnly();
+
+    const table = (tables as Record<string, any>)[input.tableName];
+    if (!table) {
+      throw new CRPCError({
+        code: "BAD_REQUEST",
+        message: `Unknown table: ${input.tableName}`,
+      });
+    }
+
+    const query = (ctx.orm.query as Record<string, any>)[input.tableName];
+    if (!query || typeof query.findMany !== "function") {
+      throw new CRPCError({
+        code: "BAD_REQUEST",
+        message: `Unknown query table: ${input.tableName}`,
+      });
+    }
+
+    const results = await query.findMany({
+      cursor: input.cursor,
+      limit: DELETE_BATCH_SIZE,
+    });
+
+    for (const row of results.page) {
+      try {
+        await ctx.orm.delete(table).where(eq(table.id, (row as any).id));
+      } catch {
+        // Can already be deleted by trigger or concurrent process.
+      }
+    }
+
+    if (!results.isDone) {
+      await ctx.scheduler.runAfter(0, internal.reset.deletePage, {
+        cursor: results.continueCursor,
+        tableName: input.tableName,
+      });
+    }
+
+    return null;
+  });
+```
+
+`convex/functions/seed.ts` stays project-specific, but should expose a `privateMutation` entrypoint used by `init.ts`.
 
 Recommended scripts:
 
@@ -1191,7 +1789,7 @@ Recommended scripts:
     "convex:dev": "convex dev --until-success --run init && better-convex dev",
     "reset": "convex run reset:reset && sleep 5 && convex run init",
     "seed": "convex run seed:seed",
-    "sync:jwks": "convex run auth:getLatestJwks | convex env set JWKS",
+    "sync:jwks": "better-convex env sync --auth",
     "sync:rotate": "convex run auth:rotateKeys | convex env set JWKS"
   }
 }
@@ -1201,11 +1799,27 @@ CLI commands:
 
 ```bash
 bunx better-convex dev
+# optional one-off, only if dev is not running:
 bunx better-convex codegen
 bunx better-convex env sync
 bunx better-convex env sync --auth
 bunx better-convex env sync --auth --prod
 ```
+
+### 11.2 Bootstrap smoke checks (required before feature work)
+
+Run these after setup and after major schema/component changes:
+
+```bash
+bunx better-convex codegen
+bunx convex run internal.seed.seed
+bunx convex run internal.init.default
+```
+
+Then sanity-check runtime paths:
+
+1. Run one public query endpoint.
+2. Run one auth-protected endpoint and confirm unauthorized behavior without session.
 
 ## 12. Final From-Scratch Execution Checklist
 
@@ -1223,24 +1837,37 @@ bunx better-convex env sync --auth --prod
 12. If multiple components enabled: `convex/functions/convex.config.ts` composes all `app.use(...)` calls in one file.
 13. If organizations + invite mail enabled: `email.tsx` + invite template + resend component are wired.
 14. If dev bootstrap mode enabled: `init.ts`, `seed.ts`, `reset.ts` exist and scripts call them.
-15. No legacy Ents patterns in setup code.
+15. If `Aggregates: No`, no aggregate helper/import/config references remain.
+16. Bootstrap smoke checks pass (`codegen`, `internal.seed.seed`, `internal.init.default`).
+17. No legacy Ents patterns in setup code.
 
 ## 13. Troubleshooting Matrix
 
-| Symptom | Likely Cause | Fix |
-| --- | --- | --- |
-| `@convex/meta` not found | `better-convex dev` not run | Run `bunx better-convex dev` and regenerate metadata |
-| HTTP calls fail but queries work | `.site` URL missing or wrong | Set `NEXT_PUBLIC_CONVEX_SITE_URL` correctly |
-| Auth works locally but fails in prod | JWKS not synced | Run `convex run auth:getLatestJwks --prod` then `convex env set JWKS --prod` |
-| `UNAUTHORIZED` on protected procedures | auth middleware not attaching `userId` | Ensure `getAuth(ctx)` + `getHeaders(ctx)` session lookup is in middleware |
-| `ctx.orm` missing in handlers | ORM context not wired in cRPC `.context()` | Ensure `query` + `mutation` both use `withOrm(ctx)` |
-| Route auth cookies not set | Missing CORS auth headers | Add `Better-Auth-Cookie` allow/expose headers + credentials |
-| TanStack Start auth helper import errors | Using `better-convex/auth-nextjs` in Start app | Use TanStack Start exception with `@convex-dev/better-auth/*` helpers |
-| Trigger side effects too slow | Heavy sync work inside trigger | Move heavy work to scheduled actions via `ctx.scheduler` |
-| Rate limiter no-op | component not registered in `convex.config.ts` | Add `@convex-dev/rate-limiter` app component |
-| Aggregate counts drift | trigger not attached in schema | Attach `aggregate.trigger()` in table extra config |
-| Invite emails never send | `@convex-dev/resend` component not registered | Add `app.use(resend)` and wire `functions/email.tsx` |
-| Dev reset/seed commands do nothing | `init.ts`/`seed.ts`/`reset.ts` missing or not wired | Add dev bootstrap functions and scripts from Section 11.1 |
+| Symptom                                                                               | Likely Cause                                                                                    | Fix                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@convex/meta` not found                                                              | `better-convex dev` not run                                                                     | Run `bunx better-convex dev` and regenerate metadata                                                                                                                 |
+| `Cannot prompt for input in non-interactive terminals` during bootstrap               | Convex setup needs explicit project/team flags                                                  | Run `bunx convex dev --once --configure new --team <team_slug> --project <project_slug> --dev-deployment local`, then start `bunx better-convex dev`                 |
+| `better-convex env sync --auth` says anonymous deployment or fails to set vars        | No active deployment connection                                                                 | Start `bunx better-convex dev` (or `bunx convex dev`) first, then rerun sync                                                                                         |
+| `Failed to analyze auth.js` with `Unexpected token` / `map is not a function` on JWKS | Static `JWKS` value is malformed JSON                                                           | Unset/fix `JWKS`; use `getAuthConfigProvider()` fallback or resync with `bunx better-convex env sync --auth`                                                         |
+| `Local backend isn't running` during `better-convex codegen`                          | Convex local deployment not active                                                              | Prefer `bunx better-convex dev` (it already codegens); for one-off codegen run `bunx convex dev` in another terminal first                                           |
+| HTTP calls fail but queries work                                                      | `.site` URL missing or wrong                                                                    | Set `NEXT_PUBLIC_CONVEX_SITE_URL` correctly                                                                                                                          |
+| Auth works locally but fails in prod                                                  | JWKS not synced                                                                                 | Run `bunx better-convex env sync --auth --prod`                                                                                                                      |
+| `UNAUTHORIZED` on protected procedures                                                | auth middleware not attaching `userId`                                                          | Ensure `getAuth(ctx)` + `getHeaders(ctx)` session lookup is in middleware                                                                                            |
+| `ctx.orm` missing in handlers                                                         | ORM context not wired in cRPC `.context()`                                                      | Ensure `query` + `mutation` both use `withOrm(ctx)`                                                                                                                  |
+| `Property 'insert'/'update' does not exist on type 'OrmReader'`                       | ORM context wrapper used reader-only shape                                                      | Use `orm.with(ctx)` in `withOrm` helper (Section 5.2)                                                                                                                |
+| `useCRPC must be used within CRPCProvider`                                            | Provider chain not mounted around route tree                                                    | Wrap app with `BetterConvexProvider` and verify `CRPCProvider` is inside QueryClientProvider (Section 7.4 / 8.A.4)                                                   |
+| Route auth cookies not set                                                            | Missing CORS auth headers                                                                       | Add `Better-Auth-Cookie` allow/expose headers + credentials                                                                                                          |
+| TanStack Start auth helper import errors                                              | Using `better-convex/auth-nextjs` in Start app                                                  | Use TanStack Start exception with `@convex-dev/better-auth/*` helpers                                                                                                |
+| `Returned promise will never resolve` from internal function                          | Trigger path is recursively querying/updating related rows or stale component wiring still runs | Isolate failing write with logs, disable/move trigger-side sync into explicit mutation helper, rerun `bunx better-convex codegen`, then retry bootstrap smoke checks |
+| Better Auth secret mismatch/warnings in setup flows                                   | `BETTER_AUTH_SECRET` manually set inconsistently or low entropy                                 | Generate and sync via `bunx better-convex env sync --auth`; avoid manual secret setting unless explicitly needed                                                     |
+| `Invalid orderBy value. Use a column or asc()/desc()`                                 | Wrong `orderBy` shape (`[{ field, direction }]`)                                                | Use object form only, e.g. `orderBy: { updatedAt: "desc" }`                                                                                                          |
+| `Invalid argument id for db.get` while testing `NOT_FOUND`                            | Fabricated Convex document ID                                                                   | Use real inserted IDs or non-ID lookup keys (slug/name/email) for not-found tests                                                                                    |
+| Trigger side effects too slow                                                         | Heavy sync work inside trigger                                                                  | Move heavy work to scheduled actions via `ctx.scheduler`                                                                                                             |
+| Rate limiter no-op                                                                    | component not registered in `convex.config.ts`                                                  | Add `@convex-dev/rate-limiter` app component                                                                                                                         |
+| `better-convex codegen` fails after disabling aggregates                              | Aggregate helper/import references still exist                                                  | Remove `app.use(aggregate...)`, schema aggregate hooks, and aggregate helper modules in the same change                                                              |
+| Aggregate counts drift                                                                | trigger not attached in schema                                                                  | Attach `aggregate.trigger()` in table extra config                                                                                                                   |
+| Invite emails never send                                                              | `@convex-dev/resend` component not registered                                                   | Add `app.use(resend)` and wire `functions/email.tsx`                                                                                                                 |
+| Dev reset/seed commands do nothing                                                    | `init.ts`/`seed.ts`/`reset.ts` missing or not wired                                             | Add dev bootstrap functions and scripts from Section 11.1                                                                                                            |
 
 ## Coverage Matrix
 
@@ -1253,7 +1880,7 @@ Source coverage mapping used to build this runbook:
 | `www/content/docs/server/setup.mdx`                  | Section 5.3                      |
 | `www/content/docs/auth/server.mdx`                   | Sections 6.1 - 6.8               |
 | `www/content/docs/auth/client.mdx`                   | Section 7.1                      |
-| `www/content/docs/auth/triggers.mdx`                 | Section 6.4, 9.2                 |
+| `www/content/docs/auth/triggers.mdx`                 | Section 6.3, 9.2                 |
 | `www/content/docs/react/index.mdx`                   | Sections 7.2 - 7.4               |
 | `www/content/docs/nextjs/index.mdx`                  | Section 8.A                      |
 | `www/content/docs/tanstack-start.mdx`                | Section 8.B                      |
@@ -1271,20 +1898,20 @@ Source coverage mapping used to build this runbook:
 | `www/content/docs/auth/plugins/polar.mdx`            | Section 10.3                     |
 | `www/content/docs/cli.mdx`                           | Section 11                       |
 
-### Example Convex Coverage (Recreation Target)
+### Template Coverage (Recreation Target)
 
-This runbook + references map to `example/convex` as follows:
+This runbook + references map to the canonical template shape as follows:
 
-| Example Group | Primary Setup Section | Additional Reference |
-| --- | --- | --- |
-| Core infra (`schema.ts`, `orm.ts`, `crpc.ts`, `http.ts`) | Sections 5, 6.6, 9.6 | `orm.md`, `http.md` |
-| Shared contracts (`shared/types.ts`, `shared/auth-shared.ts`, `shared/polar-shared.ts`) | Sections 5.4, 10.2, 10.3 | `auth-organizations.md`, `auth-polar.md` |
-| Auth core (`auth.config.ts`, `auth.ts`) | Section 6 | `auth.md` |
-| Auth plugins (`admin.ts`, `organization.ts`, `polar*`) | Section 10 | `auth-admin.md`, `auth-organizations.md`, `auth-polar.md` |
-| Feature modules (`user.ts`, `projects.ts`, `tags.ts`, `todoComments.ts`, `public.ts`, `items/queries.ts`) | Sections 5, 6, 9 | core `SKILL.md`, `orm.md`, `filters.md` |
-| HTTP routers (`routers/health.ts`, `routers/todos.ts`, `routers/examples.ts`) | Section 9.6 | `http.md` |
-| Aggregates + rate limits (`aggregates.ts`, `lib/rate-limiter.ts`) | Sections 9.3, 9.4 | `aggregates.md`, `orm.md` |
-| Scheduling + internals (`todoInternal.ts`, delayed jobs) | Sections 9.5, 11.1 | `scheduling.md` |
-| Email + Resend (`functions/email.tsx`, `lib/emails/*`) | Section 9.7 | `auth-organizations.md` |
-| Dev bootstrap (`init.ts`, `seed.ts`, `reset.ts`) | Section 11.1 | `testing.md` (for verification) |
-| Generated outputs (`functions/_generated/*`, `shared/meta.ts`) | Section 5.5 | n/a (generated by CLI) |
+| Example Group                                                                                             | Primary Setup Section           | Additional Reference                     |
+| --------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------- |
+| Core infra (`schema.ts`, `orm.ts`, `crpc.ts`, `http.ts`)                                                  | Sections 5, 6.6, 9.6            | `orm.md`, `http.md`                      |
+| Shared contracts (`shared/types.ts`, `shared/auth-shared.ts`, `shared/polar-shared.ts`)                   | Sections 5.4, 6.3.2, 10.2, 10.3 | `auth-organizations.md`                  |
+| Auth core (`auth.config.ts`, `auth.ts`)                                                                   | Section 6                       | `auth.md`                                |
+| Auth plugins (`admin.ts`, `organization.ts`, `polar*`)                                                    | Section 10                      | `auth-admin.md`, `auth-organizations.md` |
+| Feature modules (`user.ts`, `projects.ts`, `tags.ts`, `todoComments.ts`, `public.ts`, `items/queries.ts`) | Sections 5, 6.3.1, 9            | core `SKILL.md`, `orm.md`, `filters.md`  |
+| HTTP routers (`routers/health.ts`, `routers/todos.ts`, `routers/examples.ts`)                             | Section 9.6                     | `http.md`                                |
+| Aggregates + rate limits (`aggregates.ts`, `lib/rate-limiter.ts`)                                         | Sections 9.3, 9.4               | `aggregates.md`, `orm.md`                |
+| Scheduling + internals (`todoInternal.ts`, delayed jobs)                                                  | Sections 9.5, 11.1              | `scheduling.md`                          |
+| Email + Resend (`functions/email.tsx`, `lib/emails/*`)                                                    | Section 9.7                     | `auth-organizations.md`                  |
+| Dev bootstrap (`init.ts`, `seed.ts`, `reset.ts`)                                                          | Section 11.1                    | `testing.md` (for verification)          |
+| Generated outputs (`functions/_generated/*`, `shared/meta.ts`)                                            | Section 5.5                     | n/a (generated by CLI)                   |

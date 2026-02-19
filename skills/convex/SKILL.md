@@ -1,6 +1,6 @@
 ---
 name: convex
-description: Core better-convex feature skill for shipping end-to-end app features with cRPC + ORM + auth + React. Covers the common 80% path without loading references. Setup/bootstrap and niche plugin depth stay in references.
+description: ALWAYS use this skill when working with convex or better-convex. Covers the common end-to-end feature path using cRPC + ORM + auth + React, with setup/bootstrap and niche depth in references.
 ---
 
 # Better Convex Core Skill (80% Path)
@@ -13,12 +13,14 @@ Use this file first for everyday feature delivery in an already configured bette
 ## Scope
 
 In scope:
+
 - Add or update schema tables, indexes, relations, and triggers.
 - Implement cRPC procedures (`query`, `mutation`, `action`, `httpAction`) with runtime auth + rate limits.
 - Implement feature UI with `useCRPC()` + TanStack Query.
 - Add minimal high-value tests for auth, errors, and side effects.
 
 Out of scope:
+
 - Greenfield setup/install/env/bootstrap.
 - Full plugin deep-dives (admin/organizations/polar).
 - Internal package-level parity testing.
@@ -29,12 +31,13 @@ Out of scope:
 2. Keep list/read paths bounded and index-aware.
 3. Use cRPC builders and middleware; avoid raw handler objects for new feature code.
 4. Use `CRPCError` for expected failures.
-5. Put cross-row invariants in schema triggers, not duplicated in mutations.
+5. Prefer schema triggers for cross-row invariants, but move invariant maintenance to explicit mutation helpers if trigger execution is unstable (for example init/seed hangs or recursive write paths).
 6. Keep auth/rate-limit checks server-side.
 
 ## Shortcut Mode (tRPC + Drizzle Mental Model)
 
 Default assumption:
+
 - cRPC behavior is tRPC-like (builder chain + middleware + TanStack options).
 - ORM behavior is Drizzle-like (schema, relations, `findMany/findFirst`, `insert/update/delete`).
 
@@ -54,7 +57,7 @@ Only remember these non-parity deltas:
 12. String operators / `columns` projection / many-relation subfilters can run post-fetch; bound result size early.
 13. Search mode is relevance-ordered and does not support `orderBy`; vector mode has stricter limits (no cursor/offset/top-level where/order).
 14. Update/delete without `where` throws unless `allowFullScan()`.
-15. cRPC React queries are real-time by default (`subscribe: true`), so invalidation is usually needed only for `subscribe: false` paths.
+15. cRPC React queries are real-time by default (`subscribe: true`); never use `queryClient.invalidateQueries` for these subscribed paths.
 16. In RSC, `prefetch` hydrates client, `caller` is server-only and not hydrated, `preloadQuery` hydrates but can cause stale split ownership if also rendered client-side.
 17. Better Auth Next.js shortcut is `convexBetterAuth(...)`; generic server-only shortcut is `createCallerFactory(...)`.
 18. Use `createAuthMutations(authClient)` wrappers so logout unsubscribes auth queries before sign out.
@@ -64,11 +67,12 @@ Only remember these non-parity deltas:
 This skill is directory-scoped. Do not depend on reading files outside `skills/convex/**`.
 
 Use `references/setup.md` when the task needs:
+
 1. Project/file structure setup.
 2. Canonical template mirroring.
-3. Scaffolding that should match `templates.mdx` and `/example`.
+3. Scaffolding that should match the canonical template structure documented in `references/setup.md`.
 
-For full `example/convex` recreation: start with `references/setup.md`, then load only selected deep refs (`auth-admin.md`, `auth-organizations.md`, `auth-polar.md`, `aggregates.md`, `http.md`, `scheduling.md`, `testing.md`).
+For full template-level recreation: start with `references/setup.md`, then load only selected deep refs (`auth-admin.md`, `auth-organizations.md`, `aggregates.md`, `http.md`, `scheduling.md`, `testing.md`).
 
 ## First-Pass Feature Intake (Do This Before Edits)
 
@@ -97,11 +101,31 @@ Typical feature touches:
 ## E2E Build Order (Default)
 
 1. Schema + indexes + relations.
-2. Trigger hooks for cross-row invariants.
+2. Trigger hooks for cross-row invariants (or explicit mutation-side sync if trigger path is unstable).
 3. Procedures with strict input/output + auth + rate limits.
 4. React hooks (query/mutation/infinite) using cRPC options.
 5. Optional: HTTP route(s), scheduling hooks.
 6. Tests for auth/error/trigger behavior.
+
+## One-Shot Simulation Guardrails
+
+When the task is simulation-heavy, follow these conventions first:
+
+1. cRPC context: use typed split context (`MaybeAuthCtx`, `AuthCtx`) + a single session resolver helper (for example `getSessionUser`).
+2. Pagination: prefer `.paginated({ limit, item })` for list endpoints consumed by infinite queries.
+3. `orderBy` shape: always object form (`orderBy: { updatedAt: "desc" }`), never array form.
+4. Aggregates feature gate:
+   - If `Aggregates: Yes`, wire component + helper + schema triggers together.
+   - If `Aggregates: No`, remove all aggregate imports, helper modules, component config, and schema trigger hooks in the same edit.
+5. Rate limiter component: use static `components` import in `rate-limiter.ts`. Never use lazy imports in Convex code.
+6. Not-found tests: do not fabricate Convex document IDs; use real inserted IDs or semantic lookup keys (slug/name/email).
+7. Bootstrap smoke must pass before feature polish:
+   - `bunx convex run internal.seed.seed`
+   - `bunx convex run internal.init.default`
+   - one public query + one auth-protected query.
+8. Never index `createdAt`; use `updatedAt` (or another explicit sortable column) for index definitions.
+9. If `internal.seed.seed` / `internal.init.default` hangs with `Returned promise will never resolve`, trace trigger recursion or stale component wiring, move invariant/counter sync out of recursive trigger paths into explicit mutation helpers, then rerun codegen and bootstrap smoke checks.
+10. Keep one-time setup/bootstrap/codegen/env instructions in `references/setup.md` (do not duplicate here).
 
 ---
 
@@ -136,7 +160,7 @@ export const project = convexTable(
       .defaultNow()
       .$onUpdateFn(() => new Date()),
   },
-  (t) => [index("ownerId_createdAt").on(t.ownerId, t.createdAt)]
+  (t) => [index("ownerId_updatedAt").on(t.ownerId, t.updatedAt)]
 );
 
 export const task = convexTable(
@@ -152,7 +176,7 @@ export const task = convexTable(
       .$onUpdateFn(() => new Date()),
   },
   (t) => [
-    index("projectId_createdAt").on(t.projectId, t.createdAt),
+    index("projectId_updatedAt").on(t.projectId, t.updatedAt),
     index("projectId_status").on(t.projectId, t.status),
     onChange(async (ctx, change) => {
       const projectId = change.newDoc?.projectId ?? change.oldDoc?.projectId;
@@ -209,28 +233,72 @@ const c = initCRPC
     query: (ctx) => withOrm(ctx),
     mutation: (ctx) => withOrm(ctx),
   })
-  .meta<{ auth?: "optional" | "required"; role?: "admin"; rateLimit?: string }>()
+  .meta<{
+    auth?: "optional" | "required";
+    role?: "admin";
+    rateLimit?: string;
+  }>()
   .create();
 
-const authMiddleware = c.middleware(async ({ ctx, next }) => {
-  const auth = getAuth(ctx);
-  const session = await auth.api.getSession({ headers: await getHeaders(ctx) });
-  if (!session?.user) throw new CRPCError({ code: "UNAUTHORIZED" });
-  return next({ ctx: { ...ctx, user: session.user, userId: session.user.id } });
-});
-
-const optionalAuthMiddleware = c.middleware(async ({ ctx, next }) => {
-  const auth = getAuth(ctx);
-  const session = await auth.api.getSession({ headers: await getHeaders(ctx) });
-  if (!session?.user) return next({ ctx });
-  return next({ ctx: { ...ctx, user: session.user, userId: session.user.id } });
-});
+function requireAuth<T>(user: T | null): T {
+  if (!user) {
+    throw new CRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+  }
+  return user;
+}
 
 export const publicQuery = c.query.meta({ auth: "optional" });
-export const optionalAuthQuery = c.query.meta({ auth: "optional" }).use(optionalAuthMiddleware);
-export const authQuery = c.query.meta({ auth: "required" }).use(authMiddleware);
+export const optionalAuthQuery = c.query
+  .meta({ auth: "optional" })
+  .use(async ({ ctx, next }) => {
+    const auth = getAuth(ctx);
+    const session = await auth.api.getSession({
+      headers: await getHeaders(ctx),
+    });
+    return next({
+      ctx: {
+        ...ctx,
+        user: session?.user ?? null,
+        userId: session?.user?.id ?? null,
+      },
+    });
+  });
+export const authQuery = c.query
+  .meta({ auth: "required" })
+  .use(async ({ ctx, next }) => {
+    const auth = getAuth(ctx);
+    const session = await auth.api.getSession({
+      headers: await getHeaders(ctx),
+    });
+    const user = requireAuth(session?.user ?? null);
+    return next({ ctx: { ...ctx, user, userId: user.id } });
+  });
 export const publicMutation = c.mutation;
-export const authMutation = c.mutation.meta({ auth: "required" }).use(authMiddleware);
+export const optionalAuthMutation = c.mutation
+  .meta({ auth: "optional" })
+  .use(async ({ ctx, next }) => {
+    const auth = getAuth(ctx);
+    const session = await auth.api.getSession({
+      headers: await getHeaders(ctx),
+    });
+    return next({
+      ctx: {
+        ...ctx,
+        user: session?.user ?? null,
+        userId: session?.user?.id ?? null,
+      },
+    });
+  });
+export const authMutation = c.mutation
+  .meta({ auth: "required" })
+  .use(async ({ ctx, next }) => {
+    const auth = getAuth(ctx);
+    const session = await auth.api.getSession({
+      headers: await getHeaders(ctx),
+    });
+    const user = requireAuth(session?.user ?? null);
+    return next({ ctx: { ...ctx, user, userId: user.id } });
+  });
 export const privateAction = c.action.internal();
 ```
 
@@ -251,7 +319,12 @@ const ProjectDto = z.object({
 });
 
 export const listProjects = authQuery
-  .input(z.object({ cursor: z.string().nullable().default(null), limit: z.number().min(1).max(50).default(20) }))
+  .input(
+    z.object({
+      cursor: z.string().nullable().default(null),
+      limit: z.number().min(1).max(50).default(20),
+    })
+  )
   .output(
     z.object({
       page: z.array(ProjectDto),
@@ -262,7 +335,7 @@ export const listProjects = authQuery
   .query(async ({ ctx, input }) => {
     const result = await ctx.orm.query.project.findMany({
       where: { ownerId: ctx.userId },
-      orderBy: { createdAt: "desc" },
+      orderBy: { updatedAt: "desc" },
       cursor: input.cursor,
       limit: input.limit,
       columns: { id: true, name: true, createdAt: true },
@@ -284,20 +357,27 @@ export const createProject = authMutation
 
 export const toggleTask = authMutation
   .meta({ rateLimit: "task/toggle" })
-  .input(z.object({ projectId: z.string(), taskId: z.string(), done: z.boolean() }))
+  .input(
+    z.object({ projectId: z.string(), taskId: z.string(), done: z.boolean() })
+  )
   .output(z.null())
   .mutation(async ({ ctx, input }) => {
     const ownedProject = await ctx.orm.query.project.findFirst({
       where: { id: input.projectId, ownerId: ctx.userId },
       columns: { id: true },
     });
-    if (!ownedProject) throw new CRPCError({ code: "NOT_FOUND", message: "Project not found" });
+    if (!ownedProject)
+      throw new CRPCError({ code: "NOT_FOUND", message: "Project not found" });
 
     const current = await ctx.orm.query.task.findFirst({
-      where: and(eq(task.id, input.taskId), eq(task.projectId, ownedProject.id)),
+      where: and(
+        eq(task.id, input.taskId),
+        eq(task.projectId, ownedProject.id)
+      ),
       columns: { id: true },
     });
-    if (!current) throw new CRPCError({ code: "NOT_FOUND", message: "Task not found" });
+    if (!current)
+      throw new CRPCError({ code: "NOT_FOUND", message: "Task not found" });
 
     await ctx.orm
       .update(task)
@@ -326,7 +406,7 @@ Default: object `where`.
 ```ts
 await ctx.orm.query.task.findMany({
   where: { projectId: input.projectId, status: "open" },
-  orderBy: { createdAt: "desc" },
+  orderBy: { updatedAt: "desc" },
   limit: 20,
 });
 ```
@@ -335,7 +415,8 @@ Callback `where` (Drizzle-style):
 
 ```ts
 await ctx.orm.query.task.findMany({
-  where: (task, { and, eq }) => and(eq(task.projectId, input.projectId), eq(task.status, "open")),
+  where: (task, { and, eq }) =>
+    and(eq(task.projectId, input.projectId), eq(task.status, "open")),
   limit: 20,
 });
 ```
@@ -344,10 +425,12 @@ Predicate `where` for complex JS requires explicit index path first:
 
 ```ts
 await ctx.orm.query.task
-  .withIndex("projectId_createdAt", (q) => q.eq("projectId", input.projectId))
+  .withIndex("projectId_updatedAt", (q) => q.eq("projectId", input.projectId))
   .findMany({
     where: (_task, { predicate }) =>
-      predicate((row) => row.title.toLowerCase().includes(input.query.toLowerCase())),
+      predicate((row) =>
+        row.title.toLowerCase().includes(input.query.toLowerCase())
+      ),
     cursor: input.cursor,
     limit: input.limit,
     maxScan: 500,
@@ -358,7 +441,11 @@ Full-text search:
 
 ```ts
 await ctx.orm.query.task.findMany({
-  search: { index: "search_title", query: input.query, filters: { projectId: input.projectId } },
+  search: {
+    index: "search_title",
+    query: input.query,
+    filters: { projectId: input.projectId },
+  },
   cursor: input.cursor,
   limit: input.limit,
 });
@@ -369,7 +456,7 @@ Cursor boundary pinning + scan budget:
 ```ts
 await ctx.orm.query.task.findMany({
   where: { projectId: input.projectId },
-  orderBy: { createdAt: "desc" },
+  orderBy: { updatedAt: "desc" },
   cursor: input.cursor,
   endCursor: input.endCursor ?? undefined,
   limit: input.limit,
@@ -381,7 +468,7 @@ Key-boundary paging (advanced):
 
 ```ts
 const page = await ctx.orm.query.task.findMany({
-  pageByKey: { index: "projectId_createdAt", order: "asc", targetMaxRows: 100 },
+  pageByKey: { index: "projectId_updatedAt", order: "asc", targetMaxRows: 100 },
 });
 ```
 
@@ -443,6 +530,7 @@ await ctx.orm
 ```
 
 Notes:
+
 1. Async mutation batching needs ORM scheduled batch wiring.
 2. Async `execute({ mode: "async" })` and builder `.paginate(...)` are separate strategies; do not combine in one call.
 
@@ -450,17 +538,33 @@ Notes:
 
 Use this map consistently:
 
-| Code | Use |
-| --- | --- |
-| `BAD_REQUEST` | Invalid request shape/business precondition |
-| `UNAUTHORIZED` | No valid session |
-| `FORBIDDEN` | Session exists but lacks permissions |
-| `NOT_FOUND` | Resource absent or inaccessible |
-| `CONFLICT` | Unique/resource conflict |
-| `TOO_MANY_REQUESTS` | Rate-limited path |
-| `INTERNAL_SERVER_ERROR` | Unexpected failures only |
+| Code                    | Use                                         |
+| ----------------------- | ------------------------------------------- |
+| `BAD_REQUEST`           | Invalid request shape/business precondition |
+| `UNAUTHORIZED`          | No valid session                            |
+| `FORBIDDEN`             | Session exists but lacks permissions        |
+| `NOT_FOUND`             | Resource absent or inaccessible             |
+| `CONFLICT`              | Unique/resource conflict                    |
+| `TOO_MANY_REQUESTS`     | Rate-limited path                           |
+| `INTERNAL_SERVER_ERROR` | Unexpected failures only                    |
+
+Required test pairing:
+
+| Error code          | Required test                                             |
+| ------------------- | --------------------------------------------------------- |
+| `UNAUTHORIZED`      | unauthenticated query/mutation is rejected                |
+| `FORBIDDEN`         | authenticated but unauthorized actor is rejected          |
+| `NOT_FOUND`         | missing/inaccessible resource path returns expected error |
+| `CONFLICT`          | duplicate/conflicting write path is rejected              |
+| `TOO_MANY_REQUESTS` | write path enforces rate limit                            |
 
 ### 7) React Query Integration
+
+Preconditions (must be true before writing/using `useCRPC()` code paths):
+
+1. Generated imports exist (`@convex/api`, `@convex/meta`) from setup bootstrap.
+2. Provider chain is mounted (`CRPCProvider` inside QueryClient + Convex provider flow).
+3. If bootstrap/provider prerequisites are missing, stop feature work and complete `references/setup.md` (Sections 5.5, 7.4, 8.A.4) first.
 
 `useCRPC()` pattern:
 
@@ -471,23 +575,25 @@ const projects = useQuery(
   crpc.project.listProjects.queryOptions({ cursor: null, limit: 20 })
 );
 
-const createProject = useMutation(
-  crpc.project.createProject.mutationOptions({
-    onSuccess: () => {
-      queryClient.invalidateQueries(crpc.project.listProjects.queryFilter({ cursor: null, limit: 20 }));
-    },
-  })
-);
+const createProject = useMutation(crpc.project.createProject.mutationOptions());
+// No invalidateQueries: subscribed queries update via Convex real-time.
 ```
+
+If generated API/meta imports are missing (`@convex/api`, `@convex/meta`):
+
+1. Stop feature coding and finish bootstrap first.
+2. Follow `references/setup.md` Section 5.5 for exact setup/bootstrap commands and recovery steps.
+3. Continue only after generated artifacts exist.
 
 Key client defaults/deltas:
 
 1. Queries are real-time by default (`subscribe: true`).
-2. Use `{ subscribe: false }` for one-time fetches.
-3. Use `skipUnauth: true` to avoid unauthorized fetch churn.
-4. For pagination, use `useInfiniteQuery` from `better-convex/react`.
-5. Prefer `queryKey(...)`/`queryFilter(...)` helpers for cache ops instead of manual keys.
-6. For auth flows, prefer `createAuthMutations(...)` wrappers (not raw auth client calls) to avoid logout race errors.
+2. Never use `queryClient.invalidateQueries` for subscribed cRPC query paths.
+3. Use `{ subscribe: false }` only for one-time fetches; refresh those with explicit `refetch`/`fetchQuery`.
+4. Use `skipUnauth: true` to avoid unauthorized fetch churn.
+5. For pagination, use `useInfiniteQuery` from `better-convex/react`.
+6. Prefer typed `queryKey(...)` helpers for cache read/write/fetch ops instead of manual keys.
+7. For auth flows, prefer `createAuthMutations(...)` wrappers (not raw auth client calls) to avoid logout race errors.
 
 Infinite query pattern:
 
@@ -510,6 +616,7 @@ Use exactly one of these per use case:
 Do not render `preloadQuery` result on server and again on client for the same data path.
 
 Hydration rule:
+
 1. `HydrateClient` must wrap all client components that consume prefetched queries.
 
 ### 9) HTTP Route Pattern (When Feature Needs REST/Webhooks)
@@ -539,19 +646,26 @@ HTTP-specific rules:
 4. Validate webhook signatures before any side effects.
 5. Use `publicRoute` / `authRoute` / `optionalAuthRoute` builders from `convex/lib/crpc.ts`.
 6. Compose endpoints with `router(...)` for feature-level HTTP grouping.
+7. Client calls must pass path/query args as `{ params, searchParams }`; query values are strings.
 
 ### 10) Scheduling Pattern (If Needed)
 
 Immediate side effect after commit:
 
 ```ts
-await ctx.scheduler.runAfter(0, internal.notifications.sendTaskCreated, { taskId: created.id, userId: ctx.userId });
+await ctx.scheduler.runAfter(0, internal.notifications.sendTaskCreated, {
+  taskId: created.id,
+  userId: ctx.userId,
+});
 ```
 
 Future execution:
 
 ```ts
-await ctx.scheduler.runAt(input.sendAt, internal.reminders.send, { taskId: input.taskId, userId: ctx.userId });
+await ctx.scheduler.runAt(input.sendAt, internal.reminders.send, {
+  taskId: input.taskId,
+  userId: ctx.userId,
+});
 ```
 
 Scheduling rules:
@@ -572,6 +686,13 @@ Minimum feature test set:
 4. missing resource (`NOT_FOUND`)
 5. trigger side effect assertion
 6. scheduler assertion if feature schedules work
+7. not-found checks should use real IDs or non-ID lookup keys (slug/name/email), not synthetic IDs
+
+Low-friction fallback (when deployment bootstrap blocks full integration tests):
+
+1. Extract pure helpers for guard logic (`assertSessionUser`, ownership checks, trigger counters).
+2. Unit-test those helpers directly with Bun/Vitest.
+3. Keep one smoke integration test once Convex bootstrap is available.
 
 Minimal harness shape:
 
@@ -605,18 +726,21 @@ Before calling a feature done:
 
 ## Common Mistakes (And Fixes)
 
-| Mistake | Correct pattern |
-| --- | --- |
-| Raw Convex handler for new feature procedures | cRPC builders (`publicQuery`, `authMutation`, etc.) |
-| Write-time side effects duplicated across mutations | Schema trigger (`onChange`/`onInsert`/`onDelete`) |
-| Missing bounds on list/search | Add `limit` + cursor/pagination |
-| Using `ctx.db` for policy-sensitive reads | Use `ctx.orm` (RLS/constraints path) |
-| Throwing generic `Error` for expected outcomes | Throw `CRPCError` with explicit code |
-| Infinite list with TanStack native hook directly | Use `useInfiniteQuery` from `better-convex/react` |
-| Primitive root input (`z.string()`) | Use root `z.object(...)` input schema |
-| Returning nothing with `z.void()` | Use `.output(z.null())` or omit explicit output |
-| Manual pagination wrappers for infinite endpoints | Use `.paginated({ limit, item })` |
-| Putting secrets in `.meta(...)` | Keep metadata non-sensitive (client-visible) |
+| Mistake                                             | Correct pattern                                                                          |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Raw Convex handler for new feature procedures       | cRPC builders (`publicQuery`, `authMutation`, etc.)                                      |
+| Write-time side effects duplicated across mutations | Schema trigger, or one centralized mutation-side sync helper when trigger path is unsafe |
+| Missing bounds on list/search                       | Add `limit` + cursor/pagination                                                          |
+| `orderBy` written as array objects                  | Use object form: `orderBy: { updatedAt: "desc" }`                                        |
+| Using `ctx.db` for policy-sensitive reads           | Use `ctx.orm` (RLS/constraints path)                                                     |
+| Throwing generic `Error` for expected outcomes      | Throw `CRPCError` with explicit code                                                     |
+| Infinite list with TanStack native hook directly    | Use `useInfiniteQuery` from `better-convex/react`                                        |
+| Primitive root input (`z.string()`)                 | Use root `z.object(...)` input schema                                                    |
+| Returning nothing with `z.void()`                   | Use `.output(z.null())` or omit explicit output                                          |
+| Manual pagination wrappers for infinite endpoints   | Use `.paginated({ limit, item })`                                                        |
+| Synthetic Convex IDs in tests (`"missing-id"`)      | Use inserted IDs or semantic lookup keys                                                 |
+| Aggregates disabled but helper/config still present | Remove aggregate helper + schema hooks + app config together                             |
+| Putting secrets in `.meta(...)`                     | Keep metadata non-sensitive (client-visible)                                             |
 
 ## Reference Escalation Map (Load Only If Needed)
 
@@ -631,5 +755,4 @@ Before calling a feature done:
 - `references/auth.md`: full Better Auth core flow
 - `references/auth-admin.md`: admin plugin details
 - `references/auth-organizations.md`: org/multi-tenant plugin details
-- `references/auth-polar.md`: Polar billing plugin details
 - `references/doc-guidelines.md`: skill/docs sync contract

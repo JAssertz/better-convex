@@ -431,7 +431,10 @@ With Convex dev server running (`npx convex dev`), sync to Convex in another ter
 npx better-convex env sync --auth
 ```
 
-The `--auth` flag auto-generates `BETTER_AUTH_SECRET` and `JWKS` if they don't exist. See [CLI Reference](/docs/cli#env) for more options.
+This syncs `convex/.env` values to the active deployment.
+The `--auth` flag auto-generates `BETTER_AUTH_SECRET` and `JWKS` if they don't exist.
+If no deployment is active, start `npx better-convex dev` (or `npx convex dev`) first, then retry.
+See [CLI Reference](/docs/cli#env) for more options.
 
 That's it for the basic setup! Your auth is now configured. To rotate keys later (this invalidates all tokens):
 

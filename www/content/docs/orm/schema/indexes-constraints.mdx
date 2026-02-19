@@ -207,6 +207,10 @@ export const users = convexTable(
 
 ## Indexes
 
+<Callout icon={<AlertTriangle />}>
+Do not create indexes on `createdAt`. In Better Convex ORM, `createdAt` maps to internal `_creationTime`, and explicit `createdAt` indexes can fail. Use `updatedAt` (or another explicit sortable field) for custom indexes.
+</Callout>
+
 ### `index()`
 
 Add indexes for fields you filter or sort by.

@@ -96,6 +96,7 @@ Before ANY complex task:
 3. **Create `progress.md`** — Use [templates/progress.md](templates/progress.md) as reference
 4. **Re-read plan before decisions** — Refreshes goals in attention window
 5. **Update after each phase** — Mark complete, log errors
+6. **If files already exist, append a dated run section first** — never erase prior run history
 
 > **Note:** Planning files go in your project root, not the skill installation folder.
 
@@ -246,3 +247,4 @@ Helper scripts for automation:
 | Start executing immediately | Create plan file FIRST |
 | Repeat failed actions | Track attempts, mutate approach |
 | Create files in skill directory | Create files in your project |
+

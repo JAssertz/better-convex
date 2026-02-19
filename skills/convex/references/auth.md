@@ -248,6 +248,14 @@ BETTER_AUTH_SECRET=...
 JWKS=...
 ```
 
+`npx better-convex env sync --auth` behavior:
+1. Syncs `convex/.env` values into the active deployment.
+2. Auto-generates `BETTER_AUTH_SECRET` + `JWKS` when missing.
+
+Prerequisite:
+1. Run `npx better-convex dev` (or `npx convex dev`) first so deployment connection is active.
+2. If no deployment is active, sync may run against anonymous context and fail to write env vars.
+
 Key rotation: `npx convex run auth:rotateKeys | npx convex env set JWKS` (invalidates all tokens).
 
 ---

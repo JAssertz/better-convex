@@ -250,7 +250,7 @@ export type OrmQueryCtx = OrmCtx<QueryCtx>;
 export type OrmMutationCtx = OrmCtx<MutationCtx>;
 
 export function withOrm<Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) {
-  return { ...ctx, orm: orm.db(ctx) } as OrmCtx<Ctx>;
+  return orm.with(ctx) as OrmCtx<Ctx>;
 }
 ```
 

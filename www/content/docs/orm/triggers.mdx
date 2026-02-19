@@ -87,7 +87,7 @@ Hooks run through wrapped mutation contexts. Keep `withOrm(ctx)` in mutation con
 const orm = createOrm({ schema: relations });
 
 export function withOrm<Ctx extends QueryCtx | MutationCtx>(ctx: Ctx) {
-  return orm.with(ctx);
+  return orm.with(ctx) as OrmCtx<Ctx>;
 }
 ```
 
